@@ -1,1 +1,0 @@
-window.SIDEBAR_ITEMS = {"fn":["ident","keyword"],"struct":["Grapheme","Graphemes","GraphemesIter"]};

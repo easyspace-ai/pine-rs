@@ -1,2 +1,0 @@
-createSrcSidebar('[["chumsky",["",[],["blanket.rs","cache.rs","combinator.rs","container.rs","error.rs","extra.rs","input.rs","inspector.rs","label.rs","lib.rs","pratt.rs","primitive.rs","private.rs","recovery.rs","recursive.rs","span.rs","stream.rs","text.rs","util.rs"]]]]');
-//{"start":19,"fragment_lengths":[254]}

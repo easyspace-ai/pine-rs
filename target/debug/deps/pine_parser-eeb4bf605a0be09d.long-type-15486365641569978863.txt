@@ -1,1 +1,0 @@
-Choice<(impl chumsky::Parser<'_, pine_lexer::Token, expr::Postfix> + Clone, impl chumsky::Parser<'_, pine_lexer::Token, expr::Postfix> + Clone, impl chumsky::Parser<'_, pine_lexer::Token, expr::Postfix> + Clone, impl chumsky::Parser<'_, pine_lexer::Token, expr::Postfix> + Clone)>

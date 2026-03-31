@@ -1,1 +1,0 @@
-window.SIDEBAR_ITEMS = {"fn":["recursive"],"struct":["Indirect","Recursive"],"type":["Direct"]};

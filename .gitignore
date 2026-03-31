@@ -1,0 +1,34 @@
+# Rust
+/target
+**/*.rs.bk
+*.pdb
+
+# Cargo
+Cargo.lock
+!Cargo.lock  # 如果要跟踪 lock 文件，请注释掉上面一行并取消注释本行
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Test artifacts
+*.proptest-regressions
+
+# Profiling
+flamegraph.svg
+perf.data
+perf.data.old
+
+# Documentation build
+docs/book/
+
+# Environment
+.env
+.env.local

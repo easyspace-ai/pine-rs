@@ -1,1 +1,1 @@
-P2-T3: pine-runtime/series.rs - SeriesBuf<T> 实现
+P2-T6: pine-sema/types.rs - PineType 枚举 + series 传染规则

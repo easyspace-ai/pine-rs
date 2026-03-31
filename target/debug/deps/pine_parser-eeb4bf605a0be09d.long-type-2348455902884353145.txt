@@ -1,2 +1,0 @@
-ThenIgnore<Repeated<impl chumsky::Parser<'_, I, ast::Stmt, chumsky::extra::Full<chumsky::error::Rich<'_, pine_lexer::Token>, (), ()>> + Clone, ast::Stmt, I, chumsky::extra::Full<chumsky::error::Rich<'_, pine_lexer::Token>, (), ()>>, chumsky::primitive::End<I, chumsky::extra::Full<chumsky::error::Rich<'_, pine_lexer::Token>, (), ()>>, (), chumsky::extra::Full<chumsky::error::Rich<'_, pine_lexer::Token>, (), ()>>
-chumsky::Parser<'_, I, (), chumsky::extra::Full<chumsky::error::Rich<'_, pine_lexer::Token>, (), ()>>

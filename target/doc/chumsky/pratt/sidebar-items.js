@@ -1,1 +1,0 @@
-window.SIDEBAR_ITEMS = {"enum":["Associativity"],"fn":["infix","left","postfix","prefix","right"],"struct":["Boxed","Infix","Postfix","Pratt","Prefix"],"trait":["Operator"]};

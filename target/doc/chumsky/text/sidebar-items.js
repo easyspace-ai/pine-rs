@@ -1,1 +1,0 @@
-window.SIDEBAR_ITEMS = {"enum":["TextExpected"],"fn":["digits","inline_whitespace","int","newline","whitespace"],"mod":["ascii","unicode"],"struct":["Padded"],"trait":["Char"]};

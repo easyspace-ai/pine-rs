@@ -1,9 +1,0 @@
-(function() {
-    var implementors = Object.fromEntries([["chumsky",[["impl <a class=\"trait\" href=\"https://doc.rust-lang.org/1.92.0/core/default/trait.Default.html\" title=\"trait core::default::Default\">Default</a> for <a class=\"struct\" href=\"chumsky/combinator/struct.RepeatedCfg.html\" title=\"struct chumsky::combinator::RepeatedCfg\">RepeatedCfg</a>"],["impl <a class=\"trait\" href=\"https://doc.rust-lang.org/1.92.0/core/default/trait.Default.html\" title=\"trait core::default::Default\">Default</a> for <a class=\"struct\" href=\"chumsky/error/struct.EmptyErr.html\" title=\"struct chumsky::error::EmptyErr\">EmptyErr</a>"],["impl&lt;C: <a class=\"trait\" href=\"chumsky/cache/trait.Cached.html\" title=\"trait chumsky::cache::Cached\">Cached</a> + <a class=\"trait\" href=\"https://doc.rust-lang.org/1.92.0/core/default/trait.Default.html\" title=\"trait core::default::Default\">Default</a>&gt; <a class=\"trait\" href=\"https://doc.rust-lang.org/1.92.0/core/default/trait.Default.html\" title=\"trait core::default::Default\">Default</a> for <a class=\"struct\" href=\"chumsky/cache/struct.Cache.html\" title=\"struct chumsky::cache::Cache\">Cache</a>&lt;C&gt;"],["impl&lt;T&gt; <a class=\"trait\" href=\"https://doc.rust-lang.org/1.92.0/core/default/trait.Default.html\" title=\"trait core::default::Default\">Default</a> for <a class=\"struct\" href=\"chumsky/primitive/struct.JustCfg.html\" title=\"struct chumsky::primitive::JustCfg\">JustCfg</a>&lt;T&gt;"]]]]);
-    if (window.register_implementors) {
-        window.register_implementors(implementors);
-    } else {
-        window.pending_implementors = implementors;
-    }
-})()
-//{"start":57,"fragment_lengths":[1425]}

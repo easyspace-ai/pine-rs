@@ -1,1 +1,0 @@
-IgnoreThen<Just<pine_lexer::Token, pine_lexer::Token, chumsky::extra::Full<EmptyErr, (), ()>>, impl chumsky::Parser<'static, pine_lexer::Token, ast::Block> + Clone, pine_lexer::Token, chumsky::extra::Full<EmptyErr, (), ()>>

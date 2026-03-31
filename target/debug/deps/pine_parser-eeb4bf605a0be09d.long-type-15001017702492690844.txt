@@ -1,1 +1,0 @@
-DelimitedBy<impl Parser<'static, Token, Expr, Error = Simple<'static, Token>> + Clone, Just<pine_lexer::Token, pine_lexer::Token, chumsky::extra::Full<EmptyErr, (), ()>>, Just<pine_lexer::Token, pine_lexer::Token, chumsky::extra::Full<EmptyErr, (), ()>>, pine_lexer::Token, pine_lexer::Token>

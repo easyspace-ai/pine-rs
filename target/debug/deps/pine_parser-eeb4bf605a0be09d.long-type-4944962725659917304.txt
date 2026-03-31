@@ -1,1 +1,0 @@
-OrNot<Choice<(chumsky::combinator::To<Just<pine_lexer::Token, pine_lexer::Token, chumsky::extra::Full<EmptyErr, (), ()>>, pine_lexer::Token, ast::VarKind>, chumsky::combinator::To<Just<pine_lexer::Token, pine_lexer::Token, chumsky::extra::Full<EmptyErr, (), ()>>, pine_lexer::Token, ast::VarKind>)>>

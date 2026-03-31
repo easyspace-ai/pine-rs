@@ -1,1 +1,0 @@
-MappedInput<pine_lexer::Token, pine_lexer::Span, Stream<std::vec::IntoIter<(pine_lexer::Token, pine_lexer::Span)>>, {closure@crates/pine-parser/src/parser.rs:11:24: 11:40}>

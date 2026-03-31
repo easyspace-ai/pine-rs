@@ -1,1 +1,0 @@
-window.SIDEBAR_ITEMS = {"struct":["Full"],"trait":["ParserExtra"],"type":["Context","Default","Err","State"]};

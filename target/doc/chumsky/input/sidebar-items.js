@@ -1,1 +1,0 @@
-window.SIDEBAR_ITEMS = {"struct":["Checkpoint","Cursor","Emitter","InputRef","IoInput","IterInput","MapExtra","MappedInput","MappedSpan","Stream","WithContext"],"trait":["BorrowInput","ExactSizeInput","Input","SliceInput","StrInput","ValueInput"],"type":["BoxedExactSizeStream","BoxedStream"]};

@@ -1,1 +1,0 @@
-window.SIDEBAR_ITEMS = {"enum":["DefaultExpected"],"macro":["select","select_ref"],"mod":["cache","combinator","container","error","extra","input","inspector","label","pratt","prelude","primitive","recovery","recursive","span","text","util"],"struct":["Boxed","ParseResult"],"trait":["ConfigIterParser","ConfigParser","IterParser","Parser"]};
