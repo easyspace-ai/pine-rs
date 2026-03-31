@@ -220,12 +220,7 @@ impl ExecutionContext {
     /// Push a value to a series
     ///
     /// Creates the series if it doesn't exist.
-    pub fn push_to_series(
-        &mut self,
-        name: impl Into<String>,
-        call_site: CallSiteId,
-        value: Value,
-    ) {
+    pub fn push_to_series(&mut self, name: impl Into<String>, call_site: CallSiteId, value: Value) {
         let series = self.get_or_create_series(name, call_site);
         series.push(value);
     }
@@ -435,9 +430,18 @@ mod tests {
         ctx.push_to_series("close", cs, Value::Float(101.0));
         ctx.push_to_series("close", cs, Value::Float(102.0));
 
-        assert_eq!(ctx.get_series_current("close", cs), Some(&Value::Float(102.0)));
-        assert_eq!(ctx.get_series_at("close", cs, 1), Some(&Value::Float(101.0)));
-        assert_eq!(ctx.get_series_at("close", cs, 2), Some(&Value::Float(100.0)));
+        assert_eq!(
+            ctx.get_series_current("close", cs),
+            Some(&Value::Float(102.0))
+        );
+        assert_eq!(
+            ctx.get_series_at("close", cs, 1),
+            Some(&Value::Float(101.0))
+        );
+        assert_eq!(
+            ctx.get_series_at("close", cs, 2),
+            Some(&Value::Float(100.0))
+        );
     }
 
     #[test]

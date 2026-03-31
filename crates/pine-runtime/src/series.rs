@@ -327,7 +327,7 @@ mod tests {
         assert_eq!(series.get(0), Some(&4.0)); // current
         assert_eq!(series.get(1), Some(&3.0)); // previous
         assert_eq!(series.get(2), Some(&2.0)); // 2 bars ago (was 1.0)
-        assert_eq!(series.get(3), None);       // out of range
+        assert_eq!(series.get(3), None); // out of range
     }
 
     #[test]

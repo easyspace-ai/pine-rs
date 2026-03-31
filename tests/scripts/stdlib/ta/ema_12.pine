@@ -1,0 +1,8 @@
+// Golden test: ta.ema(close, 12)
+// Exponential Moving Average with length 12
+
+indicator("EMA 12 Golden Test", overlay=true)
+
+ema_12 = ta.ema(close, 12)
+
+plot(ema_12, title="EMA 12", color=color.orange)

@@ -622,7 +622,10 @@ mod tests {
         assert_eq!(format!("{}", Value::Bool(true)), "true");
         assert_eq!(format!("{}", Value::Na), "na");
         assert_eq!(
-            format!("{}", Value::Array(vec![Value::Int(1), Value::Int(2)].into())),
+            format!(
+                "{}",
+                Value::Array(vec![Value::Int(1), Value::Int(2)].into())
+            ),
             "[1, 2]"
         );
     }

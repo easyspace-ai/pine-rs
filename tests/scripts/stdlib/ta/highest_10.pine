@@ -1,0 +1,8 @@
+// Golden test: ta.highest(high, 10)
+// Highest high over 10 bars
+
+indicator("Highest 10 Golden Test", overlay=true)
+
+highest_10 = ta.highest(high, 10)
+
+plot(highest_10, title="Highest 10", color=color.green)

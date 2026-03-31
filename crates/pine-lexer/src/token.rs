@@ -381,17 +381,19 @@ fn parse_color(s: &str) -> Result<u32, LexError> {
     let rgba = match hex.len() {
         3 => {
             // #RGB -> #RRGGBBFF
-            let r = hex.chars().nth(0).unwrap().to_digit(16).unwrap() * 17;
-            let g = hex.chars().nth(1).unwrap().to_digit(16).unwrap() * 17;
-            let b = hex.chars().nth(2).unwrap().to_digit(16).unwrap() * 17;
+            let mut chars = hex.chars();
+            let r = chars.next().unwrap().to_digit(16).unwrap() * 17;
+            let g = chars.next().unwrap().to_digit(16).unwrap() * 17;
+            let b = chars.next().unwrap().to_digit(16).unwrap() * 17;
             (r << 24) | (g << 16) | (b << 8) | 0xFF
         }
         4 => {
             // #RGBA -> #RRGGBBAA
-            let r = hex.chars().nth(0).unwrap().to_digit(16).unwrap() * 17;
-            let g = hex.chars().nth(1).unwrap().to_digit(16).unwrap() * 17;
-            let b = hex.chars().nth(2).unwrap().to_digit(16).unwrap() * 17;
-            let a = hex.chars().nth(3).unwrap().to_digit(16).unwrap() * 17;
+            let mut chars = hex.chars();
+            let r = chars.next().unwrap().to_digit(16).unwrap() * 17;
+            let g = chars.next().unwrap().to_digit(16).unwrap() * 17;
+            let b = chars.next().unwrap().to_digit(16).unwrap() * 17;
+            let a = chars.next().unwrap().to_digit(16).unwrap() * 17;
             (r << 24) | (g << 16) | (b << 8) | a
         }
         6 => {
@@ -514,7 +516,7 @@ mod tests {
 
     #[test]
     fn test_color_literals() {
-        let mut lex = Token::lexer("#RGB #RGBA #RRGGBB #RRGGBBAA");
+        let _lex = Token::lexer("#RGB #RGBA #RRGGBB #RRGGBBAA");
         // These won't match as colors since they contain letters
         // But actual hex colors will work
         let mut lex2 = Token::lexer("#ff5733 #ff5733cc");

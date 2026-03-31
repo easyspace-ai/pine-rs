@@ -8,9 +8,9 @@
 
 #![warn(missing_docs)]
 
-pub mod types;
-pub mod scope;
 pub mod infer;
+pub mod scope;
+pub mod types;
 
 use miette::Diagnostic;
 use thiserror::Error;

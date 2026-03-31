@@ -1,4 +1,4 @@
-use pine_lexer::{Span, Token};
+use pine_lexer::Span;
 use serde::{Deserialize, Serialize};
 
 /// Identifier with span
@@ -203,11 +203,7 @@ pub enum Stmt {
     },
 
     /// While loop: while cond body
-    While {
-        cond: Expr,
-        body: Block,
-        span: Span,
-    },
+    While { cond: Expr, body: Block, span: Span },
 
     /// Switch statement (v6): switch expr { case val: ... default: ... }
     Switch {
@@ -260,10 +256,7 @@ pub enum Stmt {
     },
 
     /// Export statement (v6): export name
-    Export {
-        name: Ident,
-        span: Span,
-    },
+    Export { name: Ident, span: Span },
 
     /// Library declaration (v6): library(name [, overlay = true])
     Library {

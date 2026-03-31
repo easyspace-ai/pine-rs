@@ -1,0 +1,10 @@
+// Golden test: ta.macd(close, 12, 26, 9)
+// MACD with fast=12, slow=26, signal=9
+
+indicator("MACD Golden Test")
+
+[macd_line, signal_line, histogram] = ta.macd(close, 12, 26, 9)
+
+plot(macd_line, title="MACD Line", color=color.blue)
+plot(signal_line, title="Signal Line", color=color.orange)
+plot(histogram, title="Histogram", color=color.red, style=plot.style_histogram)

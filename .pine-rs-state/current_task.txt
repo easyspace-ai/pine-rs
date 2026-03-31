@@ -1,1 +1,1 @@
-P2-T6: pine-sema/types.rs - PineType 枚举 + series 传染规则
+P3-T1: pine-stdlib/registry.rs - FunctionRegistry + hash dispatch

@@ -5,8 +5,8 @@
 
 #![warn(missing_docs)]
 
-pub mod plot;
 pub mod drawing;
+pub mod plot;
 pub mod strategy;
 
 use miette::Diagnostic;

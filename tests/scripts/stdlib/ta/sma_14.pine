@@ -1,0 +1,8 @@
+// Golden test: ta.sma(close, 14)
+// Simple Moving Average with length 14
+
+indicator("SMA 14 Golden Test", overlay=true)
+
+sma_14 = ta.sma(close, 14)
+
+plot(sma_14, title="SMA 14", color=color.blue)

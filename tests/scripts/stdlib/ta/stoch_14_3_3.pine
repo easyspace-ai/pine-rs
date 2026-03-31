@@ -1,0 +1,10 @@
+// Golden test: ta.stoch(close, high, low, 14, 3, 3)
+// Stochastic with %K=14, %D=3, smooth=3
+
+indicator("Stochastic Golden Test")
+
+k = ta.stoch(close, high, low, 14, 3, 3)
+
+plot(k, title="%K", color=color.blue)
+hline(80, "Overbought", color=color.red)
+hline(20, "Oversold", color=color.green)

@@ -1,6 +1,6 @@
 pub mod token;
 
-pub use token::{Span, Token, LexError};
+pub use token::{LexError, Span, Token};
 
 use logos::Logos;
 

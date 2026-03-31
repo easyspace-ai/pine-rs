@@ -514,7 +514,10 @@ mod tests {
     fn test_arithmetic() {
         // Addition
         assert_eq!(add(&Value::Int(2), &Value::Int(3)), Value::Int(5));
-        assert_eq!(add(&Value::Float(2.5), &Value::Float(3.5)), Value::Float(6.0));
+        assert_eq!(
+            add(&Value::Float(2.5), &Value::Float(3.5)),
+            Value::Float(6.0)
+        );
         assert_eq!(add(&Value::Int(2), &Value::Float(3.5)), Value::Float(5.5));
 
         // NA propagation
@@ -557,9 +560,18 @@ mod tests {
     #[test]
     fn test_logical() {
         // AND
-        assert_eq!(and(&Value::Bool(true), &Value::Bool(true)), Value::Bool(true));
-        assert_eq!(and(&Value::Bool(true), &Value::Bool(false)), Value::Bool(false));
-        assert_eq!(and(&Value::Bool(false), &Value::Bool(true)), Value::Bool(false));
+        assert_eq!(
+            and(&Value::Bool(true), &Value::Bool(true)),
+            Value::Bool(true)
+        );
+        assert_eq!(
+            and(&Value::Bool(true), &Value::Bool(false)),
+            Value::Bool(false)
+        );
+        assert_eq!(
+            and(&Value::Bool(false), &Value::Bool(true)),
+            Value::Bool(false)
+        );
 
         // false and na = false (short circuit)
         assert_eq!(and(&Value::Bool(false), &Value::Na), Value::Bool(false));
@@ -569,8 +581,14 @@ mod tests {
         assert!(and(&Value::Bool(true), &Value::Na).is_na());
 
         // OR
-        assert_eq!(or(&Value::Bool(true), &Value::Bool(false)), Value::Bool(true));
-        assert_eq!(or(&Value::Bool(false), &Value::Bool(false)), Value::Bool(false));
+        assert_eq!(
+            or(&Value::Bool(true), &Value::Bool(false)),
+            Value::Bool(true)
+        );
+        assert_eq!(
+            or(&Value::Bool(false), &Value::Bool(false)),
+            Value::Bool(false)
+        );
 
         // true or na = true (short circuit)
         assert_eq!(or(&Value::Bool(true), &Value::Na), Value::Bool(true));
@@ -617,7 +635,10 @@ mod tests {
     fn test_math() {
         // Power
         assert_eq!(pow(&Value::Int(2), &Value::Int(3)), Value::Float(8.0));
-        assert_eq!(pow(&Value::Float(4.0), &Value::Float(0.5)), Value::Float(2.0));
+        assert_eq!(
+            pow(&Value::Float(4.0), &Value::Float(0.5)),
+            Value::Float(2.0)
+        );
 
         // Square root
         assert_eq!(sqrt(&Value::Int(4)), Value::Float(2.0));
@@ -630,9 +651,18 @@ mod tests {
 
     #[test]
     fn test_bitwise() {
-        assert_eq!(bit_and(&Value::Int(0b1100), &Value::Int(0b1010)), Value::Int(0b1000));
-        assert_eq!(bit_or(&Value::Int(0b1100), &Value::Int(0b1010)), Value::Int(0b1110));
-        assert_eq!(bit_xor(&Value::Int(0b1100), &Value::Int(0b1010)), Value::Int(0b0110));
+        assert_eq!(
+            bit_and(&Value::Int(0b1100), &Value::Int(0b1010)),
+            Value::Int(0b1000)
+        );
+        assert_eq!(
+            bit_or(&Value::Int(0b1100), &Value::Int(0b1010)),
+            Value::Int(0b1110)
+        );
+        assert_eq!(
+            bit_xor(&Value::Int(0b1100), &Value::Int(0b1010)),
+            Value::Int(0b0110)
+        );
         assert_eq!(bit_not(&Value::Int(0)), Value::Int(!0i64));
         assert_eq!(shl(&Value::Int(1), &Value::Int(3)), Value::Int(8));
         assert_eq!(shr(&Value::Int(8), &Value::Int(2)), Value::Int(2));

@@ -1,0 +1,10 @@
+// Golden test: ta.rsi(close, 14)
+// Relative Strength Index with length 14
+
+indicator("RSI 14 Golden Test")
+
+rsi_14 = ta.rsi(close, 14)
+
+plot(rsi_14, title="RSI 14", color=color.purple)
+hline(70, "Overbought", color=color.red)
+hline(30, "Oversold", color=color.green)

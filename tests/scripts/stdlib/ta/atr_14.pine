@@ -1,0 +1,8 @@
+// Golden test: ta.atr(14)
+// Average True Range with length 14
+
+indicator("ATR 14 Golden Test")
+
+atr_14 = ta.atr(14)
+
+plot(atr_14, title="ATR 14", color=color.red)

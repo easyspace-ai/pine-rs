@@ -5,11 +5,11 @@
 
 #![warn(missing_docs)]
 
-pub mod value;
-pub mod series;
-pub mod na_ops;
-pub mod context;
 pub mod config;
+pub mod context;
+pub mod na_ops;
+pub mod series;
+pub mod value;
 
 use miette::Diagnostic;
 use thiserror::Error;

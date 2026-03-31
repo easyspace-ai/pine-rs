@@ -6,8 +6,8 @@
 #![warn(missing_docs)]
 
 pub mod compiler;
-pub mod vm;
 pub mod opcode;
+pub mod vm;
 
 use miette::Diagnostic;
 use thiserror::Error;

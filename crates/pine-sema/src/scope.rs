@@ -42,9 +42,9 @@ impl Scope {
 
     /// Look up a symbol in this scope and parent scopes
     pub fn lookup(&self, name: &str) -> Option<&Symbol> {
-        self.symbols.get(name).or_else(|| {
-            self.parent.as_ref().and_then(|p| p.lookup(name))
-        })
+        self.symbols
+            .get(name)
+            .or_else(|| self.parent.as_ref().and_then(|p| p.lookup(name)))
     }
 }
 

@@ -6,12 +6,12 @@
 
 #![warn(missing_docs)]
 
-pub mod registry;
-pub mod ta;
-pub mod math;
-pub mod str;
 pub mod array;
 pub mod color;
+pub mod math;
+pub mod registry;
+pub mod str;
+pub mod ta;
 
 use miette::Diagnostic;
 use thiserror::Error;
@@ -28,9 +28,9 @@ pub enum StdlibError {
 pub type Result<T> = std::result::Result<T, StdlibError>;
 
 /// Initialize the standard library function registry
-pub fn init() -> Result<()> {
-    // TODO: Initialize function registry
-    Ok(())
+pub fn init(registry: &mut registry::FunctionRegistry) {
+    ta::register_functions(registry);
+    math::register_functions(registry);
 }
 
 #[cfg(test)]
@@ -38,7 +38,21 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_placeholder() {
-        assert!(init().is_ok());
+    fn test_init_registers_functions() {
+        let mut registry = registry::FunctionRegistry::new();
+        init(&mut registry);
+
+        // Check that ta functions are registered
+        assert!(registry.contains("ta.sma"));
+        assert!(registry.contains("ta.ema"));
+        assert!(registry.contains("ta.rsi"));
+
+        // Check that math functions are registered
+        assert!(registry.contains("math.abs"));
+        assert!(registry.contains("math.max"));
+        assert!(registry.contains("math.sqrt"));
+
+        // Check total function count
+        assert!(registry.len() >= 20); // At least 20 functions should be registered
     }
 }
