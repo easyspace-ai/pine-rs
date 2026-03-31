@@ -1,0 +1,15 @@
+[package]
+name = "pine-sema"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+pine-lexer = { path = "../pine-lexer" }
+pine-parser = { path = "../pine-parser" }
+indexmap = { workspace = true }
+miette = { workspace = true }
+thiserror = { workspace = true }
+serde = { workspace = true }
+
+[dev-dependencies]
+insta = { workspace = true }

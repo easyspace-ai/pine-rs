@@ -1,0 +1,14 @@
+[package]
+name = "pine-parser"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+chumsky = { workspace = true }
+pine-lexer = { path = "../pine-lexer" }
+miette = { workspace = true }
+thiserror = { workspace = true }
+serde = { workspace = true }
+
+[dev-dependencies]
+insta = { workspace = true }

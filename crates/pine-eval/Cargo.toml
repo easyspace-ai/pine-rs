@@ -1,0 +1,20 @@
+[package]
+name = "pine-eval"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+pine-lexer = { path = "../pine-lexer" }
+pine-parser = { path = "../pine-parser" }
+pine-sema = { path = "../pine-sema" }
+pine-runtime = { path = "../pine-runtime" }
+pine-stdlib = { path = "../pine-stdlib" }
+pine-output = { path = "../pine-output" }
+miette = { workspace = true }
+thiserror = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+
+[dev-dependencies]
+insta = { workspace = true }
+criterion = { workspace = true }

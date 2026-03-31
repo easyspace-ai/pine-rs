@@ -38,7 +38,7 @@
 **目标**：用 Rust 实现完整的 Pine Script v6 解释器运行时  
 **核心文档**：`docs/GUIDE.md`（产品开发指导书，所有架构决策的依据）  
 **当前 Phase**：读取 `.pine-rs-state/current_phase.txt`（不存在则从 Phase 1 开始）
-
+**pinescript** `docs/pinescriptv6`(pinescript 官方相关文档，做为我们是否实现目标的参考)
 ```
 pine-rs/
 ├── CLAUDE.md                   ← 本文件
@@ -62,6 +62,8 @@ pine-rs/
 ├── tests/                      ← 测试脚本和黄金数据
 └── docs/
     └── GUIDE.md                ← 产品开发指导书
+    └── pinescriptv6             ← 官方pinescript v6说明书
+
 ```
 
 ---

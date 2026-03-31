@@ -1,0 +1,17 @@
+[package]
+name = "pine-runtime"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+smartstring = { workspace = true }
+indexmap = { workspace = true }
+smallvec = { workspace = true }
+miette = { workspace = true }
+thiserror = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+
+[dev-dependencies]
+insta = { workspace = true }
+proptest = { workspace = true }
