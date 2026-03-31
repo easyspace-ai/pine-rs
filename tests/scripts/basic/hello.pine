@@ -1,0 +1,3 @@
+//@version=6
+indicator("Hello pine-rs", shorttitle="hello")
+plot(close)

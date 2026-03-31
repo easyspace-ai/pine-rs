@@ -1,0 +1,36 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/pine-lexer",
+    "crates/pine-parser",
+    "crates/pine-sema",
+    "crates/pine-eval",
+    "crates/pine-vm",
+    "crates/pine-runtime",
+    "crates/pine-stdlib",
+    "crates/pine-output",
+    "crates/pine-cli",
+]
+
+[workspace.dependencies]
+logos        = "0.14"
+chumsky      = { version = "0.10", features = ["pratt"] }
+miette       = { version = "5", features = ["fancy"] }
+thiserror    = "1"
+indexmap     = "2"
+smartstring  = "1"
+smallvec     = "1"
+serde        = { version = "1", features = ["derive"] }
+serde_json   = "1"
+insta        = "1"
+proptest     = "1"
+criterion    = { version = "0.5", features = ["html_reports"] }
+
+[profile.release]
+opt-level = 3
+lto = "thin"
+codegen-units = 1
+
+[profile.bench]
+inherits = "release"
+debug = true
