@@ -3,12 +3,13 @@
 //! This module defines the core Value enum and NA propagation rules.
 //! All arithmetic and comparison operations must go through `na_ops` module.
 
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fmt;
 use std::sync::Arc;
 
 /// A color value in Pine Script (RGBA)
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Color {
     /// Red component (0-255)
     pub r: u8,
@@ -938,7 +939,10 @@ mod tests {
         // Test object display
         let obj = Object::with_fields(
             "Point",
-            vec![("x".to_string(), Value::Int(1)), ("y".to_string(), Value::Int(2))],
+            vec![
+                ("x".to_string(), Value::Int(1)),
+                ("y".to_string(), Value::Int(2)),
+            ],
         );
         let value: Value = obj.into();
         let display_str = format!("{}", value);

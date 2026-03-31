@@ -19,7 +19,7 @@ fn map_new(_args: &[Value]) -> Value {
 
 /// Create a new map with a single key-value pair
 fn map_new_from_pair(args: &[Value]) -> Value {
-    let key = match args.get(0).and_then(|v| v.as_str()) {
+    let key = match args.first().and_then(|v| v.as_str()) {
         Some(k) => k.to_string(),
         None => return Value::Na,
     };
@@ -161,7 +161,10 @@ fn map_keys(args: &[Value]) -> Value {
     };
 
     if let Some(map) = map_arg.as_map() {
-        let keys: Vec<Value> = map.keys().map(|k| Value::String(k.clone().into())).collect();
+        let keys: Vec<Value> = map
+            .keys()
+            .map(|k| Value::String(k.clone().into()))
+            .collect();
         Value::Array(keys)
     } else {
         Value::Array(Vec::new())

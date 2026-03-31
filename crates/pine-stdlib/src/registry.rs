@@ -191,7 +191,8 @@ impl FunctionRegistry {
         crate::math::register_functions(self);
         crate::array::register_functions(self);
         crate::map::register_functions(self);
-        // Note: str, color modules will be added in later phases
+        crate::str::register_functions(self);
+        crate::color::register_functions(self);
     }
 
     /// Get the number of registered functions

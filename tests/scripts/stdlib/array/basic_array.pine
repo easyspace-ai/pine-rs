@@ -1,0 +1,29 @@
+//@version=6
+indicator("Basic Array Test", overlay=true)
+
+// Test array creation
+var arr = array.new_int(5, 0)
+
+// Test array.set and array.get
+if barstate.isfirst
+    array.set(arr, 0, 10)
+    array.set(arr, 1, 20)
+    array.set(arr, 2, 30)
+
+// Test array.size
+size = array.size(arr)
+
+// Test array.push
+if barstate.islast
+    array.push(arr, 42)
+
+// Test array.sum
+sum = array.sum(arr)
+
+// Test array.avg
+avg = array.avg(arr)
+
+// Plot results
+plot(size, "Array Size", color=color.blue)
+plot(sum, "Array Sum", color=color.red)
+plot(avg, "Array Avg", color=color.green)

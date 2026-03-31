@@ -1,0 +1,42 @@
+//@version=6
+indicator("Basic Map Test", overlay=true)
+
+// Create a map
+var config = map.new()
+
+// Initialize map on first bar
+if barstate.isfirst
+    map.put(config, "symbol", "BTCUSDT")
+    map.put(config, "timeframe", "1h")
+    map.put(config, "length", 14)
+    map.put(config, "enabled", true)
+
+// Get values from map
+symbol = map.get(config, "symbol")
+timeframe = map.get(config, "timeframe")
+length = map.get(config, "length")
+enabled = map.get(config, "enabled")
+
+// Check if key exists
+hasSymbol = map.contains(config, "symbol")
+hasMissing = map.contains(config, "missing_key")
+
+// Get map size
+mapSize = map.size(config)
+
+// Update map on last bar
+if barstate.islast
+    map.put(config, "updated", true)
+    map.remove(config, "enabled")
+
+// Test map.keys and map.values
+var keys = array.new_string(0)
+var values = array.new_int(0)
+if barstate.islast
+    keys := map.keys(config)
+    // values := map.values(config)
+
+// Plot some results
+plot(mapSize, "Map Size", color=color.blue, linewidth=2)
+plotchar(hasSymbol, "Has Symbol", location=location.top, color=color.green)
+plotchar(hasMissing, "Has Missing", location=location.top, color=color.red)

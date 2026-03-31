@@ -4,9 +4,11 @@
 //! during script execution, including variables, series buffers, and call-site isolation.
 
 use crate::config::RuntimeConfig;
+use crate::module::{ModuleId, ModuleNamespace, ModuleRegistry};
 use crate::series::SeriesBuf;
 use crate::value::Value;
 use indexmap::IndexMap;
+use std::path::PathBuf;
 use std::sync::Arc;
 
 /// A unique identifier for a call site
@@ -85,6 +87,18 @@ pub struct ExecutionContext {
 
     /// Recursion depth (for stack protection)
     recursion_depth: usize,
+
+    /// Module registry for loaded libraries
+    module_registry: ModuleRegistry,
+
+    /// Current module ID (if this context is executing a library module)
+    current_module: Option<ModuleId>,
+
+    /// Module namespace bindings (alias -> module_id)
+    module_namespaces: IndexMap<String, ModuleNamespace>,
+
+    /// Base path for resolving relative imports
+    base_path: PathBuf,
 }
 
 impl ExecutionContext {
@@ -100,12 +114,23 @@ impl ExecutionContext {
             timestamp: 0,
             next_call_site_id: 1, // 0 is reserved for global scope
             recursion_depth: 0,
+            module_registry: ModuleRegistry::new(),
+            current_module: None,
+            module_namespaces: IndexMap::new(),
+            base_path: PathBuf::from("."),
         }
     }
 
     /// Create a new execution context with default config
     pub fn default_with_config() -> Self {
         Self::new(Arc::new(RuntimeConfig::default()))
+    }
+
+    /// Create a new execution context with a base path for imports
+    pub fn with_base_path(config: Arc<RuntimeConfig>, base_path: impl Into<PathBuf>) -> Self {
+        let mut ctx = Self::new(config);
+        ctx.base_path = base_path.into();
+        ctx
     }
 
     /// Get the runtime configuration
@@ -376,6 +401,57 @@ impl ExecutionContext {
             varip_count: self.varip_vars.len(),
             recursion_depth: self.recursion_depth,
         }
+    }
+
+    //========================================================================
+    // Module System
+    //========================================================================
+
+    /// Get a reference to the module registry
+    pub fn module_registry(&self) -> &ModuleRegistry {
+        &self.module_registry
+    }
+
+    /// Get a mutable reference to the module registry
+    pub fn module_registry_mut(&mut self) -> &mut ModuleRegistry {
+        &mut self.module_registry
+    }
+
+    /// Set the current module ID (when executing a library)
+    pub fn set_current_module(&mut self, module_id: Option<ModuleId>) {
+        self.current_module = module_id;
+    }
+
+    /// Get the current module ID
+    pub fn current_module(&self) -> Option<ModuleId> {
+        self.current_module
+    }
+
+    /// Add a module namespace binding (from import statement)
+    pub fn add_module_namespace(&mut self, alias: impl Into<String>, module_id: ModuleId) {
+        let alias = alias.into();
+        let ns = ModuleNamespace::new(module_id, alias.clone());
+        self.module_namespaces.insert(alias, ns);
+    }
+
+    /// Get a module namespace by alias
+    pub fn get_module_namespace(&self, alias: &str) -> Option<&ModuleNamespace> {
+        self.module_namespaces.get(alias)
+    }
+
+    /// Check if a namespace alias exists
+    pub fn has_module_namespace(&self, alias: &str) -> bool {
+        self.module_namespaces.contains_key(alias)
+    }
+
+    /// Get the base path for resolving relative imports
+    pub fn base_path(&self) -> &std::path::Path {
+        &self.base_path
+    }
+
+    /// Set the base path for resolving relative imports
+    pub fn set_base_path(&mut self, path: impl Into<PathBuf>) {
+        self.base_path = path.into();
     }
 }
 

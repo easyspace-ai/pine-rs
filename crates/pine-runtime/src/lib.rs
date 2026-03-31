@@ -7,6 +7,7 @@
 
 pub mod config;
 pub mod context;
+pub mod module;
 pub mod na_ops;
 pub mod series;
 pub mod value;

@@ -1,0 +1,6 @@
+// Main script that imports the math library
+import "math_lib.pine" as math
+
+result1 = math.add(1, 2)
+result2 = math.subtract(5, 3)
+pi_value = math.PI

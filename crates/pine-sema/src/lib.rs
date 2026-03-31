@@ -13,7 +13,7 @@ pub mod scope;
 pub mod types;
 
 use pine_lexer::Span;
-use pine_parser::ast as ast;
+use pine_parser::ast;
 use scope::SymbolTable;
 use thiserror::Error;
 use types::{PineType, TypeDef};
@@ -238,9 +238,15 @@ impl SemanticAnalyzer {
                     }
                 }
             },
-            ast::TypeAnn::Series(inner) => PineType::Series(Box::new(self.convert_type_ann_inner(inner))),
-            ast::TypeAnn::Array(inner) => PineType::Array(Box::new(self.convert_type_ann_inner(inner))),
-            ast::TypeAnn::Matrix(inner) => PineType::Matrix(Box::new(self.convert_type_ann_inner(inner))),
+            ast::TypeAnn::Series(inner) => {
+                PineType::Series(Box::new(self.convert_type_ann_inner(inner)))
+            }
+            ast::TypeAnn::Array(inner) => {
+                PineType::Array(Box::new(self.convert_type_ann_inner(inner)))
+            }
+            ast::TypeAnn::Matrix(inner) => {
+                PineType::Matrix(Box::new(self.convert_type_ann_inner(inner)))
+            }
             ast::TypeAnn::Map(key, value) => PineType::Map(
                 Box::new(self.convert_type_ann_inner(key)),
                 Box::new(self.convert_type_ann_inner(value)),
@@ -286,12 +292,13 @@ impl SemanticAnalyzer {
                 let base_type = self.expr_type(base)?;
                 match base_type {
                     PineType::Udt(type_name) => {
-                        let type_def = self.symbol_table.lookup_type(&type_name).ok_or_else(|| {
-                            SemaError::UndefinedType {
-                                name: type_name.clone(),
-                                span: *span,
-                            }
-                        })?;
+                        let type_def =
+                            self.symbol_table.lookup_type(&type_name).ok_or_else(|| {
+                                SemaError::UndefinedType {
+                                    name: type_name.clone(),
+                                    span: *span,
+                                }
+                            })?;
                         let field_def = type_def.get_field(&field.name).ok_or_else(|| {
                             SemaError::UndefinedField {
                                 type_name,
@@ -308,16 +315,19 @@ impl SemanticAnalyzer {
                     }),
                 }
             }
-            ast::Expr::MethodCall { base, method, span, .. } => {
+            ast::Expr::MethodCall {
+                base, method, span, ..
+            } => {
                 let base_type = self.expr_type(base)?;
                 match base_type {
                     PineType::Udt(type_name) => {
-                        let type_def = self.symbol_table.lookup_type(&type_name).ok_or_else(|| {
-                            SemaError::UndefinedType {
-                                name: type_name.clone(),
-                                span: *span,
-                            }
-                        })?;
+                        let type_def =
+                            self.symbol_table.lookup_type(&type_name).ok_or_else(|| {
+                                SemaError::UndefinedType {
+                                    name: type_name.clone(),
+                                    span: *span,
+                                }
+                            })?;
                         let method_def = type_def.get_method(&method.name).ok_or_else(|| {
                             SemaError::UndefinedMethod {
                                 type_name,

@@ -1,0 +1,6 @@
+// Test library module for import/export system
+// library("MathLib")
+
+export add = (a, b) => a + b
+export subtract = (a, b) => a - b
+export PI = 3.14159

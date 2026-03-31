@@ -1,8 +1,8 @@
 //! Expression evaluation
 
-use crate::{EvaluationContext, EvalError, Result};
+use crate::{EvalError, EvaluationContext, Result};
 use pine_lexer::Span;
-use pine_parser::ast as ast;
+use pine_parser::ast;
 use pine_runtime::value::Value;
 
 /// Evaluate an expression
@@ -49,7 +49,9 @@ fn eval_literal(lit: &ast::Lit) -> Result<Value> {
             let g = ((c >> 16) & 0xFF) as u8;
             let b = ((c >> 8) & 0xFF) as u8;
             let a = (c & 0xFF) as u8;
-            Ok(Value::Color(pine_runtime::value::Color::with_alpha(r, g, b, a)))
+            Ok(Value::Color(pine_runtime::value::Color::with_alpha(
+                r, g, b, a,
+            )))
         }
         ast::Lit::Na => Ok(Value::Na),
     }

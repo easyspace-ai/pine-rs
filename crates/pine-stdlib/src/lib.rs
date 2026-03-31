@@ -34,6 +34,8 @@ pub fn init(registry: &mut registry::FunctionRegistry) {
     math::register_functions(registry);
     array::register_functions(registry);
     map::register_functions(registry);
+    str::register_functions(registry);
+    color::register_functions(registry);
 }
 
 #[cfg(test)]
@@ -65,7 +67,17 @@ mod tests {
         assert!(registry.contains("map.get"));
         assert!(registry.contains("map.put"));
 
+        // Check that str functions are registered
+        assert!(registry.contains("str.length"));
+        assert!(registry.contains("str.substring"));
+        assert!(registry.contains("str.concat"));
+
+        // Check that color functions are registered
+        assert!(registry.contains("color.rgb"));
+        assert!(registry.contains("color.rgba"));
+        assert!(registry.contains("color.from_hex"));
+
         // Check total function count
-        assert!(registry.len() >= 50); // At least 50 functions should be registered
+        assert!(registry.len() >= 80); // At least 80 functions should be registered
     }
 }

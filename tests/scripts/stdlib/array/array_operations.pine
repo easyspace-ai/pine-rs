@@ -1,0 +1,57 @@
+//@version=6
+indicator("Array Operations Test", overlay=true)
+
+// Test array creation with different types
+var intArr = array.new_int(3, 1)
+var floatArr = array.new_float(3, 1.5)
+var boolArr = array.new_bool(3, true)
+var strArr = array.new_string(3, "test")
+
+// Test array.push
+if barstate.isfirst
+    array.push(intArr, 42)
+    array.push(floatArr, 3.14)
+    array.push(boolArr, false)
+    array.push(strArr, "hello")
+
+// Test array.pop
+var poppedInt = 0
+var poppedFloat = 0.0
+if barstate.islast
+    poppedInt := array.pop(intArr)
+    poppedFloat := array.pop(floatArr)
+
+// Test array.insert and array.remove
+if barstate.isfirst
+    array.insert(intArr, 1, 99)
+    array.remove(intArr, 0)
+
+// Test array.sort and array.reverse
+var sortArr = array.new_float(0)
+if barstate.isfirst
+    array.push(sortArr, 3.0)
+    array.push(sortArr, 1.0)
+    array.push(sortArr, 2.0)
+    array.sort(sortArr)
+
+// Test array.copy and array.concat
+var arr1 = array.new_int(2, 1)
+var arr2 = array.new_int(2, 2)
+var combined = array.new_int(0)
+if barstate.isfirst
+    combined := array.concat(arr1, arr2)
+
+// Test array.fill
+var fillArr = array.new_int(5, 0)
+if barstate.isfirst
+    array.fill(fillArr, 42)
+
+// Get first and last elements
+firstInt = array.first(intArr)
+lastInt = array.last(intArr)
+
+// Plot results
+plot(poppedInt, "Popped Int", color=color.red)
+plot(poppedFloat, "Popped Float", color=color.blue)
+plot(firstInt, "First Element", color=color.green)
+plot(lastInt, "Last Element", color=color.orange)

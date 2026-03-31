@@ -1,0 +1,23 @@
+//@version=6
+indicator("UDT Point Test", overlay=true)
+
+// Define a Point type
+type Point
+    int x
+    int y
+
+// Create a point instance
+var point = Point.new({ x: 0, y: 0 })
+
+// Update point on each bar
+if barstate.isfirst
+    point.x := 10
+    point.y := 20
+
+// Modify point over time
+point.x := point.x + 1
+point.y := point.y + 2
+
+// Plot the coordinates
+plot(point.x, "X Coordinate", color=color.red)
+plot(point.y, "Y Coordinate", color=color.blue)

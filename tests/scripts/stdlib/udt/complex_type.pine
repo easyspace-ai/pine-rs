@@ -1,0 +1,46 @@
+//@version=6
+indicator("Complex UDT Test", overlay=true)
+
+// Define nested types
+type ColorRGB
+    int r
+    int g
+    int b
+
+type Rectangle
+    Point topLeft
+    Point bottomRight
+    ColorRGB color
+
+type Point
+    int x
+    int y
+
+// Create instances
+var rect = Rectangle.new({
+    topLeft: Point.new({ x: 0, y: 0 }),
+    bottomRight: Point.new({ x: 100, y: 100 }),
+    color: ColorRGB.new({ r: 255, g: 0, b: 0 })
+})
+
+// Update rectangle over time
+rect.topLeft.x := bar_index
+rect.topLeft.y := close
+rect.bottomRight.x := bar_index + 10
+rect.bottomRight.y := close + 5
+
+// Change color based on trend
+if close > open
+    rect.color.r := 0
+    rect.color.g := 255
+    rect.color.b := 0
+else
+    rect.color.r := 255
+    rect.color.g := 0
+    rect.color.b := 0
+
+// Plot some values
+plot(rect.topLeft.x, "Top Left X", color=color.blue)
+plot(rect.topLeft.y, "Top Left Y", color=color.red)
+plot(rect.color.r, "Color R", color=color.new(color.red, 50))
+plot(rect.color.g, "Color G", color=color.new(color.green, 50))
