@@ -1,0 +1,3 @@
+{closure@crates/pine-parser/src/expr.rs:58:20: 58:35}: chumsky::IterParser<'_, _, _, chumsky::extra::Full<chumsky::error::Rich<'_, pine_lexer::Token>, (), ()>>
+IgnoreWithCtx<A, B, OA, I, chumsky::extra::Full<<E as ParserExtra<'src, I>>::Error, <E as ParserExtra<'src, I>>::State, OA>>
+ThenWithCtx<A, B, OA, I, chumsky::extra::Full<<E as ParserExtra<'src, I>>::Error, <E as ParserExtra<'src, I>>::State, OA>>

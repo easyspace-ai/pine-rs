@@ -1,0 +1,3 @@
+Just<pine_lexer::Token, I, chumsky::extra::Full<chumsky::error::Rich<'a, pine_lexer::Token>, (), ()>>
+chumsky::Parser<'a, I, pine_lexer::Token, chumsky::extra::Full<chumsky::error::Rich<'a, pine_lexer::Token>, (), ()>>
+chumsky::Parser<'_, I, pine_lexer::Token, chumsky::extra::Full<chumsky::error::Rich<'a, pine_lexer::Token>, (), ()>>

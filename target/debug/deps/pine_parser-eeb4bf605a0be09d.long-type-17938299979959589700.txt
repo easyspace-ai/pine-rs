@@ -1,0 +1,2 @@
+OrNot<Choice<(chumsky::combinator::To<Just<pine_lexer::Token, I, chumsky::extra::Full<chumsky::error::Rich<'_, pine_lexer::Token>, (), ()>>, pine_lexer::Token, ast::VarKind>, chumsky::combinator::To<Just<pine_lexer::Token, I, chumsky::extra::Full<chumsky::error::Rich<'_, pine_lexer::Token>, (), ()>>, pine_lexer::Token, ast::VarKind>)>>
+chumsky::Parser<'_, I, std::option::Option<ast::VarKind>, chumsky::extra::Full<chumsky::error::Rich<'_, pine_lexer::Token>, (), ()>>

@@ -1,0 +1,1 @@
+Then<Select<{closure@/Users/leven/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/chumsky-0.10.1/src/lib.rs:2921:13: 2921:28}, pine_lexer::Token, ast::Ident, chumsky::extra::Full<EmptyErr, (), ()>>, OrNot<impl chumsky::Parser<'_, pine_lexer::Token, ast::TypeAnn> + Clone>, ast::Ident, std::option::Option<ast::TypeAnn>, chumsky::extra::Full<EmptyErr, (), ()>>

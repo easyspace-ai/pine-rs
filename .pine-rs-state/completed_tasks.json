@@ -1,1 +1,3 @@
 []
+P2-T1: pine-runtime/value.rs - Value 枚举定义（含 Na 传播规则）
+P2-T2: pine-runtime/na_ops.rs - 算术/比较运算的 Na 传播集中实现

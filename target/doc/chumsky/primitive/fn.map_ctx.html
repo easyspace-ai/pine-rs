@@ -1,0 +1,56 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Apply a mapping function to the context of this parser."><title>map_ctx in chumsky::primitive - Rust</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-6b053e98.ttf.woff2,FiraSans-Italic-81dc35de.woff2,FiraSans-Regular-0fe48ade.woff2,FiraSans-MediumItalic-ccf7e434.woff2,FiraSans-Medium-e1aa3f0a.woff2,SourceCodePro-Regular-8badfe75.ttf.woff2,SourceCodePro-Semibold-aa29a496.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2"href="../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../static.files/normalize-9960930a.css"><link rel="stylesheet" href="../../static.files/rustdoc-ca0dd0c4.css"><meta name="rustdoc-vars" data-root-path="../../" data-static-root-path="../../static.files/" data-current-crate="chumsky" data-themes="" data-resource-suffix="" data-rustdoc-version="1.92.0 (ded5c06cf 2025-12-08)" data-channel="1.92.0" data-search-js="search-d69d8955.js" data-stringdex-js="stringdex-c3e638e9.js" data-settings-js="settings-c38705f0.js" ><script src="../../static.files/storage-e2aeef58.js"></script><script defer src="sidebar-items.js"></script><script defer src="../../static.files/main-ce535bd0.js"></script><noscript><link rel="stylesheet" href="../../static.files/noscript-263c88ec.css"></noscript><link rel="alternate icon" type="image/png" href="../../static.files/favicon-32x32-eab170b8.png"><link rel="icon" type="image/svg+xml" href="../../static.files/favicon-044be391.svg"></head><body class="rustdoc fn"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><rustdoc-topbar><h2><a href="#">map_ctx</a></h2></rustdoc-topbar><nav class="sidebar"><div class="sidebar-crate"><h2><a href="../../chumsky/index.html">chumsky</a><span class="version">0.10.1</span></h2></div><div class="sidebar-elems"><div id="rustdoc-modnav"><h2><a href="index.html">In chumsky::<wbr>primitive</a></h2></div></div></nav><div class="sidebar-resizer" title="Drag to resize sidebar"></div><main><div class="width-limiter"><section id="main-content" class="content"><div class="main-heading"><div class="rustdoc-breadcrumbs"><a href="../index.html">chumsky</a>::<wbr><a href="index.html">primitive</a></div><h1>Function <span class="fn">map_ctx</span>&nbsp;<button id="copy-path" title="Copy item path to clipboard">Copy item path</button></h1><rustdoc-toolbar></rustdoc-toolbar><span class="sub-heading"><a class="src" href="../../src/chumsky/primitive.rs.html#759-773">Source</a> </span></div><pre class="rust item-decl"><code>pub const fn map_ctx&lt;'src, P, OP, I, E, EP, F&gt;(
+    mapper: F,
+    parser: P,
+) -&gt; <a class="struct" href="struct.MapCtx.html" title="struct chumsky::primitive::MapCtx">MapCtx</a>&lt;P, EP, F, E&gt;<div class="where">where
+    F: <a class="trait" href="https://doc.rust-lang.org/1.92.0/core/ops/function/trait.Fn.html" title="trait core::ops::function::Fn">Fn</a>(&amp;E::<a class="associatedtype" href="../extra/trait.ParserExtra.html#associatedtype.Context" title="type chumsky::extra::ParserExtra::Context">Context</a>) -&gt; EP::<a class="associatedtype" href="../extra/trait.ParserExtra.html#associatedtype.Context" title="type chumsky::extra::ParserExtra::Context">Context</a>,
+    I: <a class="trait" href="../input/trait.Input.html" title="trait chumsky::input::Input">Input</a>&lt;'src&gt;,
+    P: <a class="trait" href="../trait.Parser.html" title="trait chumsky::Parser">Parser</a>&lt;'src, I, OP, EP&gt;,
+    E: <a class="trait" href="../extra/trait.ParserExtra.html" title="trait chumsky::extra::ParserExtra">ParserExtra</a>&lt;'src, I&gt;,
+    EP: <a class="trait" href="../extra/trait.ParserExtra.html" title="trait chumsky::extra::ParserExtra">ParserExtra</a>&lt;'src, I&gt;,
+    EP::<a class="associatedtype" href="../extra/trait.ParserExtra.html#associatedtype.Context" title="type chumsky::extra::ParserExtra::Context">Context</a>: 'src,</div></code></pre><details class="toggle top-doc" open><summary class="hideme"><span>Expand description</span></summary><div class="docblock"><p>Apply a mapping function to the context of this parser.</p>
+<p>Note that this combinator will behave differently from all other maps, in terms of which
+parsers it effects - while other maps apply to the output of the parser, and thus read left-to-right, this one
+applies to the <em>input</em> of the parser, and as such applies right-to-left.</p>
+<p>More technically, if all combinators form a ‘tree’ of parsers, where each node executes
+its children in turn, normal maps apply up the tree. This means a parent mapper gets the
+result of its children, applies the map, then passes the new result to its parent. This map,
+however, applies down the tree. Context is provided from the parent,
+such as <a href="../trait.Parser.html#method.ignore_with_ctx" title="method chumsky::Parser::ignore_with_ctx"><code>Parser::ignore_with_ctx</code></a> and <a href="../trait.Parser.html#method.then_with_ctx" title="method chumsky::Parser::then_with_ctx"><code>Parser::then_with_ctx</code></a>,
+and gets altered before being provided to the children.</p>
+
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code>
+<span class="kw">let </span>upper = just::&lt;u8, <span class="kw-2">&amp;</span>[u8], extra::Context&lt;u8&gt;&gt;(<span class="string">b'0'</span>).configure(|cfg, ctx: <span class="kw-2">&amp;</span>u8| cfg.seq(<span class="kw-2">*</span>ctx));
+
+<span class="kw">let </span>inc = one_of::&lt;<span class="kw">_</span>, <span class="kw">_</span>, extra::Default&gt;(<span class="string">b'a'</span>..=<span class="string">b'z'</span>)
+    .ignore_with_ctx(map_ctx::&lt;<span class="kw">_</span>, u8, <span class="kw-2">&amp;</span>[u8], extra::Context&lt;u8&gt;, extra::Context&lt;u8&gt;, <span class="kw">_</span>&gt;(|c: <span class="kw-2">&amp;</span>u8| c.to_ascii_uppercase(), upper))
+    .to_slice()
+    .repeated()
+    .at_least(<span class="number">1</span>)
+    .collect::&lt;Vec&lt;<span class="kw">_</span>&gt;&gt;();
+
+<span class="macro">assert_eq!</span>(inc.parse(<span class="string">b"aAbB" </span><span class="kw">as </span><span class="kw-2">&amp;</span>[<span class="kw">_</span>]).into_result(), <span class="prelude-val">Ok</span>(<span class="macro">vec!</span>[<span class="string">b"aA" </span><span class="kw">as </span><span class="kw-2">&amp;</span>[<span class="kw">_</span>], <span class="string">b"bB"</span>]));
+<span class="macro">assert!</span>(inc.parse(<span class="string">b"aB"</span>).has_errors());</code></pre></div>
+<p>You can not only change the value of the context but also change the type entirely:</p>
+
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code>        extra,
+        primitive::{just, map_ctx},
+        ConfigParser, Parser,
+};
+
+<span class="kw">fn </span>string_ctx&lt;<span class="lifetime">'src</span>&gt;() -&gt; <span class="kw">impl </span>Parser&lt;<span class="lifetime">'src</span>, <span class="kw-2">&amp;</span><span class="lifetime">'src </span>str, (), extra::Context&lt;String&gt;&gt; {
+    just(<span class="string">""</span>.to_owned())
+        .configure(|cfg, s: <span class="kw-2">&amp;</span>String| cfg.seq(s.clone()))
+        .ignored()
+}
+
+<span class="kw">fn </span>usize_ctx&lt;<span class="lifetime">'src</span>&gt;() -&gt; <span class="kw">impl </span>Parser&lt;<span class="lifetime">'src</span>, <span class="kw-2">&amp;</span><span class="lifetime">'src </span>str, (), extra::Context&lt;usize&gt;&gt; {
+    map_ctx::&lt;<span class="kw">_</span>, <span class="kw">_</span>, <span class="kw">_</span>, extra::Context&lt;usize&gt;, extra::Context&lt;String&gt;, <span class="kw">_</span>&gt;(
+       |num: <span class="kw-2">&amp;</span>usize| num.to_string(),
+       string_ctx(),
+    )
+}
+
+<span class="kw">fn </span>specific_usize&lt;<span class="lifetime">'src</span>&gt;(num: usize) -&gt; <span class="kw">impl </span>Parser&lt;<span class="lifetime">'src</span>, <span class="kw-2">&amp;</span><span class="lifetime">'src </span>str, ()&gt; {
+    usize_ctx().with_ctx(num)
+}
+<span class="macro">assert!</span>(!specific_usize(<span class="number">10</span>).parse(<span class="string">"10"</span>).has_errors());</code></pre></div></div></details></section></div></main></body></html>

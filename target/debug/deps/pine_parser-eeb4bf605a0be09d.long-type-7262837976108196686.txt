@@ -1,0 +1,1 @@
+IgnoreThen<Just<pine_lexer::Token, pine_lexer::Token, chumsky::extra::Full<EmptyErr, (), ()>>, Recursive<dyn chumsky::Parser<'_, pine_lexer::Token, ast::TypeAnn>>, pine_lexer::Token, chumsky::extra::Full<EmptyErr, (), ()>>

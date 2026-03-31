@@ -1,0 +1,2 @@
+Recursive<dyn chumsky::Parser<'_, I, ast::Stmt, chumsky::extra::Full<chumsky::error::Rich<'_, pine_lexer::Token>, (), ()>>>
+chumsky::Parser<'_, I, ast::Stmt, chumsky::extra::Full<chumsky::error::Rich<'_, pine_lexer::Token>, (), ()>>
