@@ -8,6 +8,7 @@
 
 pub mod array;
 pub mod color;
+pub mod map;
 pub mod math;
 pub mod registry;
 pub mod str;
@@ -31,6 +32,8 @@ pub type Result<T> = std::result::Result<T, StdlibError>;
 pub fn init(registry: &mut registry::FunctionRegistry) {
     ta::register_functions(registry);
     math::register_functions(registry);
+    array::register_functions(registry);
+    map::register_functions(registry);
 }
 
 #[cfg(test)]
@@ -52,7 +55,17 @@ mod tests {
         assert!(registry.contains("math.max"));
         assert!(registry.contains("math.sqrt"));
 
+        // Check that array functions are registered
+        assert!(registry.contains("array.new_int"));
+        assert!(registry.contains("array.size"));
+        assert!(registry.contains("array.push"));
+
+        // Check that map functions are registered
+        assert!(registry.contains("map.new"));
+        assert!(registry.contains("map.get"));
+        assert!(registry.contains("map.put"));
+
         // Check total function count
-        assert!(registry.len() >= 20); // At least 20 functions should be registered
+        assert!(registry.len() >= 50); // At least 50 functions should be registered
     }
 }

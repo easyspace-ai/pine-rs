@@ -189,7 +189,9 @@ impl FunctionRegistry {
     fn register_stdlib(&mut self) {
         crate::ta::register_functions(self);
         crate::math::register_functions(self);
-        // Note: str, array, color modules will be added in later phases
+        crate::array::register_functions(self);
+        crate::map::register_functions(self);
+        // Note: str, color modules will be added in later phases
     }
 
     /// Get the number of registered functions

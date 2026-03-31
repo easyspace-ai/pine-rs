@@ -48,7 +48,7 @@ pub fn register_functions(registry: &mut FunctionRegistry) {
 /// Extract array from value
 fn extract_array(value: &Value) -> Option<&[Value]> {
     match value {
-        Value::Array(arr) => Some(arr.as_ref()),
+        Value::Array(arr) => Some(arr.as_slice()),
         _ => None,
     }
 }
@@ -1073,12 +1073,12 @@ mod tests {
     fn test_barssince() {
         let registry = test_registry();
 
-        let cond = Value::Array(Box::new([
+        let cond = Value::Array(vec![
             Value::Bool(false),
             Value::Bool(false),
             Value::Bool(true),
             Value::Bool(false),
-        ]));
+        ]);
 
         let result = registry.dispatch("ta.barssince", &[cond]);
         assert_eq!(result, Some(Value::Int(2)));

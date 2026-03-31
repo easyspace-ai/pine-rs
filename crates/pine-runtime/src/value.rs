@@ -3,6 +3,7 @@
 //! This module defines the core Value enum and NA propagation rules.
 //! All arithmetic and comparison operations must go through `na_ops` module.
 
+use std::collections::HashMap;
 use std::fmt;
 use std::sync::Arc;
 
@@ -105,6 +106,119 @@ impl Closure {
     }
 }
 
+/// A user-defined type (UDT) object
+#[derive(Debug, Clone, PartialEq)]
+pub struct Object {
+    /// Type name
+    pub type_name: String,
+    /// Field values
+    pub fields: HashMap<String, Value>,
+}
+
+impl Object {
+    /// Create a new object of the given type
+    pub fn new(type_name: impl Into<String>) -> Self {
+        Self {
+            type_name: type_name.into(),
+            fields: HashMap::new(),
+        }
+    }
+
+    /// Create a new object with pre-populated fields
+    pub fn with_fields(
+        type_name: impl Into<String>,
+        fields: impl IntoIterator<Item = (String, Value)>,
+    ) -> Self {
+        Self {
+            type_name: type_name.into(),
+            fields: fields.into_iter().collect(),
+        }
+    }
+
+    /// Get a field value
+    pub fn get(&self, field: &str) -> Option<&Value> {
+        self.fields.get(field)
+    }
+
+    /// Set a field value
+    pub fn set(&mut self, field: impl Into<String>, value: Value) {
+        self.fields.insert(field.into(), value);
+    }
+}
+
+/// A map (dictionary) with string keys
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct Map {
+    /// Key-value pairs
+    pub entries: HashMap<String, Value>,
+}
+
+impl Map {
+    /// Create a new empty map
+    pub fn new() -> Self {
+        Self {
+            entries: HashMap::new(),
+        }
+    }
+
+    /// Create a new map with pre-populated entries
+    pub fn with_entries(entries: impl IntoIterator<Item = (String, Value)>) -> Self {
+        Self {
+            entries: entries.into_iter().collect(),
+        }
+    }
+
+    /// Get a value by key
+    pub fn get(&self, key: &str) -> Option<&Value> {
+        self.entries.get(key)
+    }
+
+    /// Set a key-value pair
+    pub fn set(&mut self, key: impl Into<String>, value: Value) {
+        self.entries.insert(key.into(), value);
+    }
+
+    /// Remove a key and return its value
+    pub fn remove(&mut self, key: &str) -> Option<Value> {
+        self.entries.remove(key)
+    }
+
+    /// Check if a key exists
+    pub fn contains_key(&self, key: &str) -> bool {
+        self.entries.contains_key(key)
+    }
+
+    /// Get the number of entries
+    pub fn len(&self) -> usize {
+        self.entries.len()
+    }
+
+    /// Check if the map is empty
+    pub fn is_empty(&self) -> bool {
+        self.entries.is_empty()
+    }
+
+    /// Clear all entries
+    pub fn clear(&mut self) {
+        self.entries.clear();
+    }
+
+    /// Get an iterator over keys
+    pub fn keys(&self) -> impl Iterator<Item = &String> {
+        self.entries.keys()
+    }
+
+    /// Get an iterator over values
+    pub fn values(&self) -> impl Iterator<Item = &Value> {
+        self.entries.values()
+    }
+
+    /// Get an iterator over entries
+    pub fn iter(&self) -> impl Iterator<Item = (&String, &Value)> {
+        self.entries.iter()
+    }
+}
+
 /// Pine Script runtime value
 ///
 /// This enum represents all possible values in Pine Script v6.
@@ -124,15 +238,48 @@ pub enum Value {
     /// NA (not available) value - propagates through all operations
     #[default]
     Na,
-    /// Array value (boxed slice for cache efficiency)
-    Array(Box<[Value]>),
+    /// Array value (mutable vector for dynamic operations)
+    Array(Vec<Value>),
+    /// Matrix value (2D vector for matrix operations)
+    Matrix {
+        /// Number of rows
+        rows: usize,
+        /// Number of columns
+        cols: usize,
+        /// Flat data storage (row-major order)
+        data: Vec<Value>,
+    },
     /// Tuple value (for multiple return values)
     Tuple(Box<[Value]>),
     /// User-defined function
     Closure(Arc<Closure>),
+    /// User-defined type (UDT) object
+    Object(Arc<Object>),
+    /// Map/dictionary with string keys
+    Map(Arc<Map>),
 }
 
 impl Value {
+    //==========================================================================
+    // Constructors
+    //==========================================================================
+
+    /// Create a new matrix with the given dimensions and default value
+    pub fn new_matrix(rows: usize, cols: usize, default: Value) -> Self {
+        let data = vec![default; rows * cols];
+        Value::Matrix { rows, cols, data }
+    }
+
+    /// Create a new empty map
+    pub fn new_map() -> Self {
+        Value::Map(Arc::new(Map::new()))
+    }
+
+    /// Create a new map with pre-populated entries
+    pub fn new_map_with_entries(entries: impl IntoIterator<Item = (String, Value)>) -> Self {
+        Value::Map(Arc::new(Map::with_entries(entries)))
+    }
+
     //==========================================================================
     // Type checking methods
     //==========================================================================
@@ -185,6 +332,12 @@ impl Value {
         matches!(self, Value::Array(_))
     }
 
+    /// Check if this value is a matrix
+    #[inline]
+    pub fn is_matrix(&self) -> bool {
+        matches!(self, Value::Matrix { .. })
+    }
+
     /// Check if this value is a tuple
     #[inline]
     pub fn is_tuple(&self) -> bool {
@@ -195,6 +348,27 @@ impl Value {
     #[inline]
     pub fn is_closure(&self) -> bool {
         matches!(self, Value::Closure(_))
+    }
+
+    /// Check if this value is an object (UDT)
+    #[inline]
+    pub fn is_object(&self) -> bool {
+        matches!(self, Value::Object(_))
+    }
+
+    /// Check if this value is a map
+    #[inline]
+    pub fn is_map(&self) -> bool {
+        matches!(self, Value::Map(_))
+    }
+
+    /// Check if this value is an object of a specific type
+    #[inline]
+    pub fn is_object_of_type(&self, type_name: &str) -> bool {
+        match self {
+            Value::Object(obj) => obj.type_name == type_name,
+            _ => false,
+        }
     }
 
     /// Check if this value is truthy (used in conditions)
@@ -276,9 +450,27 @@ impl Value {
 
     /// Get the value as mutable array, or None if not an array
     #[inline]
-    pub fn as_array_mut(&mut self) -> Option<&mut [Value]> {
+    pub fn as_array_mut(&mut self) -> Option<&mut Vec<Value>> {
         match self {
             Value::Array(a) => Some(a),
+            _ => None,
+        }
+    }
+
+    /// Get the matrix data, rows, and cols
+    #[inline]
+    pub fn as_matrix(&self) -> Option<(usize, usize, &[Value])> {
+        match self {
+            Value::Matrix { rows, cols, data } => Some((*rows, *cols, data)),
+            _ => None,
+        }
+    }
+
+    /// Get mutable access to matrix data
+    #[inline]
+    pub fn as_matrix_mut(&mut self) -> Option<(usize, usize, &mut Vec<Value>)> {
+        match self {
+            Value::Matrix { rows, cols, data } => Some((*rows, *cols, data)),
             _ => None,
         }
     }
@@ -297,6 +489,42 @@ impl Value {
     pub fn as_closure(&self) -> Option<&Closure> {
         match self {
             Value::Closure(c) => Some(c),
+            _ => None,
+        }
+    }
+
+    /// Get the value as object, or None if not an object
+    #[inline]
+    pub fn as_object(&self) -> Option<&Object> {
+        match self {
+            Value::Object(o) => Some(o),
+            _ => None,
+        }
+    }
+
+    /// Get the value as mutable object, or None if not an object
+    #[inline]
+    pub fn as_object_mut(&mut self) -> Option<&mut Object> {
+        match self {
+            Value::Object(o) => Some(Arc::make_mut(o)),
+            _ => None,
+        }
+    }
+
+    /// Get the value as map, or None if not a map
+    #[inline]
+    pub fn as_map(&self) -> Option<&Map> {
+        match self {
+            Value::Map(m) => Some(m),
+            _ => None,
+        }
+    }
+
+    /// Get the value as mutable map, or None if not a map
+    #[inline]
+    pub fn as_map_mut(&mut self) -> Option<&mut Map> {
+        match self {
+            Value::Map(m) => Some(Arc::make_mut(m)),
             _ => None,
         }
     }
@@ -412,8 +640,11 @@ impl Value {
             Value::Color(c) => Value::String(c.to_hex().into()),
             Value::Na => Value::String("na".into()),
             Value::Array(_) => Value::String("array".into()),
+            Value::Matrix { .. } => Value::String("matrix".into()),
             Value::Tuple(_) => Value::String("tuple".into()),
             Value::Closure(c) => Value::String(format!("fn {}", c.name).into()),
+            Value::Object(obj) => Value::String(obj.type_name.clone().into()),
+            Value::Map(_) => Value::String("map".into()),
         }
     }
 }
@@ -448,6 +679,16 @@ impl fmt::Display for Value {
                 }
                 write!(f, "]")
             }
+            Value::Matrix { rows, cols, data } => {
+                write!(f, "matrix({rows}x{cols}) [")?;
+                for (i, v) in data.iter().enumerate() {
+                    if i > 0 {
+                        write!(f, ", ")?;
+                    }
+                    write!(f, "{v}")?;
+                }
+                write!(f, "]")
+            }
             Value::Tuple(t) => {
                 write!(f, "(")?;
                 for (i, v) in t.iter().enumerate() {
@@ -459,6 +700,26 @@ impl fmt::Display for Value {
                 write!(f, ")")
             }
             Value::Closure(c) => write!(f, "fn {}", c.name),
+            Value::Object(obj) => {
+                write!(f, "{} {{", obj.type_name)?;
+                for (i, (name, value)) in obj.fields.iter().enumerate() {
+                    if i > 0 {
+                        write!(f, ", ")?;
+                    }
+                    write!(f, "{name}: {value}")?;
+                }
+                write!(f, "}}")
+            }
+            Value::Map(m) => {
+                write!(f, "{{")?;
+                for (i, (key, value)) in m.entries.iter().enumerate() {
+                    if i > 0 {
+                        write!(f, ", ")?;
+                    }
+                    write!(f, "{key}: {value}")?;
+                }
+                write!(f, "}}")
+            }
         }
     }
 }
@@ -518,13 +779,25 @@ impl From<Color> for Value {
 
 impl From<Vec<Value>> for Value {
     fn from(v: Vec<Value>) -> Self {
-        Value::Array(v.into_boxed_slice())
+        Value::Array(v)
     }
 }
 
 impl From<Closure> for Value {
     fn from(v: Closure) -> Self {
         Value::Closure(Arc::new(v))
+    }
+}
+
+impl From<Object> for Value {
+    fn from(v: Object) -> Self {
+        Value::Object(Arc::new(v))
+    }
+}
+
+impl From<Map> for Value {
+    fn from(v: Map) -> Self {
+        Value::Map(Arc::new(v))
     }
 }
 
@@ -622,10 +895,7 @@ mod tests {
         assert_eq!(format!("{}", Value::Bool(true)), "true");
         assert_eq!(format!("{}", Value::Na), "na");
         assert_eq!(
-            format!(
-                "{}",
-                Value::Array(vec![Value::Int(1), Value::Int(2)].into())
-            ),
+            format!("{}", Value::Array(vec![Value::Int(1), Value::Int(2)])),
             "[1, 2]"
         );
     }
@@ -640,5 +910,123 @@ mod tests {
         // Non-finite floats become NA
         assert!(Value::from(f64::NAN).is_na());
         assert!(Value::from(f64::INFINITY).is_na());
+    }
+
+    #[test]
+    fn test_object() {
+        // Create an object
+        let mut obj = Object::new("Point");
+        obj.set("x", Value::Int(10));
+        obj.set("y", Value::Int(20));
+
+        // Test getters
+        assert_eq!(obj.get("x"), Some(&Value::Int(10)));
+        assert_eq!(obj.get("y"), Some(&Value::Int(20)));
+        assert_eq!(obj.get("z"), None);
+
+        // Convert to Value
+        let value: Value = obj.into();
+        assert!(value.is_object());
+        assert!(value.is_object_of_type("Point"));
+        assert!(!value.is_object_of_type("Line"));
+
+        // Test as_object
+        let obj_ref = value.as_object().unwrap();
+        assert_eq!(obj_ref.type_name, "Point");
+        assert_eq!(obj_ref.get("x"), Some(&Value::Int(10)));
+
+        // Test object display
+        let obj = Object::with_fields(
+            "Point",
+            vec![("x".to_string(), Value::Int(1)), ("y".to_string(), Value::Int(2))],
+        );
+        let value: Value = obj.into();
+        let display_str = format!("{}", value);
+        assert!(display_str.starts_with("Point {"));
+        assert!(display_str.contains("x: 1"));
+        assert!(display_str.contains("y: 2"));
+    }
+
+    #[test]
+    fn test_matrix() {
+        // Create a 2x3 matrix with default value 0
+        let matrix = Value::new_matrix(2, 3, Value::Int(0));
+        assert!(matrix.is_matrix());
+
+        // Test as_matrix
+        let (rows, cols, data) = matrix.as_matrix().unwrap();
+        assert_eq!(rows, 2);
+        assert_eq!(cols, 3);
+        assert_eq!(data.len(), 6);
+        assert_eq!(data[0], Value::Int(0));
+
+        // Test matrix display
+        let display_str = format!("{}", matrix);
+        assert!(display_str.starts_with("matrix(2x3) ["));
+    }
+
+    #[test]
+    fn test_map() {
+        // Create a map
+        let mut map = Map::new();
+        assert!(map.is_empty());
+        assert_eq!(map.len(), 0);
+
+        // Set entries
+        map.set("a", Value::Int(1));
+        map.set("b", Value::Float(2.5));
+        assert_eq!(map.len(), 2);
+        assert!(!map.is_empty());
+
+        // Test get
+        assert_eq!(map.get("a"), Some(&Value::Int(1)));
+        assert_eq!(map.get("b"), Some(&Value::Float(2.5)));
+        assert_eq!(map.get("c"), None);
+
+        // Test contains_key
+        assert!(map.contains_key("a"));
+        assert!(!map.contains_key("c"));
+
+        // Test remove
+        assert_eq!(map.remove("a"), Some(Value::Int(1)));
+        assert_eq!(map.len(), 1);
+        assert!(!map.contains_key("a"));
+
+        // Test clear
+        map.clear();
+        assert!(map.is_empty());
+    }
+
+    #[test]
+    fn test_map_value() {
+        // Create a map value
+        let mut map_value = Value::new_map();
+        assert!(map_value.is_map());
+
+        // Modify through as_map_mut
+        if let Some(map) = map_value.as_map_mut() {
+            map.set("x", Value::Int(10));
+            map.set("y", Value::Int(20));
+        }
+
+        // Check the modifications
+        if let Some(map) = map_value.as_map() {
+            assert_eq!(map.get("x"), Some(&Value::Int(10)));
+            assert_eq!(map.get("y"), Some(&Value::Int(20)));
+        }
+
+        // Test map display
+        let display_str = format!("{}", map_value);
+        assert!(display_str.starts_with("{"));
+        assert!(display_str.contains("x: 10"));
+        assert!(display_str.contains("y: 20"));
+
+        // Test with_entries constructor
+        let entries = vec![
+            ("name".to_string(), Value::String("test".into())),
+            ("value".to_string(), Value::Int(42)),
+        ];
+        let map_value = Value::new_map_with_entries(entries);
+        assert!(map_value.is_map());
     }
 }

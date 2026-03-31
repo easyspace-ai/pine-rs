@@ -1,1 +1,1 @@
-P3-T1: pine-stdlib/registry.rs - FunctionRegistry + hash dispatch
+P4-T3: pine-runtime + pine-stdlib：array<T> 完整实现
