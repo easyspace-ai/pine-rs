@@ -1,0 +1,15 @@
+//@version=6
+// Debug script to test addition
+indicator("Debug Addition", shorttitle="DebugAdd", overlay=true)
+
+// Test 1: 0 + close[0]
+test1 = 0.0 + close[0]
+plot(test1, title="test1", color=color.red, display=display.none)
+
+// Test 2: Let's try with an intermediate step
+sumTest = 0.0
+sumTest := sumTest + close[0]
+plot(sumTest, title="sumTest", color=color.green, display=display.none)
+
+// Also plot close
+plot(close, title="close", color=color.gray)

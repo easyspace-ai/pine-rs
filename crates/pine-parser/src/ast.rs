@@ -163,6 +163,17 @@ pub enum AssignTarget {
     Field { base: Box<Expr>, field: Ident },
 }
 
+impl AssignTarget {
+    /// Get the span of this assignment target
+    pub fn span(&self) -> Span {
+        match self {
+            AssignTarget::Var(ident) => ident.span,
+            AssignTarget::Index { base, offset } => base.span().merge(offset.span()),
+            AssignTarget::Field { base, field } => base.span().merge(field.span),
+        }
+    }
+}
+
 /// Statement
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum Stmt {
@@ -267,6 +278,30 @@ pub enum Stmt {
 
     /// Expression statement
     Expr(Expr),
+}
+
+impl Stmt {
+    /// Get the span of this statement
+    pub fn span(&self) -> Span {
+        match self {
+            Stmt::VarDecl { span, .. } => *span,
+            Stmt::Assign { span, .. } => *span,
+            Stmt::If { span, .. } => *span,
+            Stmt::For { span, .. } => *span,
+            Stmt::While { span, .. } => *span,
+            Stmt::Switch { span, .. } => *span,
+            Stmt::Break { span } => *span,
+            Stmt::Continue { span } => *span,
+            Stmt::Return { span, .. } => *span,
+            Stmt::FnDef { span, .. } => *span,
+            Stmt::TypeDef { span, .. } => *span,
+            Stmt::MethodDef { span, .. } => *span,
+            Stmt::Import { span, .. } => *span,
+            Stmt::Export { span, .. } => *span,
+            Stmt::Library { span, .. } => *span,
+            Stmt::Expr(expr) => expr.span(),
+        }
+    }
 }
 
 /// Expression

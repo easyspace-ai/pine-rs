@@ -1,0 +1,22 @@
+//@version=6
+// Debug script to test boolean values
+indicator("Debug Bool", shorttitle="DebugBool", overlay=true)
+
+// Test 1: Simple true
+testTrue = true
+plot(testTrue ? 1.0 : 0.0, title="testTrue", color=color.red, display=display.none)
+
+// Test 2: Simple false
+testFalse = false
+plot(testFalse ? 1.0 : 0.0, title="testFalse", color=color.green, display=display.none)
+
+// Test 3: not true
+testNotTrue = not true
+plot(testNotTrue ? 1.0 : 0.0, title="testNotTrue", color=color.blue, display=display.none)
+
+// Test 4: not false
+testNotFalse = not false
+plot(testNotFalse ? 1.0 : 0.0, title="testNotFalse", color=color.purple, display=display.none)
+
+// Also plot close
+plot(close, title="close", color=color.gray)

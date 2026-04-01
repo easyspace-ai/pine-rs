@@ -1,0 +1,12 @@
+//@version=6
+// Debug NA direct plot - directly call na() inside plot
+indicator("Debug NA Direct Plot", shorttitle="DebugNADirPlot", overlay=true)
+
+// Directly call na() inside plot ternary
+plot(na(close) ? 10.0 : 20.0, title="na_close", color=color.red, display=display.none)
+
+// Directly call not na() inside plot ternary
+plot(not na(close) ? 30.0 : 40.0, title="not_na_close", color=color.green, display=display.none)
+
+// Also plot close
+plot(close, title="close", color=color.gray)

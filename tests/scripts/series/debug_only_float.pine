@@ -1,0 +1,11 @@
+//@version=6
+// Debug only float count, no other variables
+indicator("Debug Only Float", shorttitle="DebugOnlyFloat", overlay=true)
+
+floatCount = 0.0
+
+for i = 0 to 4
+    floatCount := floatCount + 1.0
+    dummy = close[i]
+
+plot(floatCount, title="floatCount", color=color.green, display=display.none)

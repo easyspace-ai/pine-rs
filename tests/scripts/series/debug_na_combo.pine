@@ -1,0 +1,23 @@
+//@version=6
+// Debug script to test na() and not na()
+indicator("Debug NA Combo", shorttitle="DebugNA", overlay=true)
+
+// Test 1: na(close[0])
+isNa0 = na(close[0])
+plot(isNa0 ? 1.0 : 0.0, title="isNa0", color=color.red, display=display.none)
+
+// Test 2: not na(close[0])
+notNa0 = not na(close[0])
+plot(notNa0 ? 1.0 : 0.0, title="notNa0", color=color.green, display=display.none)
+
+// Test 3: Let's also try with a variable that should be NA
+// On bar 0, close[1] should be na
+isNa1 = na(close[1])
+plot(isNa1 ? 1.0 : 0.0, title="isNa1", color=color.blue, display=display.none)
+
+// Test 4: not na(close[1])
+notNa1 = not na(close[1])
+plot(notNa1 ? 1.0 : 0.0, title="notNa1", color=color.purple, display=display.none)
+
+// Also plot close
+plot(close, title="close", color=color.gray)

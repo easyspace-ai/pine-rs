@@ -1,0 +1,53 @@
+[package]
+name = "pine-tv"
+version = "0.1.0"
+edition = "2021"
+description = "Local TradingView-like web playground for Pine Script v6"
+
+[[bin]]
+name = "pine-tv"
+path = "src/main.rs"
+
+[dependencies]
+# pine-rs dependencies
+pine-runtime = { path = "../crates/pine-runtime" }
+pine-eval = { path = "../crates/pine-eval" }
+pine-parser = { path = "../crates/pine-parser" }
+pine-lexer = { path = "../crates/pine-lexer" }
+pine-sema = { path = "../crates/pine-sema" }
+pine-stdlib = { path = "../crates/pine-stdlib" }
+pine-output = { path = "../crates/pine-output" }
+
+# Web framework
+axum = { version = "0.7", features = ["ws"] }
+tokio = { version = "1", features = ["full"] }
+tower-http = { version = "0.5", features = ["fs", "cors", "compression-gzip"] }
+
+# WebSocket
+tokio-tungstenite = "0.21"
+
+# SSE streaming
+futures-util = "0.3"
+
+# AI API
+reqwest = { version = "0.11", features = ["stream", "json"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+# Error handling
+thiserror = "1"
+miette = { version = "5", features = ["fancy"] }
+
+# Logging
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+# Configuration
+config = "0.14"
+dirs = "5"
+
+# Chrono for timestamps
+chrono = "0.4"
+
+[dev-dependencies]
+insta = "1"

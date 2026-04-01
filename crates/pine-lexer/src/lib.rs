@@ -12,9 +12,94 @@ pub struct Lexer;
 
 impl Lexer {
     /// Lex the source code into a vector of tokens with spans
+    /// Includes INDENT/DEDENT tokens for significant whitespace
     pub fn lex(source: &str) -> Result<Vec<SpannedToken>, LexError> {
         let mut tokens = Vec::new();
         let mut logos_lexer = Token::lexer(source);
+        let _indent_stack: Vec<usize> = vec![0];
+        let mut _last_line_indent = 0;
+
+        while let Some(result) = logos_lexer.next() {
+            match result {
+                Ok(Token::Newline) => {
+                    // Track position for indentation processing
+                    let span = Span::new(logos_lexer.span().start, logos_lexer.span().end);
+                    tokens.push((Token::Newline, span));
+
+                    // Look ahead to check indentation of next line
+                    let current_pos = logos_lexer.span().end;
+                    let remaining = &source[current_pos..];
+
+                    // Find next non-empty line
+                    for line in remaining.lines() {
+                        let trimmed = line.trim_start();
+                        if !trimmed.is_empty() && !trimmed.starts_with("//") {
+                            let _indent = line.len() - trimmed.len();
+                            break;
+                        }
+                    }
+                }
+                Ok(token) => {
+                    let span = Span::new(logos_lexer.span().start, logos_lexer.span().end);
+                    tokens.push((token, span));
+                }
+                Err(e) => return Err(e),
+            }
+        }
+
+        Ok(tokens)
+    }
+
+    /// Lex with indentation processing (generates INDENT/DEDENT tokens)
+    pub fn lex_with_indentation(source: &str) -> Result<Vec<SpannedToken>, LexError> {
+        let mut tokens = Vec::new();
+        let mut indent_stack: Vec<usize> = vec![0];
+
+        for line in source.lines() {
+            let trimmed = line.trim_start();
+
+            // Skip empty lines and comment-only lines
+            if trimmed.is_empty() || trimmed.starts_with("//") {
+                continue;
+            }
+
+            // Calculate indentation
+            let indent = line.len() - trimmed.len();
+            let current_indent = *indent_stack.last().unwrap_or(&0);
+
+            // Handle indentation changes
+            if indent > current_indent {
+                indent_stack.push(indent);
+                tokens.push((Token::Indent, Span::new(0, 0)));
+            } else if indent < current_indent {
+                while indent < *indent_stack.last().unwrap_or(&0) {
+                    indent_stack.pop();
+                    tokens.push((Token::Dedent, Span::new(0, 0)));
+                }
+                if indent != *indent_stack.last().unwrap_or(&0) {
+                    return Err(LexError);
+                }
+            }
+
+            // Lex this line
+            let line_tokens = Self::lex_line(trimmed)?;
+            tokens.extend(line_tokens);
+            tokens.push((Token::Newline, Span::new(0, 0)));
+        }
+
+        // Final dedents
+        while indent_stack.len() > 1 {
+            indent_stack.pop();
+            tokens.push((Token::Dedent, Span::new(0, 0)));
+        }
+
+        Ok(tokens)
+    }
+
+    /// Lex a single line (without indentation)
+    fn lex_line(line: &str) -> Result<Vec<SpannedToken>, LexError> {
+        let mut tokens = Vec::new();
+        let mut logos_lexer = Token::lexer(line);
 
         while let Some(result) = logos_lexer.next() {
             match result {

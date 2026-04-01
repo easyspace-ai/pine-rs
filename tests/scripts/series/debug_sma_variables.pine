@@ -1,0 +1,23 @@
+//@version=6
+// Debug SMA variables
+indicator("Debug SMA Vars", shorttitle="DebugSMAVars", overlay=true)
+
+length = 5
+
+// Let's just calculate sum and count and output them
+sum = 0.0
+count = 0
+for i = 0 to length - 1
+    sum := sum + close[i]
+    count := count + 1
+
+// Output sum and count
+plot(sum, title="sum", color=color.red, display=display.none)
+plot(count, title="count", color=color.green, display=display.none)
+
+// Also calculate division manually
+div = sum / 5.0
+plot(div, title="div", color=color.blue, display=display.none)
+
+// Also plot close
+plot(close, title="close", color=color.gray)

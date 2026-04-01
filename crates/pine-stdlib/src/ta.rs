@@ -4,8 +4,75 @@
 //! All functions follow TradingView's exact semantics including NA handling and initialization.
 
 use crate::registry::{FunctionMeta, FunctionRegistry};
+use pine_runtime::series::SeriesBufF64;
 use pine_runtime::value::Value;
 use std::sync::Arc;
+
+/// Optimized SMA calculation using SeriesBufF64
+///
+/// This is faster than the generic calculate_sma because it uses SIMD-optimized
+/// sum operations on contiguous f64 data.
+///
+/// # Note
+/// The `values` slice should be in chronological order [oldest, ..., newest].
+/// This function will reverse them to match SeriesBufF64's [newest, ..., oldest] convention.
+pub fn calculate_sma_f64(values: &[f64], length: usize) -> Option<f64> {
+    if length == 0 || values.len() < length {
+        return None;
+    }
+
+    // Use SeriesBufF64 for SIMD-optimized calculation
+    // Reverse the values since SeriesBufF64 expects newest first
+    let mut series = SeriesBufF64::new(values.len().max(length));
+    for &v in values.iter().rev() {
+        series.push(v);
+    }
+    series.sma(length)
+}
+
+/// Optimized highest calculation using SeriesBufF64
+///
+/// # Note
+/// The `values` slice should be in chronological order [oldest, ..., newest].
+pub fn calculate_highest_f64(values: &[f64], length: usize) -> Option<f64> {
+    if length == 0 || values.is_empty() {
+        return None;
+    }
+
+    let mut series = SeriesBufF64::new(values.len().max(length));
+    for &v in values.iter().rev() {
+        series.push(v);
+    }
+    series.max(length.min(values.len()))
+}
+
+/// Optimized lowest calculation using SeriesBufF64
+///
+/// # Note
+/// The `values` slice should be in chronological order [oldest, ..., newest].
+pub fn calculate_lowest_f64(values: &[f64], length: usize) -> Option<f64> {
+    if length == 0 || values.is_empty() {
+        return None;
+    }
+
+    let mut series = SeriesBufF64::new(values.len().max(length));
+    for &v in values.iter().rev() {
+        series.push(v);
+    }
+    series.min(length.min(values.len()))
+}
+
+/// Convert Value slice to f64 vec, skipping NA values
+fn value_slice_to_f64(values: &[Value]) -> Vec<f64> {
+    values
+        .iter()
+        .filter_map(|v| match v {
+            Value::Float(f) => Some(*f),
+            Value::Int(n) => Some(*n as f64),
+            _ => None,
+        })
+        .collect()
+}
 
 /// Register all ta.* functions with the registry
 pub fn register_functions(registry: &mut FunctionRegistry) {
@@ -71,26 +138,33 @@ fn get_float(value: &Value) -> Option<f64> {
 }
 
 /// Simple Moving Average calculation
+///
+/// Uses SIMD-optimized SeriesBufF64 internally for better performance
 fn calculate_sma(values: &[Value], length: usize) -> Value {
     if length == 0 || values.len() < length {
         return Value::Na;
     }
 
-    let mut sum = 0.0;
-    let mut count = 0;
+    // Convert to f64 slice for SIMD optimization
+    // Values are in order [oldest, ..., newest] in the array
+    // but SeriesBufF64 expects [newest, ..., oldest]
+    let f64_values: Vec<f64> = values
+        .iter()
+        .filter_map(|v| match v {
+            Value::Float(f) => Some(*f),
+            Value::Int(n) => Some(*n as f64),
+            _ => None,
+        })
+        .collect();
 
-    for i in 0..length {
-        if let Some(f) = values.get(i).and_then(get_float) {
-            sum += f;
-            count += 1;
-        }
-        // NA values are skipped (not counted)
+    if f64_values.len() < length {
+        return Value::Na;
     }
 
-    if count == 0 {
-        Value::Na
-    } else {
-        Value::Float(sum / count as f64)
+    // Use SIMD-optimized version
+    match calculate_sma_f64(&f64_values, length) {
+        Some(result) => Value::Float(result),
+        None => Value::Na,
     }
 }
 
@@ -729,6 +803,8 @@ fn register_stoch(registry: &mut FunctionRegistry) {
 // ============================================================================
 
 /// Register ta.highest - Highest value over period
+///
+/// Uses SIMD-optimized SeriesBufF64 for better performance
 fn register_highest(registry: &mut FunctionRegistry) {
     let meta = FunctionMeta::new("highest")
         .with_namespace("ta")
@@ -742,20 +818,11 @@ fn register_highest(registry: &mut FunctionRegistry) {
         };
         let length = extract_length(args, 1, 14);
 
-        let mut highest = f64::NEG_INFINITY;
-        let mut found = false;
-
-        for i in 0..length.min(series.len()) {
-            if let Some(val) = series.get(i).and_then(get_float) {
-                highest = highest.max(val);
-                found = true;
-            }
-        }
-
-        if found {
-            Value::Float(highest)
-        } else {
-            Value::Na
+        // Use SIMD-optimized version
+        let f64_values = value_slice_to_f64(series);
+        match calculate_highest_f64(&f64_values, length) {
+            Some(result) => Value::Float(result),
+            None => Value::Na,
         }
     });
 
@@ -763,6 +830,8 @@ fn register_highest(registry: &mut FunctionRegistry) {
 }
 
 /// Register ta.lowest - Lowest value over period
+///
+/// Uses SIMD-optimized SeriesBufF64 for better performance
 fn register_lowest(registry: &mut FunctionRegistry) {
     let meta = FunctionMeta::new("lowest")
         .with_namespace("ta")
@@ -776,20 +845,11 @@ fn register_lowest(registry: &mut FunctionRegistry) {
         };
         let length = extract_length(args, 1, 14);
 
-        let mut lowest = f64::INFINITY;
-        let mut found = false;
-
-        for i in 0..length.min(series.len()) {
-            if let Some(val) = series.get(i).and_then(get_float) {
-                lowest = lowest.min(val);
-                found = true;
-            }
-        }
-
-        if found {
-            Value::Float(lowest)
-        } else {
-            Value::Na
+        // Use SIMD-optimized version
+        let f64_values = value_slice_to_f64(series);
+        match calculate_lowest_f64(&f64_values, length) {
+            Some(result) => Value::Float(result),
+            None => Value::Na,
         }
     });
 

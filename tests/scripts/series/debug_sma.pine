@@ -1,0 +1,23 @@
+//@version=6
+// Debug script to understand what's happening
+indicator("Debug SMA", shorttitle="Debug", overlay=true)
+
+// Test 1: Direct access to close values
+c0 = close[0]
+c1 = close[1]
+c2 = close[2]
+c3 = close[3]
+c4 = close[4]
+
+plot(c0, title="c0", color=color.red, display=display.none)
+plot(c1, title="c1", color=color.green, display=display.none)
+plot(c2, title="c2", color=color.blue, display=display.none)
+plot(c3, title="c3", color=color.yellow, display=display.none)
+plot(c4, title="c4", color=color.orange, display=display.none)
+
+// Test 2: Simple sum without loop
+sumDirect = c0 + c1 + c2 + c3 + c4
+plot(sumDirect, title="sumDirect", color=color.purple, display=display.none)
+
+// Also plot the close
+plot(close, title="close", color=color.gray)

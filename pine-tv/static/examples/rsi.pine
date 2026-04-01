@@ -1,0 +1,14 @@
+//@version=6
+indicator("RSI Indicator", shorttitle="RSI")
+
+len = input.int(14, title="Length", minval=1, maxval=200)
+src = input(close, title="Source")
+overbought = input.int(70, title="Overbought Level")
+oversold = input.int(30, title="Oversold Level")
+
+rsi_val = ta.rsi(src, len)
+plot(rsi_val, title="RSI", color=#FF9800, linewidth=2)
+
+hline(overbought, "Overbought", color=#F44336, linestyle=hline.style_dashed)
+hline(oversold, "Oversold", color=#4CAF50, linestyle=hline.style_dashed)
+hline(50, "Midline", color=#9E9E9E, linestyle=hline.style_dotted)

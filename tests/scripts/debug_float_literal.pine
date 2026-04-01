@@ -1,0 +1,17 @@
+//@version=6
+// Debug using float literal instead of close[i]
+indicator("Debug Float Literal", shorttitle="DebugFloatLit", overlay=true)
+
+floatCount = 0.0
+sum = 0.0
+intCount = 0
+
+for i = 0 to 4
+    intCount := intCount + 1
+    floatCount := floatCount + 1.0
+    // Use float literal instead of close[i]
+    sum := sum + 1.0
+
+plot(intCount, title="intCount", color=color.red, display=display.none)
+plot(floatCount, title="floatCount", color=color.green, display=display.none)
+plot(sum, title="sum", color=color.blue, display=display.none)

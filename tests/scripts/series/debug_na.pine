@@ -1,0 +1,20 @@
+//@version=6
+// Debug script to test na() function
+indicator("Debug NA", shorttitle="DebugNA", overlay=true)
+
+// Test na() with a valid value
+c0 = close[0]
+isNa0 = na(c0)
+plot(isNa0 ? 1.0 : 0.0, title="isNa0", color=color.red, display=display.none)
+
+// Test na() with a possibly na value
+c1 = close[1]
+isNa1 = na(c1)
+plot(isNa1 ? 1.0 : 0.0, title="isNa1", color=color.green, display=display.none)
+
+// Test direct comparison with na
+eqNa0 = c0 == na
+plot(eqNa0 ? 1.0 : 0.0, title="eqNa0", color=color.blue, display=display.none)
+
+// Also plot the values
+plot(c0, title="c0", color=color.gray, display=display.none)

@@ -2,11 +2,108 @@
 //!
 //! This module provides a hash-based dispatch system for built-in functions,
 //! inspired by Rhai's function dispatch mechanism.
+//!
+//! # Hash Dispatch with Bloom Filter
+//!
+//! The registry uses a two-level lookup system for optimal performance:
+//!
+//! 1. **Bloom Filter**: Quickly check if a function might exist (no false negatives)
+//! 2. **Hash Map**: Actual function lookup with O(1) complexity
+//!
+//! This avoids expensive string comparisons for non-existent functions.
 
 use indexmap::IndexMap;
 use pine_runtime::value::Value;
+use std::collections::HashMap;
 use std::fmt;
+use std::hash::{Hash, Hasher};
 use std::sync::Arc;
+
+/// A simple Bloom filter for fast negative checks
+///
+/// Bloom filters allow us to quickly determine that a function definitely
+/// does NOT exist, avoiding expensive hash table lookups for typos or
+/// undefined functions.
+#[derive(Debug, Clone)]
+pub struct BloomFilter {
+    /// Bit array (using u64 for efficiency)
+    bits: Vec<u64>,
+    /// Number of hash functions
+    k: usize,
+    /// Size in bits
+    size: usize,
+}
+
+impl Default for BloomFilter {
+    fn default() -> Self {
+        Self::default_for_functions()
+    }
+}
+
+impl BloomFilter {
+    /// Create a new Bloom filter with expected number of items and false positive rate
+    pub fn new(expected_items: usize, false_positive_rate: f64) -> Self {
+        // Calculate optimal size: m = -n * ln(p) / (ln(2)^2)
+        let size = (-(expected_items as f64) * false_positive_rate.ln() / (2.0f64.ln().powi(2)))
+            .ceil() as usize;
+        // Calculate optimal k: k = m/n * ln(2)
+        let k = ((size as f64 / expected_items as f64) * 2.0f64.ln()).ceil() as usize;
+        let k = k.max(1);
+
+        let num_u64s = size.div_ceil(64);
+        Self {
+            bits: vec![0; num_u64s],
+            k,
+            size: num_u64s * 64,
+        }
+    }
+
+    /// Create a default Bloom filter (suitable for ~100 functions)
+    pub fn default_for_functions() -> Self {
+        Self::new(100, 0.01)
+    }
+
+    /// Hash a string to a bit index
+    #[inline]
+    fn hash_index(&self, s: &str, seed: u64) -> usize {
+        let mut hasher = std::collections::hash_map::DefaultHasher::new();
+        s.hash(&mut hasher);
+        seed.hash(&mut hasher);
+        let hash = hasher.finish();
+        (hash as usize) % self.size
+    }
+
+    /// Add an item to the filter
+    pub fn add(&mut self, item: &str) {
+        for i in 0..self.k {
+            let idx = self.hash_index(item, i as u64);
+            let (word, bit) = (idx / 64, idx % 64);
+            self.bits[word] |= 1u64 << bit;
+        }
+    }
+
+    /// Check if an item might be in the set
+    ///
+    /// Returns `false` if the item is definitely NOT in the set.
+    /// Returns `true` if the item MIGHT be in the set (could be false positive).
+    pub fn might_contain(&self, item: &str) -> bool {
+        for i in 0..self.k {
+            let idx = self.hash_index(item, i as u64);
+            let (word, bit) = (idx / 64, idx % 64);
+            if (self.bits[word] & (1u64 << bit)) == 0 {
+                return false;
+            }
+        }
+        true
+    }
+
+    /// Clear the filter
+    pub fn clear(&mut self) {
+        for word in &mut self.bits {
+            *word = 0;
+        }
+    }
+}
 
 /// Type alias for builtin function implementation
 pub type BuiltinFn = Arc<dyn Fn(&[Value]) -> Value + Send + Sync>;
@@ -98,15 +195,47 @@ impl fmt::Debug for FunctionEntry {
     }
 }
 
-/// Function registry with hash-based dispatch
+/// A hash key for function lookup
+///
+/// Uses precomputed hash for fast comparison
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct FunctionHash(pub u64);
+
+impl FunctionHash {
+    /// Compute hash for a function name
+    pub fn compute(name: &str) -> Self {
+        use std::collections::hash_map::DefaultHasher;
+        let mut hasher = DefaultHasher::new();
+        name.hash(&mut hasher);
+        Self(hasher.finish())
+    }
+
+    /// Get the raw hash value
+    #[inline]
+    pub fn value(&self) -> u64 {
+        self.0
+    }
+}
+
+/// Function registry with hash-based dispatch and Bloom filter
 ///
 /// This registry stores built-in functions and provides O(1) lookup
-/// by function name. It supports namespaced functions (e.g., "ta.sma").
+/// by function name using a two-level system:
+///
+/// 1. Bloom filter for fast negative checks
+/// 2. Hash map for actual function lookup
+///
+/// It supports namespaced functions (e.g., "ta.sma").
 #[derive(Default)]
 pub struct FunctionRegistry {
-    /// Registered functions (full_name -> entry)
+    /// Registered functions by full name (for metadata and iteration)
     functions: IndexMap<String, FunctionEntry>,
-    /// Fast lookup cache for common functions
+    /// Hash-based lookup (hash -> entry)
+    /// This provides O(1) lookup without string comparison
+    hash_lookup: HashMap<FunctionHash, FunctionEntry>,
+    /// Bloom filter for fast negative checks
+    bloom: BloomFilter,
+    /// Fast lookup cache for hot functions (called frequently)
     hot_functions: IndexMap<String, BuiltinFn>,
 }
 
@@ -122,7 +251,12 @@ impl fmt::Debug for FunctionRegistry {
 impl FunctionRegistry {
     /// Create a new empty function registry
     pub fn new() -> Self {
-        Self::default()
+        Self {
+            functions: IndexMap::new(),
+            hash_lookup: HashMap::new(),
+            bloom: BloomFilter::default_for_functions(),
+            hot_functions: IndexMap::new(),
+        }
     }
 
     /// Create a new registry with all standard library functions
@@ -135,39 +269,77 @@ impl FunctionRegistry {
     /// Register a function
     pub fn register(&mut self, meta: FunctionMeta, func: BuiltinFn) {
         let full_name = meta.full_name();
+        let hash = FunctionHash::compute(&full_name);
+
         let entry = FunctionEntry { meta, func };
-        self.functions.insert(full_name, entry);
+
+        // Add to all lookup structures
+        self.functions.insert(full_name.clone(), entry.clone());
+        self.hash_lookup.insert(hash, entry);
+        self.bloom.add(&full_name);
     }
 
     /// Register with hot path optimization
+    ///
+    /// Hot functions are stored in a separate cache for even faster dispatch.
     pub fn register_hot(&mut self, meta: FunctionMeta, func: BuiltinFn) {
         let full_name = meta.full_name();
         self.hot_functions.insert(full_name.clone(), func.clone());
         self.register(meta, func);
     }
 
-    /// Look up a function by name
+    /// Look up a function by name (string-based)
+    ///
+    /// This is the traditional lookup method. For better performance,
+    /// consider using `lookup_by_hash` if you have a precomputed hash.
     pub fn lookup(&self, name: &str) -> Option<&FunctionEntry> {
         self.functions.get(name)
     }
 
+    /// Look up a function by precomputed hash
+    ///
+    /// This provides O(1) lookup without string comparison.
+    #[inline]
+    pub fn lookup_by_hash(&self, hash: FunctionHash) -> Option<&FunctionEntry> {
+        self.hash_lookup.get(&hash)
+    }
+
     /// Fast dispatch for hot functions
+    #[inline]
     pub fn dispatch_hot(&self, name: &str, args: &[Value]) -> Option<Value> {
         self.hot_functions.get(name).map(|f| f(args))
     }
 
-    /// Dispatch a function call
+    /// Dispatch a function call using hash-based lookup
+    ///
+    /// Uses the two-level lookup system:
+    /// 1. Bloom filter for fast negative check
+    /// 2. Hash map for actual function lookup
     pub fn dispatch(&self, name: &str, args: &[Value]) -> Option<Value> {
-        // Try hot path first
+        // Try hot path first (fastest)
         if let Some(result) = self.dispatch_hot(name, args) {
             return Some(result);
         }
 
-        // Fall back to full lookup
-        self.functions.get(name).map(|entry| (entry.func)(args))
+        // Bloom filter check - fast negative check
+        if !self.bloom.might_contain(name) {
+            return None;
+        }
+
+        // Hash-based lookup - O(1) without string comparison
+        let hash = FunctionHash::compute(name);
+        self.hash_lookup.get(&hash).map(|entry| (entry.func)(args))
     }
 
-    /// Check if a function exists
+    /// Check if a function exists using Bloom filter
+    ///
+    /// This is fast but may return false positives (rarely).
+    /// Use `contains_exact` for definitive checks.
+    pub fn might_contain(&self, name: &str) -> bool {
+        self.bloom.might_contain(name)
+    }
+
+    /// Check if a function exists (exact check)
     pub fn contains(&self, name: &str) -> bool {
         self.functions.contains_key(name)
     }
@@ -203,6 +375,12 @@ impl FunctionRegistry {
     /// Check if the registry is empty
     pub fn is_empty(&self) -> bool {
         self.functions.is_empty()
+    }
+
+    /// Get the Bloom filter (for testing/debugging)
+    #[cfg(test)]
+    fn bloom_filter(&self) -> &BloomFilter {
+        &self.bloom
     }
 }
 

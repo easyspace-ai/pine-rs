@@ -84,7 +84,7 @@ impl TypeDef {
 }
 
 /// Pine Script types
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum PineType {
     /// Integer type
     Int,

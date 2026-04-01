@@ -1,0 +1,12 @@
+//@version=6
+indicator("EMA Triple - 30/60/120", overlay=true)
+
+// Calculate EMAs
+ema30 = ta.ema(close, 30)
+ema60 = ta.ema(close, 60)
+ema120 = ta.ema(close, 120)
+
+// Plot EMAs
+plot(ema30, title="EMA 30", color=#FF9800, linewidth=2)
+plot(ema60, title="EMA 60", color=#E91E63, linewidth=2)
+plot(ema120, title="EMA 120", color=#9C27B0, linewidth=2)

@@ -1,0 +1,8 @@
+//@version=6
+indicator("SMA Indicator", overlay=true)
+
+len = input.int(20, title="Length", minval=1, maxval=200)
+src = input(close, title="Source")
+
+sma_val = ta.sma(src, len)
+plot(sma_val, title="SMA", color=#2196F3, linewidth=2)

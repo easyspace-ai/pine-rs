@@ -1,0 +1,14 @@
+//@version=6
+// Debug loop without close[i] access
+indicator("Debug Loop Without Close", shorttitle="DebugLoopNoClose", overlay=true)
+
+floatCount1 = 0.0
+floatCount2 = 0.0
+
+for i = 0 to 4
+    floatCount1 := floatCount1 + 1.0
+    floatCount2 := floatCount2 + 1.0
+    // No close[i] access!
+
+plot(floatCount1, title="floatCount1", color=color.red, display=display.none)
+plot(floatCount2, title="floatCount2", color=color.green, display=display.none)

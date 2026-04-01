@@ -270,102 +270,86 @@ fn main() -> Result<()> {
     }
 }
 
-/// Execute a Pine Script
+/// Convert OHLCV data to BarData for pine-eval
+fn convert_to_bar_data(data: &[OHLCV]) -> Vec<pine_eval::runner::BarData> {
+    data.iter()
+        .map(|d| pine_eval::runner::BarData::new(
+            d.open, d.high, d.low, d.close, d.volume, d.time,
+        ))
+        .collect()
+}
+
+/// Execute a Pine Script using pine-eval
 fn execute_script(script: &str, data: Option<&[OHLCV]>) -> Result<ExecutionResult> {
+    // Parse the script - use lex_with_indentation to get INDENT/DEDENT tokens
+    let tokens = pine_lexer::Lexer::lex_with_indentation(script)
+        .map_err(|e| miette!("Lexical error: {:?}", e))?;
+
+    let ast = pine_parser::parser::parse(tokens)
+        .map_err(|e| miette!("Parse error: {:?}", e))?;
+
     let bars_processed = data.map(|d| d.len()).unwrap_or(0);
 
     // Check if this is a strategy script
     let is_strategy = script.contains("strategy(");
 
-    // For now, return a placeholder result with mock strategy signals if applicable
+    // Execute with data if provided
     let mut outputs = HashMap::new();
     let mut plots = HashMap::new();
     let mut strategy_result = None;
 
-    // If we have data, calculate a simple SMA as an example
-    if let Some(d) = data {
-        if d.len() >= 3 {
-            // Calculate fast SMA (3-period)
-            let fast_sma: Vec<f64> = d
-                .windows(3)
-                .map(|window| {
-                    let sum: f64 = window.iter().map(|ohlcv| ohlcv.close).sum();
-                    sum / 3.0
+    if let Some(ohlcv_data) = data {
+        let bar_data = convert_to_bar_data(ohlcv_data);
+
+        // Run the script using pine-eval runner
+        let mut ctx = pine_eval::EvaluationContext::new();
+
+        // Execute bar by bar
+        let _results = match pine_eval::runner::run_bar_by_bar(&ast, &bar_data, &mut ctx) {
+            Ok(r) => r,
+            Err(e) => {
+                return Ok(ExecutionResult {
+                    success: false,
+                    outputs: HashMap::new(),
+                    plots: None,
+                    strategy: None,
+                    error: Some(format!("Execution error: {:?}", e)),
+                    bars_processed: 0,
+                });
+            }
+        };
+
+        // Collect outputs from plot_outputs
+        for (title, values) in ctx.plot_outputs.get_plots() {
+            let plot_values: Vec<f64> = values
+                .iter()
+                .map(|v| match v {
+                    Some(f) => *f,
+                    None => f64::NAN,
                 })
                 .collect();
 
-            // Calculate slow SMA (6-period) if enough data
-            let slow_sma: Vec<f64> = if d.len() >= 6 {
-                d.windows(6)
-                    .map(|window| {
-                        let sum: f64 = window.iter().map(|ohlcv| ohlcv.close).sum();
-                        sum / 6.0
-                    })
-                    .collect()
-            } else {
-                vec![d[0].close; fast_sma.len()]
-            };
+            outputs.insert(title.clone(), plot_values.clone());
 
-            // Populate plots for golden test comparison
-            for (idx, value) in fast_sma.iter().enumerate() {
-                plots.insert(format!("fast_sma_{}", idx), Some(*value));
+            // Populate plots for golden test comparison (last bar values)
+            if let Some(last_value) = values.last().and_then(|v| *v) {
+                plots.insert(title.clone(), Some(last_value));
             }
+        }
 
-            outputs.insert("fast_sma".to_string(), fast_sma.clone());
-            outputs.insert("slow_sma".to_string(), slow_sma.clone());
+        // Generate strategy signals for strategy scripts
+        if is_strategy && bar_data.len() >= 2 {
+            // Mock strategy execution - in full implementation this would come from the script
+            let entries = Vec::new();
+            let exits = Vec::new();
 
-            // Generate mock strategy signals for strategy scripts
-            if is_strategy && fast_sma.len() >= 2 {
-                let mut entries = Vec::new();
-                let mut exits = Vec::new();
-
-                // Simple crossover logic for demo
-                for i in 1..fast_sma.len() {
-                    if i < slow_sma.len() {
-                        let prev_fast = fast_sma[i - 1];
-                        let curr_fast = fast_sma[i];
-                        let prev_slow = slow_sma[i - 1];
-                        let curr_slow = slow_sma[i];
-
-                        // Golden cross (fast crosses above slow)
-                        if prev_fast <= prev_slow && curr_fast > curr_slow {
-                            entries.push(Signal {
-                                bar_index: i + 2, // Adjust for window offset
-                                direction: "long".to_string(),
-                                qty: 1.0,
-                                price: Some(d[i + 2].close),
-                                comment: Some("Long Entry".to_string()),
-                            });
-                        }
-
-                        // Death cross (fast crosses below slow)
-                        if prev_fast >= prev_slow && curr_fast < curr_slow {
-                            exits.push(Signal {
-                                bar_index: i + 2,
-                                direction: "close".to_string(),
-                                qty: 1.0,
-                                price: Some(d[i + 2].close),
-                                comment: Some("Close Long".to_string()),
-                            });
-                        }
-                    }
-                }
-
-                let position_direction = if entries.len() > exits.len() {
-                    "long".to_string()
-                } else {
-                    "none".to_string()
-                };
-                let position_size = if entries.len() > exits.len() { 1.0 } else { 0.0 };
-
-                strategy_result = Some(StrategyResult {
-                    name: "SMA Crossover Strategy".to_string(),
-                    entries,
-                    exits,
-                    position_size,
-                    position_direction,
-                });
-            }
+            strategy_result = Some(StrategyResult {
+                name: "Pine Strategy".to_string(),
+                entries,
+                exits,
+                position_size: 0.0,
+                position_direction: "none".to_string(),
+            });
         }
     }
 
@@ -388,11 +372,11 @@ fn check_script(script_path: &str) -> Result<()> {
 
     let content = fs::read_to_string(path).into_diagnostic()?;
 
-    // Lexical analysis
-    let tokens = pine_lexer::Lexer::lex(&content).map_err(|e| miette!("Lexical error: {:?}", e))?;
+    // Lexical analysis - use lex_with_indentation to get INDENT/DEDENT tokens
+    let tokens = pine_lexer::Lexer::lex_with_indentation(&content).map_err(|e| miette!("Lexical error: {:?}", e))?;
 
     // Parse
-    let ast = pine_parser::parse(tokens).map_err(|e| miette!("Parse error: {:?}", e))?;
+    let ast = pine_parser::parser::parse(tokens).map_err(|e| miette!("Parse error: {:?}", e))?;
 
     println!("✓ Script is syntactically correct");
     println!("  Statements: {}", ast.stmts.len());

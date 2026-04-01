@@ -8,6 +8,7 @@
 
 pub mod array;
 pub mod color;
+pub mod input;
 pub mod map;
 pub mod math;
 pub mod registry;
@@ -36,6 +37,7 @@ pub fn init(registry: &mut registry::FunctionRegistry) {
     map::register_functions(registry);
     str::register_functions(registry);
     color::register_functions(registry);
+    input::register_functions(registry);
 }
 
 #[cfg(test)]
@@ -77,7 +79,14 @@ mod tests {
         assert!(registry.contains("color.rgba"));
         assert!(registry.contains("color.from_hex"));
 
+        // Check that input functions are registered
+        assert!(registry.contains("input.int"));
+        assert!(registry.contains("input.float"));
+        assert!(registry.contains("input.bool"));
+        assert!(registry.contains("input.string"));
+        assert!(registry.contains("input.source"));
+
         // Check total function count
-        assert!(registry.len() >= 80); // At least 80 functions should be registered
+        assert!(registry.len() >= 85); // At least 85 functions should be registered
     }
 }

@@ -1,0 +1,14 @@
+//@version=6
+// Debug NA call - directly test na() call return value
+indicator("Debug NA Call", shorttitle="DebugNACall", overlay=true)
+
+// Let's just call na(close) directly inside a plot ternary - this worked before!
+plot(na(close) ? 10.0 : 20.0, title="direct_na", color=color.red, display=display.none)
+
+// Now let's assign it to a variable first
+cond = na(close)
+plot(cond ? 30.0 : 40.0, title="var_na", color=color.green, display=display.none)
+
+// Also test the not case
+notCond = not na(close)
+plot(notCond ? 50.0 : 60.0, title="var_not_na", color=color.blue, display=display.none)

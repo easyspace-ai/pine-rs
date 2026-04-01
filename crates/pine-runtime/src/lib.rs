@@ -12,6 +12,8 @@ pub mod na_ops;
 pub mod series;
 pub mod value;
 
+pub use context::SlotId;
+
 use miette::Diagnostic;
 use thiserror::Error;
 

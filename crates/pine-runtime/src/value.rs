@@ -258,6 +258,9 @@ pub enum Value {
     Object(Arc<Object>),
     /// Map/dictionary with string keys
     Map(Arc<Map>),
+    /// Namespace (e.g., "input", "ta", "math")
+    /// Used for method-style calls on builtin namespaces
+    Namespace(String),
 }
 
 impl Value {
@@ -646,6 +649,7 @@ impl Value {
             Value::Closure(c) => Value::String(format!("fn {}", c.name).into()),
             Value::Object(obj) => Value::String(obj.type_name.clone().into()),
             Value::Map(_) => Value::String("map".into()),
+            Value::Namespace(ns) => Value::String(format!("namespace {}", ns).into()),
         }
     }
 }
@@ -721,6 +725,7 @@ impl fmt::Display for Value {
                 }
                 write!(f, "}}")
             }
+            Value::Namespace(ns) => write!(f, "namespace {ns}"),
         }
     }
 }

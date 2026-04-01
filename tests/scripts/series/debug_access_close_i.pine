@@ -1,0 +1,23 @@
+//@version=6
+// Debug what happens when we access close[i]
+indicator("Debug Access Close[i]", shorttitle="DebugClose", overlay=true)
+
+// Let's try just accessing close[i] multiple times
+x = 0.0
+val1 = close[0]
+x := x + 1.0
+
+val2 = close[1]
+x := x + 1.0
+
+val3 = close[2]
+x := x + 1.0
+
+val4 = close[3]
+x := x + 1.0
+
+val5 = close[4]
+x := x + 1.0
+
+plot(x, title="x", color=color.red, display=display.none)
+plot(val1, title="val1", color=color.green, display=display.none)

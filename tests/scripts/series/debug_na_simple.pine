@@ -1,0 +1,21 @@
+//@version=6
+// Debug NA simple
+indicator("Debug NA Simple", shorttitle="DebugNASimple", overlay=true)
+
+// Test na(close)
+cond0 = na(close)
+plot(cond0 ? 1.0 : 0.0, title="cond0", color=color.red, display=display.none)
+
+// Test not na(close)
+notCond0 = not na(close)
+plot(notCond0 ? 1.0 : 0.0, title="notCond0", color=color.green, display=display.none)
+
+// Test with if
+x = 0.0
+if not na(close)
+    x := 99.0
+
+plot(x, title="x", color=color.blue, display=display.none)
+
+// Also plot close
+plot(close, title="close", color=color.gray)

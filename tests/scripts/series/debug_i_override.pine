@@ -1,0 +1,25 @@
+//@version=6
+// Debug if i is being overridden
+indicator("Debug i Override", shorttitle="DebugIOver", overlay=true)
+
+// Let's save the value of i before accessing close[i]
+savedIs = array.new_int(0)
+
+x = 0.0
+for i = 0 to 4
+    // Save i first
+    array.push(savedIs, i)
+    x := x + 1.0
+    // Now try to access close[i]
+    dummy = close[i]
+
+// Also try to output savedIs somehow
+plot(x, title="x", color=color.red, display=display.none)
+
+// Let's also have a loop that doesn't use i as the variable name
+y = 0.0
+for k = 0 to 4
+    y := y + 1.0
+    dummy2 = close[k]
+
+plot(y, title="y", color=color.green, display=display.none)

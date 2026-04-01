@@ -12,11 +12,304 @@ pub mod infer;
 pub mod scope;
 pub mod types;
 
+pub use infer::{TypeInference, TypeVar, InferenceResult};
+pub use scope::SlotId;
+
 use pine_lexer::Span;
 use pine_parser::ast;
 use scope::SymbolTable;
 use thiserror::Error;
 use types::{PineType, TypeDef};
+
+/// Variable modifier: var or varip
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum VarModifier {
+    /// Regular variable (re-evaluated each bar)
+    None,
+    /// var - persists across bars
+    Var,
+    /// varip - persists across bars with intrabar updates
+    Varip,
+}
+
+/// Series annotation for a variable
+///
+/// Tracks whether a variable needs to be stored as a series (history buffer)
+/// and what persistence model it uses.
+#[derive(Debug, Clone)]
+pub struct SeriesAnnotation {
+    /// Whether this variable needs series storage
+    pub needs_series: bool,
+    /// The inner element type
+    pub element_type: PineType,
+    /// Variable modifier
+    pub modifier: VarModifier,
+    /// Call-site key for function call isolation
+    pub call_site: Option<String>,
+}
+
+impl SeriesAnnotation {
+    /// Create a new series annotation
+    pub fn new(element_type: PineType) -> Self {
+        Self {
+            needs_series: false,
+            element_type,
+            modifier: VarModifier::None,
+            call_site: None,
+        }
+    }
+
+    /// Mark as needing series storage
+    pub fn with_series(mut self) -> Self {
+        self.needs_series = true;
+        self
+    }
+
+    /// Set the variable modifier
+    pub fn with_modifier(mut self, modifier: VarModifier) -> Self {
+        self.modifier = modifier;
+        self
+    }
+
+    /// Set the call-site key
+    pub fn with_call_site(mut self, call_site: String) -> Self {
+        self.call_site = Some(call_site);
+        self
+    }
+}
+
+/// Pass to annotate which variables need series storage
+///
+/// This pass traverses the AST and marks variables that:
+/// 1. Are accessed historically (e.g., close[1])
+/// 2. Are declared as series type
+/// 3. Are used in builtin functions that require series
+/// 4. Are var/varip variables
+pub struct SeriesAnnotationPass {
+    /// Current annotations
+    annotations: std::collections::HashMap<String, SeriesAnnotation>,
+}
+
+impl SeriesAnnotationPass {
+    /// Create a new series annotation pass
+    pub fn new() -> Self {
+        Self {
+            annotations: std::collections::HashMap::new(),
+        }
+    }
+
+    /// Run the annotation pass on a script
+    pub fn run(&mut self, script: &ast::Script) -> std::collections::HashMap<String, SeriesAnnotation> {
+        for stmt in &script.stmts {
+            self.annotate_stmt(stmt);
+        }
+        std::mem::take(&mut self.annotations)
+    }
+
+    /// Annotate a statement
+    fn annotate_stmt(&mut self, stmt: &ast::Stmt) {
+        match stmt {
+            ast::Stmt::VarDecl { name, kind, init, .. } => {
+                let modifier = match kind {
+                    ast::VarKind::Var => VarModifier::Var,
+                    ast::VarKind::Varip => VarModifier::Varip,
+                    ast::VarKind::Plain => VarModifier::None,
+                };
+
+                let is_var_or_varip = matches!(kind, ast::VarKind::Var | ast::VarKind::Varip);
+
+                // Check if initializer is a series expression
+                let needs_series = init.as_ref().is_some_and(|e| self.expr_needs_series(e));
+
+                let annotation = SeriesAnnotation::new(PineType::Unknown)
+                    .with_modifier(modifier);
+
+                let annotation = if needs_series || is_var_or_varip {
+                    annotation.with_series()
+                } else {
+                    annotation
+                };
+
+                self.annotations.insert(name.name.clone(), annotation);
+            }
+            ast::Stmt::Assign {
+                target: ast::AssignTarget::Var(ident),
+                value,
+                ..
+            } => {
+                // Update annotation based on assignment
+                let needs_series = self.expr_needs_series(value);
+                if let Some(ann) = self.annotations.get_mut(&ident.name) {
+                    if needs_series {
+                        ann.needs_series = true;
+                    }
+                }
+            }
+            ast::Stmt::Assign { .. } => {}
+            ast::Stmt::If { then_block, elifs, else_block, .. } => {
+                for stmt in &then_block.stmts {
+                    self.annotate_stmt(stmt);
+                }
+                for (_, elif_block) in elifs {
+                    for stmt in &elif_block.stmts {
+                        self.annotate_stmt(stmt);
+                    }
+                }
+                if let Some(else_stmts) = else_block {
+                    for stmt in &else_stmts.stmts {
+                        self.annotate_stmt(stmt);
+                    }
+                }
+            }
+            ast::Stmt::For { body, .. } | ast::Stmt::While { body, .. } => {
+                for stmt in &body.stmts {
+                    self.annotate_stmt(stmt);
+                }
+            }
+            ast::Stmt::FnDef { body, .. } => {
+                for stmt in &body.stmts {
+                    self.annotate_stmt(stmt);
+                }
+            }
+            _ => {}
+        }
+    }
+
+    /// Check if an expression needs series storage
+    fn expr_needs_series(&self, expr: &ast::Expr) -> bool {
+        match expr {
+            // Built-in series like close, high, low, open, volume
+            ast::Expr::Ident(ident) => {
+                matches!(ident.name.as_str(), "close" | "high" | "low" | "open" | "volume" | "hl2" | "hlc3" | "ohlc4")
+            }
+            // Historical access like close[1]
+            ast::Expr::Index { base, .. } => {
+                matches!(base.as_ref(), ast::Expr::Ident(_))
+            }
+            // Binary operations propagate series-ness
+            ast::Expr::BinOp { lhs, rhs, .. } => {
+                self.expr_needs_series(lhs) || self.expr_needs_series(rhs)
+            }
+            // Function calls may return series
+            ast::Expr::FnCall { func, .. } => {
+                if let ast::Expr::Ident(ident) = func.as_ref() {
+                    // Built-in functions that return series
+                    matches!(ident.name.as_str(),
+                        "ta.sma" | "ta.ema" | "ta.rsi" | "ta.macd" |
+                        "ta.bb" | "ta.cci" | "ta.atr" | "ta.tr" |
+                        "math.max" | "math.min" | "nz"
+                    )
+                } else {
+                    false
+                }
+            }
+            _ => false,
+        }
+    }
+}
+
+impl Default for SeriesAnnotationPass {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+/// Pass to lift var/varip declarations
+///
+/// This pass ensures that var and varip variables are properly identified
+/// for persistent storage allocation.
+pub struct VarLiftingPass {
+    /// Lifted variable declarations
+    lifted_vars: Vec<(String, VarModifier, PineType)>,
+}
+
+impl VarLiftingPass {
+    /// Create a new var lifting pass
+    pub fn new() -> Self {
+        Self {
+            lifted_vars: Vec::new(),
+        }
+    }
+
+    /// Run the lifting pass on a script
+    pub fn run(&mut self, script: &ast::Script) -> Vec<(String, VarModifier, PineType)> {
+        for stmt in &script.stmts {
+            self.collect_var_decls(stmt);
+        }
+        std::mem::take(&mut self.lifted_vars)
+    }
+
+    /// Collect var declarations from a statement
+    fn collect_var_decls(&mut self, stmt: &ast::Stmt) {
+        match stmt {
+            ast::Stmt::VarDecl { name, kind, type_ann, .. } => {
+                if matches!(kind, ast::VarKind::Var | ast::VarKind::Varip) {
+                    let modifier = match kind {
+                        ast::VarKind::Var => VarModifier::Var,
+                        ast::VarKind::Varip => VarModifier::Varip,
+                        ast::VarKind::Plain => VarModifier::None,
+                    };
+                    let ty = type_ann.as_ref().map_or(PineType::Unknown, |ann| match ann {
+                        ast::TypeAnn::Simple(s) => match s.as_str() {
+                            "int" => PineType::Int,
+                            "float" => PineType::Float,
+                            "bool" => PineType::Bool,
+                            "string" => PineType::String,
+                            "color" => PineType::Color,
+                            _ => PineType::Unknown,
+                        },
+                        ast::TypeAnn::Series(inner) => {
+                            let inner_ty = match inner.as_ref() {
+                                ast::TypeAnn::Simple(s) => match s.as_str() {
+                                    "int" => PineType::Int,
+                                    "float" => PineType::Float,
+                                    "bool" => PineType::Bool,
+                                    _ => PineType::Unknown,
+                                },
+                                _ => PineType::Unknown,
+                            };
+                            PineType::Series(Box::new(inner_ty))
+                        }
+                        _ => PineType::Unknown,
+                    });
+                    self.lifted_vars.push((name.name.clone(), modifier, ty));
+                }
+            }
+            ast::Stmt::If { then_block, elifs, else_block, .. } => {
+                for stmt in &then_block.stmts {
+                    self.collect_var_decls(stmt);
+                }
+                for (_, elif_block) in elifs {
+                    for stmt in &elif_block.stmts {
+                        self.collect_var_decls(stmt);
+                    }
+                }
+                if let Some(else_stmts) = else_block {
+                    for stmt in &else_stmts.stmts {
+                        self.collect_var_decls(stmt);
+                    }
+                }
+            }
+            ast::Stmt::For { body, .. } | ast::Stmt::While { body, .. } => {
+                for stmt in &body.stmts {
+                    self.collect_var_decls(stmt);
+                }
+            }
+            ast::Stmt::FnDef { body, .. } => {
+                for stmt in &body.stmts {
+                    self.collect_var_decls(stmt);
+                }
+            }
+            _ => {}
+        }
+    }
+}
+
+impl Default for VarLiftingPass {
+    fn default() -> Self {
+        Self::new()
+    }
+}
 
 /// Semantic analysis errors
 #[derive(Debug, Error)]
@@ -263,10 +556,9 @@ impl SemanticAnalyzer {
                 Ok(())
             }
             ast::Stmt::VarDecl { name, type_ann, .. } => {
-                // Define the variable in the current scope
+                // Define the variable with automatic slot allocation
                 let ty = self.convert_type_ann(type_ann.as_ref());
-                self.symbol_table
-                    .define(name.name.clone(), scope::Symbol::var(&name.name, ty));
+                self.symbol_table.define_var(&name.name, ty);
                 Ok(())
             }
             _ => {

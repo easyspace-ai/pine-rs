@@ -11,6 +11,12 @@ use indexmap::IndexMap;
 use std::path::PathBuf;
 use std::sync::Arc;
 
+/// A slot index for variable storage (inspired by Rhai)
+///
+/// Variables are stored in a flat array indexed by SlotId,
+/// allowing O(1) access without hash lookups.
+pub type SlotId = usize;
+
 /// A unique identifier for a call site
 ///
 /// In Pine Script, the same function can be called from multiple locations,
@@ -32,10 +38,16 @@ struct SeriesKey {
 /// Execution context for bar-by-bar script execution
 ///
 /// The context maintains:
-/// - Simple variable values (scalars)
+/// - Simple variable values (scalars) in slot-based storage
 /// - Series buffers (historical values)
 /// - Call-site isolated series (for function calls)
 /// - Runtime configuration
+///
+/// # Slot-Based Variable Storage
+///
+/// Variables are stored in a flat Vec indexed by SlotId (usize),
+/// allowing O(1) access without hash lookups. This is inspired by Rhai's
+/// implementation and provides significant performance improvements.
 ///
 /// # Call-Site Series Isolation
 ///
@@ -58,10 +70,14 @@ pub struct ExecutionContext {
     /// Runtime configuration
     config: Arc<RuntimeConfig>,
 
-    /// Simple variable storage (non-series)
+    /// Slot-based variable storage (non-series)
     ///
+    /// Variables are indexed by SlotId for O(1) access.
     /// These are reset on each bar.
-    variables: IndexMap<String, Value>,
+    variables: Vec<Option<Value>>,
+
+    /// Variable name to slot mapping (for debugging and error messages)
+    name_to_slot: IndexMap<String, SlotId>,
 
     /// Persistent series buffers
     ///
@@ -102,11 +118,17 @@ pub struct ExecutionContext {
 }
 
 impl ExecutionContext {
-    /// Create a new execution context
-    pub fn new(config: Arc<RuntimeConfig>) -> Self {
+    /// Create a new execution context with the given number of variable slots
+    ///
+    /// # Arguments
+    ///
+    /// * `config` - Runtime configuration
+    /// * `num_slots` - Number of variable slots to pre-allocate (from semantic analysis)
+    pub fn with_slots(config: Arc<RuntimeConfig>, num_slots: usize) -> Self {
         Self {
             config,
-            variables: IndexMap::new(),
+            variables: vec![None; num_slots],
+            name_to_slot: IndexMap::new(),
             series: IndexMap::new(),
             persistent_vars: IndexMap::new(),
             varip_vars: IndexMap::new(),
@@ -119,6 +141,14 @@ impl ExecutionContext {
             module_namespaces: IndexMap::new(),
             base_path: PathBuf::from("."),
         }
+    }
+
+    /// Create a new execution context
+    ///
+    /// Defaults to 64 variable slots. Use `with_slots` if you know
+    /// the exact number of slots needed from semantic analysis.
+    pub fn new(config: Arc<RuntimeConfig>) -> Self {
+        Self::with_slots(config, 64)
     }
 
     /// Create a new execution context with default config
@@ -171,41 +201,123 @@ impl ExecutionContext {
     }
 
     //========================================================================
-    // Variable Management
+    // Slot-Based Variable Management
     //========================================================================
 
-    /// Set a simple variable value
+    /// Set a variable value by slot index
+    ///
+    /// This is the preferred method for variable access as it provides O(1)
+    /// performance without hash lookups.
+    pub fn set_slot(&mut self, slot: SlotId, value: Value) {
+        if slot < self.variables.len() {
+            self.variables[slot] = Some(value);
+        }
+    }
+
+    /// Get a variable value by slot index
+    #[inline]
+    pub fn get_slot(&self, slot: SlotId) -> Option<&Value> {
+        self.variables.get(slot).and_then(|v| v.as_ref())
+    }
+
+    /// Get a mutable reference to a variable by slot index
+    #[inline]
+    pub fn get_slot_mut(&mut self, slot: SlotId) -> Option<&mut Value> {
+        self.variables.get_mut(slot).and_then(|v| v.as_mut())
+    }
+
+    /// Check if a slot has a value
+    #[inline]
+    pub fn slot_has_value(&self, slot: SlotId) -> bool {
+        self.variables
+            .get(slot)
+            .map(|v| v.is_some())
+            .unwrap_or(false)
+    }
+
+    /// Get or insert a value in a slot
+    pub fn get_or_insert_slot(&mut self, slot: SlotId, default: Value) -> &mut Value {
+        if slot >= self.variables.len() {
+            self.variables.resize_with(slot + 1, || None);
+        }
+        if self.variables[slot].is_none() {
+            self.variables[slot] = Some(default);
+        }
+        self.variables[slot].as_mut().unwrap()
+    }
+
+    /// Register a variable name to slot mapping (for debugging)
+    pub fn register_var_name(&mut self, name: impl Into<String>, slot: SlotId) {
+        self.name_to_slot.insert(name.into(), slot);
+    }
+
+    /// Look up a slot by variable name
+    pub fn lookup_slot(&self, name: &str) -> Option<SlotId> {
+        self.name_to_slot.get(name).copied()
+    }
+
+    /// Get the number of variable slots
+    pub fn num_slots(&self) -> usize {
+        self.variables.len()
+    }
+
+    /// Clear all simple variables (set all slots to None)
+    ///
+    /// Called at the start of each bar.
+    pub fn clear_vars(&mut self) {
+        for slot in &mut self.variables {
+            *slot = None;
+        }
+    }
+
+    //========================================================================
+    // Legacy Variable Management (by name - for compatibility)
+    //========================================================================
+
+    /// Set a simple variable value by name
     ///
     /// This variable will be cleared on the next bar.
+    /// Prefer `set_slot` for better performance.
     pub fn set_var(&mut self, name: impl Into<String>, value: Value) {
-        self.variables.insert(name.into(), value);
+        let name = name.into();
+        if let Some(&slot) = self.name_to_slot.get(&name) {
+            self.set_slot(slot, value);
+        } else {
+            // Dynamic variable - store in a new slot
+            let slot = self.variables.len();
+            self.variables.push(Some(value));
+            self.name_to_slot.insert(name, slot);
+        }
     }
 
-    /// Get a variable value
+    /// Get a variable value by name
+    /// Prefer `get_slot` for better performance.
     pub fn get_var(&self, name: &str) -> Option<&Value> {
-        self.variables.get(name)
+        self.lookup_slot(name)
+            .and_then(|slot| self.get_slot(slot))
     }
 
-    /// Get a mutable reference to a variable
+    /// Get a mutable reference to a variable by name
     pub fn get_var_mut(&mut self, name: &str) -> Option<&mut Value> {
-        self.variables.get_mut(name)
+        self.lookup_slot(name)
+            .and_then(|slot| self.get_slot_mut(slot))
     }
 
     /// Check if a variable exists
     pub fn has_var(&self, name: &str) -> bool {
-        self.variables.contains_key(name)
+        self.lookup_slot(name)
+            .map(|slot| self.slot_has_value(slot))
+            .unwrap_or(false)
     }
 
-    /// Remove a variable
-    pub fn remove_var(&mut self, name: &str) -> Option<Value> {
-        self.variables.shift_remove(name)
-    }
-
-    /// Clear all simple variables
+    /// Remove a variable by name
     ///
-    /// Called at the start of each bar.
-    pub fn clear_vars(&mut self) {
-        self.variables.clear();
+    /// Returns the removed value if it existed.
+    pub fn remove_var(&mut self, name: &str) -> Option<Value> {
+        self.lookup_slot(name)
+            .and_then(|slot| {
+                self.variables.get_mut(slot).and_then(|v| v.take())
+            })
     }
 
     //========================================================================

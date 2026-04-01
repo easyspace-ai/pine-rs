@@ -1,0 +1,29 @@
+//@version=6
+// Debug script - simplified SMA manual calculation
+indicator("Debug SMA Simple", shorttitle="DebugSMA", overlay=true)
+
+length = input.int(5, minval=1, title="SMA Length")
+
+// Version 1: WITHOUT na check - let's see if this works
+sumNoNaCheck = 0.0
+countNoNaCheck = 0
+for i = 0 to length - 1
+    sumNoNaCheck := sumNoNaCheck + close[i]
+    countNoNaCheck := countNoNaCheck + 1
+
+smaNoNaCheck = countNoNaCheck > 0 ? sumNoNaCheck / countNoNaCheck : na
+plot(smaNoNaCheck, title="SMA No NA Check", color=color.blue, display=display.none)
+
+// Version 2: WITH na check - this might be the problematic one
+sumWithNaCheck = 0.0
+countWithNaCheck = 0
+for i = 0 to length - 1
+    if not na(close[i])
+        sumWithNaCheck := sumWithNaCheck + close[i]
+        countWithNaCheck := countWithNaCheck + 1
+
+smaWithNaCheck = countWithNaCheck > 0 ? sumWithNaCheck / countWithNaCheck : na
+plot(smaWithNaCheck, title="SMA With NA Check", color=color.red, display=display.none)
+
+// Also plot close
+plot(close, title="close", color=color.gray)

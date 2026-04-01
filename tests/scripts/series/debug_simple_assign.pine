@@ -1,0 +1,13 @@
+//@version=6
+// Simple assignment test without for loop
+indicator("Debug Simple Assign", shorttitle="DebugSimple", overlay=true)
+
+floatCount1 = 0.0
+floatCount2 = 0.0
+
+// Simple assignments (no loop)
+floatCount1 := 5.0
+floatCount2 := 5.0
+
+plot(floatCount1, title="floatCount1", color=color.red, display=display.none)
+plot(floatCount2, title="floatCount2", color=color.green, display=display.none)

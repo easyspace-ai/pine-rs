@@ -1,0 +1,15 @@
+//@version=6
+// Debug script to directly see na() return values
+indicator("Debug NA Direct", shorttitle="DebugNADir", overlay=true)
+
+// Test 1: na(close[0]) - this should be false
+isNa0 = na(close[0])
+plot(isNa0, title="isNa0", color=color.red, display=display.none)
+
+// Test 2: Let's also test what na(close[1]) is on bar 0
+// On bar 0, close[1] should be na
+isNa1 = na(close[1])
+plot(isNa1, title="isNa1", color=color.green, display=display.none)
+
+// Also plot close
+plot(close, title="close", color=color.gray)

@@ -1,0 +1,11 @@
+//@version=6
+// Super simple debug script
+indicator("Debug Simple", shorttitle="DebugSimple", overlay=true)
+
+// Just set a simple variable
+x = 42.0
+y = true
+
+// Plot them
+plot(x, title="x", color=color.red, display=display.none)
+plot(y ? 1.0 : 0.0, title="y", color=color.green, display=display.none)

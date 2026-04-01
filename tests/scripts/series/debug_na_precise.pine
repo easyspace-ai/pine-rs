@@ -1,0 +1,32 @@
+//@version=6
+// Precise debug of na() and not na()
+indicator("Debug NA Precise", shorttitle="DebugNAPrecise", overlay=true)
+
+// Test each component separately
+cond0 = na(close[0])
+notCond0 = not cond0
+
+// Test close[1] - should be na on bar 0
+cond1 = na(close[1])
+notCond1 = not cond1
+
+// Plot as numbers since plot() won't plot booleans
+plot(cond0 ? 1.0 : 0.0, title="cond0", color=color.red, display=display.none)
+plot(notCond0 ? 1.0 : 0.0, title="notCond0", color=color.green, display=display.none)
+plot(cond1 ? 1.0 : 0.0, title="cond1", color=color.blue, display=display.none)
+plot(notCond1 ? 1.0 : 0.0, title="notCond1", color=color.purple, display=display.none)
+
+// Also test what happens when we use them in if
+testIf0 = 0
+if notCond0
+    testIf0 := 99
+
+testIf1 = 0
+if notCond1
+    testIf1 := 99
+
+plot(testIf0, title="testIf0", color=color.orange, display=display.none)
+plot(testIf1, title="testIf1", title="testIf1", color=color.pink, display=display.none)
+
+// Also plot close
+plot(close, title="close", color=color.gray)

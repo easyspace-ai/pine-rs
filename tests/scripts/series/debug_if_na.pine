@@ -1,0 +1,25 @@
+//@version=6
+// Debug script to test if not na() logic
+indicator("Debug If NA", shorttitle="DebugIfNA", overlay=true)
+
+// Test without loop
+sumTest = 0.0
+countTest = 0
+
+// Test close[0]
+if not na(close[0])
+    sumTest := sumTest + close[0]
+    countTest := countTest + 1
+
+// Test close[1]
+if not na(close[1])
+    sumTest := sumTest + close[1]
+    countTest := countTest + 1
+
+result = countTest > 0 ? sumTest / countTest : na
+plot(result, title="result", color=color.blue, display=display.none)
+plot(sumTest, title="sumTest", color=color.red, display=display.none)
+plot(countTest, title="countTest", color=color.green, display=display.none)
+
+// Also plot close
+plot(close, title="close", color=color.gray)
