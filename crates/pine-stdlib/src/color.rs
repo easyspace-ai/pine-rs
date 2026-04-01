@@ -130,6 +130,10 @@ fn color_new_transparency(args: &[Value]) -> Value {
     Value::Color(Color::with_alpha(color.r, color.g, color.b, alpha))
 }
 
+fn color_new(args: &[Value]) -> Value {
+    color_new_transparency(args)
+}
+
 /// Mix two colors with a given weight
 fn color_mix(args: &[Value]) -> Value {
     let color1 = match args.first().and_then(|v| v.as_color()) {
@@ -260,6 +264,13 @@ pub fn register_functions(registry: &mut FunctionRegistry) {
     );
 
     registry.register(
+        FunctionMeta::new("new")
+            .with_namespace("color")
+            .with_required_args(2),
+        Arc::new(color_new) as BuiltinFn,
+    );
+
+    registry.register(
         FunctionMeta::new("mix")
             .with_namespace("color")
             .with_required_args(2)
@@ -300,6 +311,7 @@ mod tests {
         assert!(registry.contains("color.b"));
         assert!(registry.contains("color.a"));
         assert!(registry.contains("color.transparency"));
+        assert!(registry.contains("color.new"));
         assert!(registry.contains("color.new_transparency"));
         assert!(registry.contains("color.mix"));
         assert!(registry.contains("color.lighten"));
@@ -369,6 +381,17 @@ mod tests {
     fn test_color_new_transparency() {
         let color = Value::Color(Color::new(255, 0, 0));
         let result = color_new_transparency(&[color, Value::Int(50)]);
+        if let Value::Color(c) = result {
+            assert!(c.a < 255 && c.a > 0);
+        } else {
+            panic!("Expected color");
+        }
+    }
+
+    #[test]
+    fn test_color_new_alias() {
+        let color = Value::Color(Color::new(255, 0, 0));
+        let result = color_new(&[color, Value::Int(50)]);
         if let Value::Color(c) = result {
             assert!(c.a < 255 && c.a > 0);
         } else {

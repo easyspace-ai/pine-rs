@@ -103,8 +103,14 @@ async fn main() {
     let app = Router::new()
         // API routes
         .route("/api/run", post(RunHandler::handle).with_state(run_handler))
-        .route("/api/check", post(CheckHandler::handle).with_state(check_handler))
-        .route("/api/data/:symbol/:tf", get(DataHandler::handle).with_state(data_handler))
+        .route(
+            "/api/check",
+            post(CheckHandler::handle).with_state(check_handler),
+        )
+        .route(
+            "/api/data/:symbol/:tf",
+            get(DataHandler::handle).with_state(data_handler),
+        )
         .route("/api/ws", get(WsHandler::handle_ws).with_state(ws_handler))
         // Static files
         .fallback_service(ServeDir::new(static_path));

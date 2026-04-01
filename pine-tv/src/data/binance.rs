@@ -1,9 +1,8 @@
 //! Binance API data loader
 //! Fetch real-time and historical K-line data from Binance.
+#![allow(dead_code)]
 
-use std::time::{SystemTime, UNIX_EPOCH};
-
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 use serde_json::Value;
 
 use crate::data::OhlcvBar;
@@ -72,10 +71,7 @@ impl BinanceClient {
 
         let klines: Vec<Vec<Value>> = response.json().await?;
 
-        let bars = klines
-            .into_iter()
-            .filter_map(|k| Self::parse_kline(k))
-            .collect();
+        let bars = klines.into_iter().filter_map(Self::parse_kline).collect();
 
         Ok(bars)
     }
@@ -112,10 +108,7 @@ impl BinanceClient {
 
         let klines: Vec<Vec<Value>> = response.json().await?;
 
-        let bars = klines
-            .into_iter()
-            .filter_map(|k| Self::parse_kline(k))
-            .collect();
+        let bars = klines.into_iter().filter_map(Self::parse_kline).collect();
 
         Ok(bars)
     }
@@ -146,11 +139,12 @@ impl BinanceClient {
 
         #[derive(Deserialize)]
         struct TimeResponse {
-            serverTime: u64,
+            #[serde(rename = "serverTime")]
+            server_time: u64,
         }
 
         let time: TimeResponse = response.json().await?;
-        Ok(time.serverTime)
+        Ok(time.server_time)
     }
 
     /// Get exchange info (available symbols)
@@ -174,8 +168,10 @@ pub struct ExchangeInfo {
 pub struct SymbolInfo {
     pub symbol: String,
     pub status: String,
-    pub baseAsset: String,
-    pub quoteAsset: String,
+    #[serde(rename = "baseAsset")]
+    pub base_asset: String,
+    #[serde(rename = "quoteAsset")]
+    pub quote_asset: String,
 }
 
 /// Binance API error

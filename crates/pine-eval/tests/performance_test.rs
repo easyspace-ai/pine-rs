@@ -55,7 +55,12 @@ fn simulate_rsi(series: &SeriesBufF64, period: usize) -> Option<f64> {
 }
 
 /// Simulates MACD using multiple SMA calculations
-fn simulate_macd(series: &SeriesBufF64, fast: usize, slow: usize, signal: usize) -> Option<(f64, f64, f64)> {
+fn simulate_macd(
+    series: &SeriesBufF64,
+    fast: usize,
+    slow: usize,
+    signal: usize,
+) -> Option<(f64, f64, f64)> {
     let fast_ema = simulate_ema(series, fast)?;
     let slow_ema = simulate_ema(series, slow)?;
     let macd_line = fast_ema - slow_ema;
@@ -113,7 +118,10 @@ fn test_100k_bars_performance() {
 
     // Per-iteration target: < 100ms
     let per_iteration_ms = elapsed_ms / 10;
-    println!("Per-iteration time: {} ms (target: < {} ms)", per_iteration_ms, TARGET_MS);
+    println!(
+        "Per-iteration time: {} ms (target: < {} ms)",
+        per_iteration_ms, TARGET_MS
+    );
 
     // This is a soft target - we print performance info but don't fail the test
     // as performance depends on hardware

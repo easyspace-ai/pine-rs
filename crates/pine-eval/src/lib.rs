@@ -161,6 +161,8 @@ impl PlotOutputs {
 pub struct EvaluationContext {
     /// Variable bindings
     variables: HashMap<String, Value>,
+    /// Per-variable history for series-aware ta.* calls
+    variable_history: HashMap<String, Vec<Value>>,
     /// Module registry for loaded libraries
     module_registry: ModuleRegistry,
     /// Function registry for built-in functions
@@ -204,6 +206,7 @@ impl Default for EvaluationContext {
 
         Self {
             variables: HashMap::new(),
+            variable_history: HashMap::new(),
             module_registry: ModuleRegistry::new(),
             function_registry,
             loading_modules: Vec::new(),
@@ -235,7 +238,22 @@ impl EvaluationContext {
 
     /// Set a variable value
     pub fn set_var(&mut self, name: impl Into<String>, value: Value) {
-        self.variables.insert(name.into(), value);
+        let name = name.into();
+        if let Some(series) = &self.series_data {
+            let history = self.variable_history.entry(name.clone()).or_default();
+            if history.len() <= series.current_bar {
+                history.resize(series.current_bar + 1, Value::Na);
+            }
+            history[series.current_bar] = value.clone();
+        }
+        self.variables.insert(name, value);
+    }
+
+    /// Get historical values for a variable up to the current bar.
+    pub fn get_var_history(&self, name: &str) -> Option<&[Value]> {
+        let series = self.series_data.as_ref()?;
+        let history = self.variable_history.get(name)?;
+        history.get(..series.current_bar + 1)
     }
 
     /// Create a new object of the given type

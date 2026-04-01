@@ -126,7 +126,9 @@ impl ExprParser {
 
     /// Parse prefix expression
     fn parse_prefix(&mut self) -> Result<Expr, ParseError> {
-        let token_info = self.peek_info().ok_or(ParseError::unexpected_eof(Span::default()))?;
+        let token_info = self
+            .peek_info()
+            .ok_or(ParseError::unexpected_eof(Span::default()))?;
         let span = token_info.span;
 
         match &token_info.token {
@@ -157,7 +159,12 @@ impl ExprParser {
             }
             Token::Na => {
                 // Special case: if "na" is followed by "(", it's a function call, not a literal
-                if self.tokens.get(self.pos + 1).map(|t| t.token == Token::LParen).unwrap_or(false) {
+                if self
+                    .tokens
+                    .get(self.pos + 1)
+                    .map(|t| t.token == Token::LParen)
+                    .unwrap_or(false)
+                {
                     self.advance();
                     Ok(Expr::Ident(Ident::new("na".to_string(), span)))
                 } else {
@@ -201,9 +208,7 @@ impl ExprParser {
                     Ok(expr)
                 }
             }
-            Token::LBracket => {
-                self.parse_array_literal()
-            }
+            Token::LBracket => self.parse_array_literal(),
             _ => Err(ParseError::unexpected_token(
                 format!("{:?}", token_info.token),
                 "expression",
@@ -213,8 +218,15 @@ impl ExprParser {
     }
 
     /// Parse binary operation
-    fn parse_binary(&mut self, lhs: Expr, op_prec: Precedence, op_span: Span) -> Result<Expr, ParseError> {
-        let token = self.peek_token().ok_or(ParseError::unexpected_eof(Span::default()))?;
+    fn parse_binary(
+        &mut self,
+        lhs: Expr,
+        op_prec: Precedence,
+        op_span: Span,
+    ) -> Result<Expr, ParseError> {
+        let token = self
+            .peek_token()
+            .ok_or(ParseError::unexpected_eof(Span::default()))?;
 
         let op = match token {
             Token::Plus => BinOp::Add,
@@ -231,11 +243,13 @@ impl ExprParser {
             Token::Ge => BinOp::Ge,
             Token::And => BinOp::And,
             Token::Or => BinOp::Or,
-            _ => return Err(ParseError::unexpected_token(
-                format!("{:?}", token),
-                "binary operator",
-                op_span,
-            )),
+            _ => {
+                return Err(ParseError::unexpected_token(
+                    format!("{:?}", token),
+                    "binary operator",
+                    op_span,
+                ))
+            }
         };
 
         self.advance(); // consume operator
@@ -316,11 +330,13 @@ impl ExprParser {
                     self.advance();
                     break;
                 }
-                _ => return Err(ParseError::unexpected_token(
-                    format!("{:?}", self.peek_token()),
-                    ", or rparen",
-                    self.peek_span().unwrap_or_default(),
-                )),
+                _ => {
+                    return Err(ParseError::unexpected_token(
+                        format!("{:?}", self.peek_token()),
+                        ", or rparen",
+                        self.peek_span().unwrap_or_default(),
+                    ))
+                }
             }
         }
 
@@ -379,11 +395,13 @@ impl ExprParser {
                             continue;
                         }
                         Some(Token::RParen) => break,
-                        _ => return Err(ParseError::unexpected_token(
-                            format!("{:?}", self.peek_token()),
-                            ", or rparen",
-                            self.peek_span().unwrap_or_default(),
-                        )),
+                        _ => {
+                            return Err(ParseError::unexpected_token(
+                                format!("{:?}", self.peek_token()),
+                                ", or rparen",
+                                self.peek_span().unwrap_or_default(),
+                            ))
+                        }
                     }
                 }
             }
@@ -443,11 +461,13 @@ impl ExprParser {
                     self.advance();
                     break;
                 }
-                _ => return Err(ParseError::unexpected_token(
-                    format!("{:?}", self.peek_token()),
-                    "comma or rbracket",
-                    self.peek_span().unwrap_or_default(),
-                )),
+                _ => {
+                    return Err(ParseError::unexpected_token(
+                        format!("{:?}", self.peek_token()),
+                        "comma or rbracket",
+                        self.peek_span().unwrap_or_default(),
+                    ))
+                }
             }
         }
 
@@ -478,11 +498,13 @@ impl ExprParser {
                     self.advance();
                     break;
                 }
-                _ => return Err(ParseError::unexpected_token(
-                    format!("{:?}", self.peek_token()),
-                    "comma or rbracket",
-                    self.peek_span().unwrap_or_default(),
-                )),
+                _ => {
+                    return Err(ParseError::unexpected_token(
+                        format!("{:?}", self.peek_token()),
+                        "comma or rbracket",
+                        self.peek_span().unwrap_or_default(),
+                    ))
+                }
             }
         }
 
@@ -646,7 +668,11 @@ impl ExprParser {
     }
 
     /// Expect a specific token
-    fn expect_token(&mut self, expected: Token, msg: impl Into<String>) -> Result<Span, ParseError> {
+    fn expect_token(
+        &mut self,
+        expected: Token,
+        msg: impl Into<String>,
+    ) -> Result<Span, ParseError> {
         let msg = msg.into();
         match self.peek_info() {
             Some(info) if info.token == expected => {
@@ -733,7 +759,12 @@ mod tests {
         // 1 + 2 * 3 should be 1 + (2 * 3)
         let expr = parse_expr("1 + 2 * 3").unwrap();
         match &expr {
-            Expr::BinOp { op: BinOp::Add, lhs, rhs, .. } => {
+            Expr::BinOp {
+                op: BinOp::Add,
+                lhs,
+                rhs,
+                ..
+            } => {
                 assert!(matches!(lhs.as_ref(), Expr::Literal(Lit::Int(1), _)));
                 assert!(matches!(rhs.as_ref(), Expr::BinOp { op: BinOp::Mul, .. }));
             }
@@ -774,10 +805,22 @@ mod tests {
     #[test]
     fn test_unary() {
         let expr = parse_expr("-x").unwrap();
-        assert!(matches!(expr, Expr::UnaryOp { op: UnaryOp::Neg, .. }));
+        assert!(matches!(
+            expr,
+            Expr::UnaryOp {
+                op: UnaryOp::Neg,
+                ..
+            }
+        ));
 
         let expr = parse_expr("not x").unwrap();
-        assert!(matches!(expr, Expr::UnaryOp { op: UnaryOp::Not, .. }));
+        assert!(matches!(
+            expr,
+            Expr::UnaryOp {
+                op: UnaryOp::Not,
+                ..
+            }
+        ));
     }
 
     #[test]
@@ -792,7 +835,12 @@ mod tests {
         let expr = parse_expr("a < b and c > d").unwrap();
         println!("Parsed: {:?}", expr);
         match &expr {
-            Expr::BinOp { op: BinOp::And, lhs, rhs, .. } => {
+            Expr::BinOp {
+                op: BinOp::And,
+                lhs,
+                rhs,
+                ..
+            } => {
                 // lhs should be "a < b"
                 assert!(matches!(lhs.as_ref(), Expr::BinOp { op: BinOp::Lt, .. }));
                 // rhs should be "c > d"

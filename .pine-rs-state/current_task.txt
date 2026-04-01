@@ -1,1 +1,1 @@
-所有基础功能完成，等待修复 for 循环 bug 以通过黄金测试
+继续清理 Phase 3 剩余验证缺口，下一步优先补齐 lowest / highestbars / lowestbars 与 math.* 的黄金样例

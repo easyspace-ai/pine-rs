@@ -68,28 +68,24 @@ impl WsHandler {
                         Ok(Message::Text(text)) => {
                             // Handle client messages (e.g., request script execution)
                             if let Ok(req) = serde_json::from_str::<WsClientMessage>(&text) {
-                                match req.action.as_str() {
-                                    "run" => {
-                                        // Execute script with current bars
-                                        let bars = state.data_manager.get_bars().await;
-                                        if let Some(code) = req.code {
-                                            match state.engine.run(&code, &bars) {
-                                                Ok(result) => {
-                                                    let response = WsServerMessage::Result { result };
-                                                    if let Ok(json) = serde_json::to_string(&response) {
-                                                        let _ = socket.send(Message::Text(json)).await;
-                                                    }
+                                if req.action.as_str() == "run" {
+                                    let bars = state.data_manager.get_bars().await;
+                                    if let Some(code) = req.code {
+                                        match state.engine.run(&code, &bars) {
+                                            Ok(result) => {
+                                                let response = WsServerMessage::Result { result };
+                                                if let Ok(json) = serde_json::to_string(&response) {
+                                                    let _ = socket.send(Message::Text(json)).await;
                                                 }
-                                                Err(errors) => {
-                                                    let response = WsServerMessage::Error { errors };
-                                                    if let Ok(json) = serde_json::to_string(&response) {
-                                                        let _ = socket.send(Message::Text(json)).await;
-                                                    }
+                                            }
+                                            Err(errors) => {
+                                                let response = WsServerMessage::Error { errors };
+                                                if let Ok(json) = serde_json::to_string(&response) {
+                                                    let _ = socket.send(Message::Text(json)).await;
                                                 }
                                             }
                                         }
                                     }
-                                    _ => {}
                                 }
                             }
                         }

@@ -1,12 +1,7 @@
 //! POST /api/run endpoint
 //! Execute Pine Script code and return results.
 
-use axum::{
-    extract::State,
-    http::StatusCode,
-    response::IntoResponse,
-    Json,
-};
+use axum::{extract::State, http::StatusCode, response::IntoResponse, Json};
 use std::sync::Arc;
 
 use crate::data::binance::BinanceClient;
@@ -23,7 +18,10 @@ pub struct RunHandler {
 impl RunHandler {
     /// Create a new RunHandler
     pub fn new(engine: Arc<PineEngine>, data_loader: Arc<DataLoader>) -> Self {
-        Self { engine, data_loader }
+        Self {
+            engine,
+            data_loader,
+        }
     }
 
     /// Handle POST /api/run
@@ -33,7 +31,10 @@ impl RunHandler {
     ) -> impl IntoResponse {
         // Load data - use the async load method
         let binance_client = BinanceClient::new();
-        let bars = match binance_client.fetch_klines(&request.symbol, &request.timeframe, request.bars).await {
+        let bars = match binance_client
+            .fetch_klines(&request.symbol, &request.timeframe, request.bars)
+            .await
+        {
             Ok(mut b) => {
                 if b.len() > request.bars {
                     let start = b.len() - request.bars;
@@ -43,7 +44,10 @@ impl RunHandler {
             }
             Err(_) => {
                 // Fall back to local/sample data (synchronous)
-                match state.data_loader.load_local(&request.symbol, &request.timeframe) {
+                match state
+                    .data_loader
+                    .load_local(&request.symbol, &request.timeframe)
+                {
                     Ok(mut b) => {
                         if b.len() > request.bars {
                             let start = b.len() - request.bars;
@@ -52,9 +56,10 @@ impl RunHandler {
                         b
                     }
                     Err(e) => {
-                        let response = ApiResponse::error(vec![
-                            crate::engine::output::ApiError::simple(format!("Data load error: {}", e))
-                        ]);
+                        let response =
+                            ApiResponse::error(vec![crate::engine::output::ApiError::simple(
+                                format!("Data load error: {}", e),
+                            )]);
                         return (StatusCode::OK, Json(response));
                     }
                 }
@@ -62,9 +67,9 @@ impl RunHandler {
         };
 
         if bars.is_empty() {
-            let response = ApiResponse::error(vec![
-                crate::engine::output::ApiError::simple("No data available".to_string())
-            ]);
+            let response = ApiResponse::error(vec![crate::engine::output::ApiError::simple(
+                "No data available".to_string(),
+            )]);
             return (StatusCode::OK, Json(response));
         }
 

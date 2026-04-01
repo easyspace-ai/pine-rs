@@ -1,0 +1,8 @@
+// Golden test: ta.cci((high + low + close) / 3, 20)
+
+indicator("CCI 20 Golden Test")
+
+source = (high + low + close) / 3
+cci_20 = ta.cci(source, 20)
+
+plot(cci_20, title="CCI 20", color=color.green)

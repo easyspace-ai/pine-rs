@@ -1,12 +1,7 @@
 //! POST /api/check endpoint
 //! Check Pine Script code for syntax and type errors without executing.
 
-use axum::{
-    extract::State,
-    http::StatusCode,
-    response::IntoResponse,
-    Json,
-};
+use axum::{extract::State, http::StatusCode, response::IntoResponse, Json};
 use std::sync::Arc;
 
 use crate::engine::output::{ApiResponse, CheckRequest};

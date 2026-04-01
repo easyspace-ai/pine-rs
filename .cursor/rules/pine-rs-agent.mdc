@@ -1,0 +1,54 @@
+---
+description: pine-rs 内核开发 — 与 AGENTS.md 对齐的默认工作流（Cursor Agent）
+alwaysApply: true
+---
+
+# pine-rs · Cursor Agent 规则
+
+## 权威入口
+
+- 所有项目目标、Phase、验收顺序、禁止事项以仓库根目录 **AGENTS.md** 为准。
+- 架构与产品与代码冲突时的说明见 **docs/GUIDE.md**。
+- 与 TradingView v6 的已知差距见 **docs/GAP_ANALYSIS.md**（不替代 AGENTS.md 的 Phase 定义）。
+
+## 职责边界
+
+- **内核主线**：`crates/pine-*`、`pine-cli`、`tests/` 下与内核相关的验收。
+- **`pine-tv`**：仅验证壳；不得用其产品需求反向定义内核完成标准；非用户明确要求不要扩展其功能。
+
+## 自闭环工作方式（尽量少向用户要确认）
+
+- 在信息足够时 **直接改代码、跑验证、修到通过**，不要为了礼貌频繁停下询问「要不要继续」。
+- 仅当 **需求模糊**、**需要密钥/登录**、**真实外部阻塞**（见 `.pine-rs-state/blockers.txt`）或 **连续多次失败且策略必须二选一时** 再请用户决策。
+- 用户已在本机把 Cursor **Agent / 终端** 设为少批准模式时，在此规则下优先 **自主执行** `scripts/dev_verify.sh` 等命令。
+
+## 每次改动后的验证（必跑）
+
+除非用户明确约定只改文档或单机文件，否则在结束一段实现前在仓库根目录执行：
+
+```bash
+./scripts/dev_verify.sh
+```
+
+- 若改动涉及 **数值结果 / 黄金基线 / plot 或 CLI 输出格式**，补充：
+
+```bash
+./scripts/dev_verify.sh --full
+```
+
+（与 AGENTS.md「涉及数值结果时跑黄金测试」一致。）
+
+## 状态文件（`.pine-rs-state/`）
+
+- 只有 **验证已通过** 的任务才可写入 `completed_tasks.json`；须 **整体合法 JSON 重写**，禁止拼接损坏 JSON。
+- `blockers.txt` 仅记 **必须人工介入** 的阻塞。
+- 不要为 `pine-tv` 演示进度更新主线状态文件。
+
+## 代码约束（与 AGENTS.md 一致）
+
+- **library crate**：禁止 `unwrap()` / `expect()`；`unsafe` 须注释；`max_bars_back` 禁止硬编码；`na` 走统一逻辑。
+
+## 文档纪律
+
+- 不要新建与 **AGENTS.md** 重复的长期维护「第二套项目说明」。
+- 用户未要求时，避免大段改写无关 markdown。

@@ -57,7 +57,9 @@ impl StmtParser {
 
     /// Parse a single statement
     fn parse_stmt(&mut self) -> Result<Stmt, ParseError> {
-        let token_info = self.peek_info().ok_or(ParseError::unexpected_eof(Span::default()))?;
+        let token_info = self
+            .peek_info()
+            .ok_or(ParseError::unexpected_eof(Span::default()))?;
 
         match &token_info.token {
             Token::Var | Token::Varip => self.parse_var_decl(),
@@ -309,11 +311,7 @@ impl StmtParser {
         self.expect_token(Token::Dedent, "expected dedent")?;
         let span = start_span.merge(self.prev_span());
 
-        Ok(Stmt::TypeDef {
-            name,
-            fields,
-            span,
-        })
+        Ok(Stmt::TypeDef { name, fields, span })
     }
 
     /// Parse method definition: method Type.name(params) body
@@ -377,11 +375,7 @@ impl StmtParser {
             self.advance();
         }
 
-        Ok(Stmt::Import {
-            path,
-            alias,
-            span,
-        })
+        Ok(Stmt::Import { path, alias, span })
     }
 
     /// Parse export statement: export name
@@ -440,11 +434,7 @@ impl StmtParser {
             self.advance();
         }
 
-        Ok(Stmt::Library {
-            name,
-            props,
-            span,
-        })
+        Ok(Stmt::Library { name, props, span })
     }
 
     /// Parse break statement
@@ -501,6 +491,7 @@ impl StmtParser {
         // Check if this is an assignment or declaration
         if self.peek_token() == Some(Token::Assign) {
             // Plain variable declaration: x = value
+            // Or tuple assignment: [a, b, c] = value
             self.advance();
             let value = self.parse_expr()?;
             let span = expr.span().merge(value.span());
@@ -509,17 +500,23 @@ impl StmtParser {
                 self.advance();
             }
 
-            // Extract identifier from expression
-            if let Expr::Ident(ident) = expr {
-                Ok(Stmt::VarDecl {
+            match expr {
+                Expr::Ident(ident) => Ok(Stmt::VarDecl {
                     name: ident,
                     kind: VarKind::Plain,
                     type_ann: None,
                     init: Some(value),
                     span,
-                })
-            } else {
-                Err(ParseError::unexpected_eof(Span::default()))
+                }),
+                other => {
+                    let target = expr_to_target(other)?;
+                    Ok(Stmt::Assign {
+                        target,
+                        op: AssignOp::Assign,
+                        value,
+                        span,
+                    })
+                }
             }
         } else if let Some(op) = self.peek_compound_assign_op() {
             // Compound assignment: x := value, x += value, etc.
@@ -783,8 +780,12 @@ impl StmtParser {
                     bracket_depth -= 1;
                 }
                 // Assignment operators also end expressions
-                Token::Assign | Token::ColonEq | Token::PlusEq |
-                Token::MinusEq | Token::StarEq | Token::SlashEq => {
+                Token::Assign
+                | Token::ColonEq
+                | Token::PlusEq
+                | Token::MinusEq
+                | Token::StarEq
+                | Token::SlashEq => {
                     if paren_depth == 0 && bracket_depth == 0 {
                         break;
                     }
@@ -853,7 +854,11 @@ impl StmtParser {
     }
 
     /// Expect a specific token
-    fn expect_token(&mut self, expected: Token, msg: impl Into<String>) -> Result<Span, ParseError> {
+    fn expect_token(
+        &mut self,
+        expected: Token,
+        msg: impl Into<String>,
+    ) -> Result<Span, ParseError> {
         let msg = msg.into();
         match self.peek_info() {
             Some(info) if info.token == expected => {
@@ -896,8 +901,26 @@ impl StmtParser {
 fn expr_to_target(expr: Expr) -> Result<AssignTarget, ParseError> {
     match expr {
         Expr::Ident(ident) => Ok(AssignTarget::Var(ident)),
-        Expr::Index { base, offset, span: _ } => Ok(AssignTarget::Index { base, offset }),
-        Expr::FieldAccess { base, field, span: _ } => Ok(AssignTarget::Field { base, field }),
+        Expr::ArrayLit(elements, _) => {
+            let mut idents = Vec::with_capacity(elements.len());
+            for element in elements {
+                match element {
+                    Expr::Ident(ident) => idents.push(ident),
+                    _ => return Err(ParseError::unexpected_eof(Span::default())),
+                }
+            }
+            Ok(AssignTarget::Tuple(idents))
+        }
+        Expr::Index {
+            base,
+            offset,
+            span: _,
+        } => Ok(AssignTarget::Index { base, offset }),
+        Expr::FieldAccess {
+            base,
+            field,
+            span: _,
+        } => Ok(AssignTarget::Field { base, field }),
         _ => Err(ParseError::unexpected_eof(Span::default())),
     }
 }

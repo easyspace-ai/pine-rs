@@ -79,21 +79,28 @@ pub fn eval_stmt(stmt: &ast::Stmt, ctx: &mut EvaluationContext) -> Result<()> {
             Ok(())
         }
         // If statement with series alignment enforcement
-        ast::Stmt::If { cond, then_block, elifs, else_block, .. } => {
-            eval_if_stmt(cond, then_block, elifs, else_block.as_ref(), ctx)
-        }
+        ast::Stmt::If {
+            cond,
+            then_block,
+            elifs,
+            else_block,
+            ..
+        } => eval_if_stmt(cond, then_block, elifs, else_block.as_ref(), ctx),
         // For loop
-        ast::Stmt::For { var, from, to, by, body, .. } => {
-            eval_for_loop(var, from, to, by.as_ref(), body, ctx)
-        }
+        ast::Stmt::For {
+            var,
+            from,
+            to,
+            by,
+            body,
+            ..
+        } => eval_for_loop(var, from, to, by.as_ref(), body, ctx),
         // While loop
-        ast::Stmt::While { cond, body, .. } => {
-            eval_while_loop(cond, body, ctx)
-        }
+        ast::Stmt::While { cond, body, .. } => eval_while_loop(cond, body, ctx),
         // Function definition
-        ast::Stmt::FnDef { name, params, body, .. } => {
-            eval_fn_def(name, params, body, ctx)
-        }
+        ast::Stmt::FnDef {
+            name, params, body, ..
+        } => eval_fn_def(name, params, body, ctx),
         // Type definition - handled during semantic analysis
         ast::Stmt::TypeDef { .. } => Ok(()),
         // Method definition - handled during semantic analysis
@@ -174,11 +181,7 @@ fn eval_for_loop(
 }
 
 /// Evaluate a while loop
-fn eval_while_loop(
-    cond: &ast::Expr,
-    body: &ast::Block,
-    ctx: &mut EvaluationContext,
-) -> Result<()> {
+fn eval_while_loop(cond: &ast::Expr, body: &ast::Block, ctx: &mut EvaluationContext) -> Result<()> {
     loop {
         let condition = eval_expr(cond, ctx)?;
         if !condition.is_truthy() {
@@ -230,6 +233,7 @@ fn eval_assign(
             ctx.set_var(&ident.name, value);
             Ok(())
         }
+        ast::AssignTarget::Tuple(idents) => eval_tuple_assign(idents, value, ctx),
         ast::AssignTarget::Field { base, field, .. } => {
             let base_value = eval_expr(base, ctx)?;
             eval_field_assign(base_value, field, value)
@@ -238,6 +242,31 @@ fn eval_assign(
             // TODO: Handle index assignment
             Ok(())
         }
+    }
+}
+
+fn eval_tuple_assign(
+    idents: &[ast::Ident],
+    value: Value,
+    ctx: &mut EvaluationContext,
+) -> Result<()> {
+    match value {
+        Value::Tuple(values) => {
+            for (ident, item) in idents.iter().zip(values.iter()) {
+                ctx.set_var(&ident.name, item.clone());
+            }
+            Ok(())
+        }
+        Value::Array(values) => {
+            for (ident, item) in idents.iter().zip(values.iter()) {
+                ctx.set_var(&ident.name, item.clone());
+            }
+            Ok(())
+        }
+        other => Err(EvalError::TypeError {
+            message: format!("Cannot destructure value {:?}", other),
+            span: idents.first().map(|i| i.span).unwrap_or_default(),
+        }),
     }
 }
 

@@ -161,10 +161,7 @@ impl TypeInference {
                     match (&lhs_ty, &rhs_ty) {
                         (Some(l), Some(r)) => {
                             if !types_compatible(l, r) {
-                                return Err(format!(
-                                    "Type mismatch: expected {}, found {}",
-                                    l, r
-                                ));
+                                return Err(format!("Type mismatch: expected {}, found {}", l, r));
                             }
                             // Unify the types and update both variables
                             let unified = unify_types(l, r)?;
@@ -187,10 +184,7 @@ impl TypeInference {
 
                     if let (Some(l), Some(r)) = (&lhs_ty, &rhs_ty) {
                         if !is_subtype(l, r) {
-                            return Err(format!(
-                                "Type {} is not a subtype of {}",
-                                l, r
-                            ));
+                            return Err(format!("Type {} is not a subtype of {}", l, r));
                         }
                     }
                 }
@@ -341,9 +335,7 @@ fn is_subtype(a: &PineType, b: &PineType) -> bool {
         // Int is subtype of Float
         (PineType::Int, PineType::Float) => true,
         // Series covariance: Series<T> is subtype of Series<U> if T is subtype of U
-        (PineType::Series(a_inner), PineType::Series(b_inner)) => {
-            is_subtype(a_inner, b_inner)
-        }
+        (PineType::Series(a_inner), PineType::Series(b_inner)) => is_subtype(a_inner, b_inner),
         // Equality
         (a, b) => a == b,
     }
@@ -356,9 +348,7 @@ fn unify_types(a: &PineType, b: &PineType) -> Result<PineType, String> {
         (PineType::Error, t) | (t, PineType::Error) => Ok(t.clone()),
         (a, b) if a == b => Ok(a.clone()),
         // Int and Float unify to Float
-        (PineType::Int, PineType::Float) | (PineType::Float, PineType::Int) => {
-            Ok(PineType::Float)
-        }
+        (PineType::Int, PineType::Float) | (PineType::Float, PineType::Int) => Ok(PineType::Float),
         // Series unification
         (PineType::Series(a_inner), PineType::Series(b_inner)) => {
             let unified = unify_types(a_inner, b_inner)?;
@@ -392,7 +382,9 @@ pub fn infer_expr_type(expr: &pine_parser::ast::Expr) -> PineType {
         Expr::Index { .. } => PineType::Unknown,
         Expr::NaCoalesce { .. } => PineType::Unknown,
         Expr::ArrayLit(_, _) => PineType::Array(Box::new(PineType::Unknown)),
-        Expr::MapLit(_, _) => PineType::Map(Box::new(PineType::Unknown), Box::new(PineType::Unknown)),
+        Expr::MapLit(_, _) => {
+            PineType::Map(Box::new(PineType::Unknown), Box::new(PineType::Unknown))
+        }
         Expr::Lambda { .. } => PineType::Function(Vec::new(), Box::new(PineType::Unknown)),
     }
 }

@@ -273,9 +273,7 @@ fn main() -> Result<()> {
 /// Convert OHLCV data to BarData for pine-eval
 fn convert_to_bar_data(data: &[OHLCV]) -> Vec<pine_eval::runner::BarData> {
     data.iter()
-        .map(|d| pine_eval::runner::BarData::new(
-            d.open, d.high, d.low, d.close, d.volume, d.time,
-        ))
+        .map(|d| pine_eval::runner::BarData::new(d.open, d.high, d.low, d.close, d.volume, d.time))
         .collect()
 }
 
@@ -285,8 +283,7 @@ fn execute_script(script: &str, data: Option<&[OHLCV]>) -> Result<ExecutionResul
     let tokens = pine_lexer::Lexer::lex_with_indentation(script)
         .map_err(|e| miette!("Lexical error: {:?}", e))?;
 
-    let ast = pine_parser::parser::parse(tokens)
-        .map_err(|e| miette!("Parse error: {:?}", e))?;
+    let ast = pine_parser::parser::parse(tokens).map_err(|e| miette!("Parse error: {:?}", e))?;
 
     let bars_processed = data.map(|d| d.len()).unwrap_or(0);
 
@@ -373,7 +370,8 @@ fn check_script(script_path: &str) -> Result<()> {
     let content = fs::read_to_string(path).into_diagnostic()?;
 
     // Lexical analysis - use lex_with_indentation to get INDENT/DEDENT tokens
-    let tokens = pine_lexer::Lexer::lex_with_indentation(&content).map_err(|e| miette!("Lexical error: {:?}", e))?;
+    let tokens = pine_lexer::Lexer::lex_with_indentation(&content)
+        .map_err(|e| miette!("Lexical error: {:?}", e))?;
 
     // Parse
     let ast = pine_parser::parser::parse(tokens).map_err(|e| miette!("Parse error: {:?}", e))?;

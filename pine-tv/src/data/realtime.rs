@@ -22,13 +22,9 @@ pub struct RealtimeDataManager {
 #[serde(tag = "type")]
 pub enum RealtimeUpdate {
     /// Full snapshot of all bars
-    Snapshot {
-        bars: Vec<OhlcvBar>,
-    },
+    Snapshot { bars: Vec<OhlcvBar> },
     /// Update to the forming bar
-    FormingUpdate {
-        bar: OhlcvBar,
-    },
+    FormingUpdate { bar: OhlcvBar },
     /// New bar added (previous closed)
     NewBar {
         closed_bar: OhlcvBar,
@@ -61,8 +57,13 @@ impl RealtimeDataManager {
     }
 
     /// Initialize with historical data
-    pub async fn load_historical(&self, client: &BinanceClient) -> Result<(), Box<dyn std::error::Error>> {
-        let bars = client.fetch_klines(&self.symbol, &self.interval, self.max_bars).await?;
+    pub async fn load_historical(
+        &self,
+        client: &BinanceClient,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let bars = client
+            .fetch_klines(&self.symbol, &self.interval, self.max_bars)
+            .await?;
 
         let mut bars_lock = self.bars.write().await;
         bars_lock.clear();

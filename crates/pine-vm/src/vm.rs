@@ -334,15 +334,16 @@ impl VM {
         let b = self.stack.pop().unwrap_or(Value::Na);
         let a = self.stack.pop().unwrap_or(Value::Na);
         // Use remainder for now (can be refined later)
-        self.stack.push(if let (Some(a), Some(b)) = (a.as_float(), b.as_float()) {
-            if b == 0.0 {
-                Value::Na
+        self.stack
+            .push(if let (Some(a), Some(b)) = (a.as_float(), b.as_float()) {
+                if b == 0.0 {
+                    Value::Na
+                } else {
+                    Value::Float(a % b)
+                }
             } else {
-                Value::Float(a % b)
-            }
-        } else {
-            Value::Na
-        });
+                Value::Na
+            });
         self.pc += 1;
         Ok(())
     }

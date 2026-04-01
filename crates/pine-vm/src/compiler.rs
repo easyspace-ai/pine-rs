@@ -135,17 +135,20 @@ impl Compiler {
     /// Compile a constant value
     pub fn compile_const(&mut self, value: Value) {
         let idx = self.chunk.add_constant(value);
-        self.chunk.emit_op1(OpCode::PushConst, idx, self.current_line);
+        self.chunk
+            .emit_op1(OpCode::PushConst, idx, self.current_line);
     }
 
     /// Compile a variable load from slot
     pub fn compile_load_slot(&mut self, slot: usize) {
-        self.chunk.emit_op1(OpCode::LoadSlot, slot, self.current_line);
+        self.chunk
+            .emit_op1(OpCode::LoadSlot, slot, self.current_line);
     }
 
     /// Compile a variable store to slot
     pub fn compile_store_slot(&mut self, slot: usize) {
-        self.chunk.emit_op1(OpCode::StoreSlot, slot, self.current_line);
+        self.chunk
+            .emit_op1(OpCode::StoreSlot, slot, self.current_line);
     }
 
     /// Compile binary operation
@@ -179,7 +182,8 @@ impl Compiler {
 
     /// Compile a function call
     pub fn compile_call(&mut self, func_idx: usize, arg_count: usize) {
-        self.chunk.emit_op2(OpCode::Call, func_idx, arg_count, self.current_line);
+        self.chunk
+            .emit_op2(OpCode::Call, func_idx, arg_count, self.current_line);
     }
 
     /// Compile a jump (placeholder, to be patched later)

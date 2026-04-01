@@ -51,7 +51,11 @@ impl std::error::Error for ParseError {}
 
 impl ParseError {
     /// Create a new unexpected token error
-    pub fn unexpected_token(found: impl Into<String>, expected: impl Into<String>, span: Span) -> Self {
+    pub fn unexpected_token(
+        found: impl Into<String>,
+        expected: impl Into<String>,
+        span: Span,
+    ) -> Self {
         let found = found.into();
         let expected = expected.into();
         Self {
@@ -163,15 +167,22 @@ impl SyncPoint {
         match self {
             SyncPoint::Newline => matches!(token, Token::Newline),
             SyncPoint::Indentation => matches!(token, Token::Indent | Token::Dedent),
-            SyncPoint::BlockStart => matches!(token,
-                Token::If | Token::For | Token::While | Token::Fn |
-                Token::Type | Token::Method | Token::Switch |
-                Token::Var | Token::Varip | Token::Import |
-                Token::Export | Token::Library
+            SyncPoint::BlockStart => matches!(
+                token,
+                Token::If
+                    | Token::For
+                    | Token::While
+                    | Token::Fn
+                    | Token::Type
+                    | Token::Method
+                    | Token::Switch
+                    | Token::Var
+                    | Token::Varip
+                    | Token::Import
+                    | Token::Export
+                    | Token::Library
             ),
-            SyncPoint::Delimiter => matches!(token,
-                Token::RParen | Token::RBracket | Token::Comma
-            ),
+            SyncPoint::Delimiter => matches!(token, Token::RParen | Token::RBracket | Token::Comma),
         }
     }
 }
@@ -191,10 +202,7 @@ impl Default for RecoveryContext {
     fn default() -> Self {
         Self {
             strategy: RecoveryStrategy::SkipToStatement,
-            sync_points: vec![
-                SyncPoint::Newline,
-                SyncPoint::BlockStart,
-            ],
+            sync_points: vec![SyncPoint::Newline, SyncPoint::BlockStart],
             max_errors: 10,
         }
     }

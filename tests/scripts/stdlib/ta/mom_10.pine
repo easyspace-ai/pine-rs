@@ -1,0 +1,7 @@
+// Golden test: ta.mom(close, 10)
+
+indicator("Momentum 10 Golden Test")
+
+mom_10 = ta.mom(close, 10)
+
+plot(mom_10, title="Momentum 10", color=color.blue)

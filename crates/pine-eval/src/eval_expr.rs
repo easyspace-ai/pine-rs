@@ -39,7 +39,12 @@ pub fn eval_expr(expr: &ast::Expr, ctx: &mut EvaluationContext) -> Result<Value>
             let val = eval_expr(operand, ctx)?;
             eval_unary_op(*op, &val)
         }
-        ast::Expr::Ternary { cond, then_branch, else_branch, .. } => {
+        ast::Expr::Ternary {
+            cond,
+            then_branch,
+            else_branch,
+            ..
+        } => {
             let condition = eval_expr(cond, ctx)?;
             if condition.is_truthy() {
                 eval_expr(then_branch, ctx)
@@ -47,12 +52,8 @@ pub fn eval_expr(expr: &ast::Expr, ctx: &mut EvaluationContext) -> Result<Value>
                 eval_expr(else_branch, ctx)
             }
         }
-        ast::Expr::FnCall { func, args, .. } => {
-            eval_fn_call(func, args, ctx)
-        }
-        ast::Expr::Index { base, offset, .. } => {
-            eval_index_access(base, offset, ctx)
-        }
+        ast::Expr::FnCall { func, args, .. } => eval_fn_call(func, args, ctx),
+        ast::Expr::Index { base, offset, .. } => eval_index_access(base, offset, ctx),
         _ => {
             // TODO: Implement other expression types (ArrayLit, MapLit, Lambda, etc.)
             Ok(Value::Na)
@@ -164,8 +165,23 @@ fn eval_method_call(
             // Evaluate arguments
             let mut arg_values = Vec::with_capacity(args.len());
             for arg in args {
-                let val = eval_expr(&arg.value, ctx)?;
+                let val = eval_namespace_arg(&ns, &arg.value, ctx)?;
                 arg_values.push(val);
+            }
+
+            // Some ta.* functions use implicit built-in series in Pine Script.
+            if (full_name == "ta.atr" && arg_values.len() == 1)
+                || (full_name == "ta.tr" && arg_values.len() <= 1)
+            {
+                if let (Some(high), Some(low), Some(close)) = (
+                    builtin_series_value("high", ctx),
+                    builtin_series_value("low", ctx),
+                    builtin_series_value("close", ctx),
+                ) {
+                    arg_values.insert(0, close);
+                    arg_values.insert(0, low);
+                    arg_values.insert(0, high);
+                }
             }
 
             // Dispatch the function
@@ -180,6 +196,67 @@ fn eval_method_call(
         }
         _ => Err(EvalError::NotAnObject { found: base, span }),
     }
+}
+
+/// Evaluate an argument passed to a namespaced function.
+///
+/// For series-aware namespaces such as `ta` and `input`, built-in price sources
+/// need the full history up to the current bar rather than only the current bar.
+fn eval_namespace_arg(
+    namespace: &str,
+    expr: &ast::Expr,
+    ctx: &mut EvaluationContext,
+) -> Result<Value> {
+    if matches!(namespace, "ta" | "input") {
+        if let Some(series_value) = eval_builtin_series_arg(expr, ctx) {
+            return Ok(series_value);
+        }
+    }
+
+    eval_expr(expr, ctx)
+}
+
+/// Build a series array for built-in price sources up to the current bar.
+fn eval_builtin_series_arg(expr: &ast::Expr, ctx: &EvaluationContext) -> Option<Value> {
+    let ident = match expr {
+        ast::Expr::Ident(ident) => ident,
+        _ => return None,
+    };
+
+    if let Some(series) = builtin_series_value(&ident.name, ctx) {
+        return Some(series);
+    }
+
+    ctx.get_var_history(&ident.name)
+        .map(|values| Value::Array(values.to_vec()))
+}
+
+fn builtin_series_value(name: &str, ctx: &EvaluationContext) -> Option<Value> {
+    let series_data = ctx.series_data.as_ref()?;
+    let end = series_data.current_bar + 1;
+
+    let values = match name {
+        "open" => series_data.open.get(..end)?,
+        "high" => series_data.high.get(..end)?,
+        "low" => series_data.low.get(..end)?,
+        "close" => series_data.close.get(..end)?,
+        "volume" => series_data.volume.get(..end)?,
+        "time" => {
+            return Some(Value::Array(
+                series_data
+                    .time
+                    .get(..end)?
+                    .iter()
+                    .map(|v| Value::Int(*v))
+                    .collect(),
+            ))
+        }
+        _ => return None,
+    };
+
+    Some(Value::Array(
+        values.iter().copied().map(Value::Float).collect(),
+    ))
 }
 
 /// Evaluate a binary operation
@@ -292,7 +369,11 @@ fn eval_plot_call(args: &[ast::Arg], ctx: &mut EvaluationContext) -> Result<Valu
 /// This function handles historical series access like `close[1]` which accesses
 /// the previous bar's close value. The offset is evaluated and used to look up
 /// the historical value from the series data.
-fn eval_index_access(base: &ast::Expr, offset: &ast::Expr, ctx: &mut EvaluationContext) -> Result<Value> {
+fn eval_index_access(
+    base: &ast::Expr,
+    offset: &ast::Expr,
+    ctx: &mut EvaluationContext,
+) -> Result<Value> {
     // Get the series name from the base expression
     let series_name = match base {
         ast::Expr::Ident(ident) => &ident.name,

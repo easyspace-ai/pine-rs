@@ -3,7 +3,6 @@
 
 use futures_util::{SinkExt, StreamExt};
 use serde::Deserialize;
-use std::sync::Arc;
 use tokio::sync::broadcast;
 use tokio_tungstenite::{connect_async, tungstenite::protocol::Message};
 
@@ -13,6 +12,7 @@ use crate::data::OhlcvBar;
 #[derive(Debug, Deserialize)]
 pub struct WsKlineMessage {
     #[serde(rename = "s")]
+    #[allow(dead_code)]
     pub symbol: String,
     #[serde(rename = "k")]
     pub kline: WsKlineData,
@@ -24,10 +24,13 @@ pub struct WsKlineData {
     #[serde(rename = "t")]
     pub start_time: u64,
     #[serde(rename = "T")]
+    #[allow(dead_code)]
     pub end_time: u64,
     #[serde(rename = "s")]
+    #[allow(dead_code)]
     pub symbol: String,
     #[serde(rename = "i")]
+    #[allow(dead_code)]
     pub interval: String,
     #[serde(rename = "o")]
     pub open: String,
@@ -52,9 +55,7 @@ pub enum BarUpdate {
         is_new: bool, // true if this is the first update for this bar
     },
     /// Bar closed (finalized, new bar starting)
-    Closed {
-        bar: OhlcvBar,
-    },
+    Closed { bar: OhlcvBar },
 }
 
 /// Binance WebSocket client for real-time K-lines
@@ -107,7 +108,12 @@ impl BinanceWsClient {
     }
 
     /// Handle the WebSocket stream
-    async fn handle_stream(ws_stream: tokio_tungstenite::WebSocketStream<tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>>, tx: broadcast::Sender<BarUpdate>) {
+    async fn handle_stream(
+        ws_stream: tokio_tungstenite::WebSocketStream<
+            tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>,
+        >,
+        tx: broadcast::Sender<BarUpdate>,
+    ) {
         let (mut write, mut read) = ws_stream.split();
         let mut last_bar_time = None;
 
@@ -126,7 +132,10 @@ impl BinanceWsClient {
                             let _ = tx.send(BarUpdate::Closed { bar });
                         } else {
                             // Forming bar update
-                            let _ = tx.send(BarUpdate::Forming { bar, is_new: is_new_bar });
+                            let _ = tx.send(BarUpdate::Forming {
+                                bar,
+                                is_new: is_new_bar,
+                            });
                         }
                     }
                 }

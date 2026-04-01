@@ -1,0 +1,7 @@
+// Golden test: ta.tr()
+
+indicator("TR Basic Golden Test")
+
+tr_value = ta.tr()
+
+plot(tr_value, title="TR", color=color.orange)

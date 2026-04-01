@@ -230,7 +230,12 @@ fn setup_builtin_vars(
         low: state.low_series.to_vec_oldest_first(),
         close: state.close_series.to_vec_oldest_first(),
         volume: state.volume_series.to_vec_oldest_first(),
-        time: state.time_series.to_vec_oldest_first().into_iter().map(|t| t as i64).collect(),
+        time: state
+            .time_series
+            .to_vec_oldest_first()
+            .into_iter()
+            .map(|t| t as i64)
+            .collect(),
         current_bar: bar_idx,
     });
 

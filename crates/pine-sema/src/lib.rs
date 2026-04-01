@@ -12,7 +12,7 @@ pub mod infer;
 pub mod scope;
 pub mod types;
 
-pub use infer::{TypeInference, TypeVar, InferenceResult};
+pub use infer::{InferenceResult, TypeInference, TypeVar};
 pub use scope::SlotId;
 
 use pine_lexer::Span;
@@ -99,7 +99,10 @@ impl SeriesAnnotationPass {
     }
 
     /// Run the annotation pass on a script
-    pub fn run(&mut self, script: &ast::Script) -> std::collections::HashMap<String, SeriesAnnotation> {
+    pub fn run(
+        &mut self,
+        script: &ast::Script,
+    ) -> std::collections::HashMap<String, SeriesAnnotation> {
         for stmt in &script.stmts {
             self.annotate_stmt(stmt);
         }
@@ -109,7 +112,9 @@ impl SeriesAnnotationPass {
     /// Annotate a statement
     fn annotate_stmt(&mut self, stmt: &ast::Stmt) {
         match stmt {
-            ast::Stmt::VarDecl { name, kind, init, .. } => {
+            ast::Stmt::VarDecl {
+                name, kind, init, ..
+            } => {
                 let modifier = match kind {
                     ast::VarKind::Var => VarModifier::Var,
                     ast::VarKind::Varip => VarModifier::Varip,
@@ -121,8 +126,7 @@ impl SeriesAnnotationPass {
                 // Check if initializer is a series expression
                 let needs_series = init.as_ref().is_some_and(|e| self.expr_needs_series(e));
 
-                let annotation = SeriesAnnotation::new(PineType::Unknown)
-                    .with_modifier(modifier);
+                let annotation = SeriesAnnotation::new(PineType::Unknown).with_modifier(modifier);
 
                 let annotation = if needs_series || is_var_or_varip {
                     annotation.with_series()
@@ -146,7 +150,12 @@ impl SeriesAnnotationPass {
                 }
             }
             ast::Stmt::Assign { .. } => {}
-            ast::Stmt::If { then_block, elifs, else_block, .. } => {
+            ast::Stmt::If {
+                then_block,
+                elifs,
+                else_block,
+                ..
+            } => {
                 for stmt in &then_block.stmts {
                     self.annotate_stmt(stmt);
                 }
@@ -180,7 +189,10 @@ impl SeriesAnnotationPass {
         match expr {
             // Built-in series like close, high, low, open, volume
             ast::Expr::Ident(ident) => {
-                matches!(ident.name.as_str(), "close" | "high" | "low" | "open" | "volume" | "hl2" | "hlc3" | "ohlc4")
+                matches!(
+                    ident.name.as_str(),
+                    "close" | "high" | "low" | "open" | "volume" | "hl2" | "hlc3" | "ohlc4"
+                )
             }
             // Historical access like close[1]
             ast::Expr::Index { base, .. } => {
@@ -194,10 +206,19 @@ impl SeriesAnnotationPass {
             ast::Expr::FnCall { func, .. } => {
                 if let ast::Expr::Ident(ident) = func.as_ref() {
                     // Built-in functions that return series
-                    matches!(ident.name.as_str(),
-                        "ta.sma" | "ta.ema" | "ta.rsi" | "ta.macd" |
-                        "ta.bb" | "ta.cci" | "ta.atr" | "ta.tr" |
-                        "math.max" | "math.min" | "nz"
+                    matches!(
+                        ident.name.as_str(),
+                        "ta.sma"
+                            | "ta.ema"
+                            | "ta.rsi"
+                            | "ta.macd"
+                            | "ta.bb"
+                            | "ta.cci"
+                            | "ta.atr"
+                            | "ta.tr"
+                            | "math.max"
+                            | "math.min"
+                            | "nz"
                     )
                 } else {
                     false
@@ -242,40 +263,52 @@ impl VarLiftingPass {
     /// Collect var declarations from a statement
     fn collect_var_decls(&mut self, stmt: &ast::Stmt) {
         match stmt {
-            ast::Stmt::VarDecl { name, kind, type_ann, .. } => {
+            ast::Stmt::VarDecl {
+                name,
+                kind,
+                type_ann,
+                ..
+            } => {
                 if matches!(kind, ast::VarKind::Var | ast::VarKind::Varip) {
                     let modifier = match kind {
                         ast::VarKind::Var => VarModifier::Var,
                         ast::VarKind::Varip => VarModifier::Varip,
                         ast::VarKind::Plain => VarModifier::None,
                     };
-                    let ty = type_ann.as_ref().map_or(PineType::Unknown, |ann| match ann {
-                        ast::TypeAnn::Simple(s) => match s.as_str() {
-                            "int" => PineType::Int,
-                            "float" => PineType::Float,
-                            "bool" => PineType::Bool,
-                            "string" => PineType::String,
-                            "color" => PineType::Color,
-                            _ => PineType::Unknown,
-                        },
-                        ast::TypeAnn::Series(inner) => {
-                            let inner_ty = match inner.as_ref() {
-                                ast::TypeAnn::Simple(s) => match s.as_str() {
-                                    "int" => PineType::Int,
-                                    "float" => PineType::Float,
-                                    "bool" => PineType::Bool,
-                                    _ => PineType::Unknown,
-                                },
+                    let ty = type_ann
+                        .as_ref()
+                        .map_or(PineType::Unknown, |ann| match ann {
+                            ast::TypeAnn::Simple(s) => match s.as_str() {
+                                "int" => PineType::Int,
+                                "float" => PineType::Float,
+                                "bool" => PineType::Bool,
+                                "string" => PineType::String,
+                                "color" => PineType::Color,
                                 _ => PineType::Unknown,
-                            };
-                            PineType::Series(Box::new(inner_ty))
-                        }
-                        _ => PineType::Unknown,
-                    });
+                            },
+                            ast::TypeAnn::Series(inner) => {
+                                let inner_ty = match inner.as_ref() {
+                                    ast::TypeAnn::Simple(s) => match s.as_str() {
+                                        "int" => PineType::Int,
+                                        "float" => PineType::Float,
+                                        "bool" => PineType::Bool,
+                                        _ => PineType::Unknown,
+                                    },
+                                    _ => PineType::Unknown,
+                                };
+                                PineType::Series(Box::new(inner_ty))
+                            }
+                            _ => PineType::Unknown,
+                        });
                     self.lifted_vars.push((name.name.clone(), modifier, ty));
                 }
             }
-            ast::Stmt::If { then_block, elifs, else_block, .. } => {
+            ast::Stmt::If {
+                then_block,
+                elifs,
+                else_block,
+                ..
+            } => {
                 for stmt in &then_block.stmts {
                     self.collect_var_decls(stmt);
                 }

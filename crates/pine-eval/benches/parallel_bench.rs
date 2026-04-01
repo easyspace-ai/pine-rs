@@ -5,8 +5,11 @@
 //! - Parallel data processing
 //! - Series operations (SMA, sum, max, min)
 
-use criterion::{black_box, criterion_group, criterion_main, Criterion, BenchmarkId, Throughput};
-use pine_eval::parallel::{execute_scripts_parallel, scan_symbols_parallel, parallel_series_map, parallel_series_reduce, ParallelConfig, ScriptTask};
+use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
+use pine_eval::parallel::{
+    execute_scripts_parallel, parallel_series_map, parallel_series_reduce, scan_symbols_parallel,
+    ParallelConfig, ScriptTask,
+};
 use pine_runtime::series::SeriesBufF64;
 
 fn generate_price_data(size: usize) -> Vec<f64> {
@@ -68,9 +71,7 @@ fn bench_symbol_scanning(c: &mut Criterion) {
     let mut group = c.benchmark_group("symbol_scan");
 
     for num_symbols in [10, 50, 100].iter() {
-        let symbols: Vec<String> = (0..*num_symbols)
-            .map(|i| format!("SYM{}", i))
-            .collect();
+        let symbols: Vec<String> = (0..*num_symbols).map(|i| format!("SYM{}", i)).collect();
 
         group.bench_with_input(
             BenchmarkId::new("sequential", num_symbols),
@@ -253,7 +254,11 @@ fn bench_combined_indicators(c: &mut Criterion) {
                     }
                     let avg_gain = gains / 14.0;
                     let avg_loss = losses / 14.0;
-                    let rs = if avg_loss == 0.0 { 0.0 } else { avg_gain / avg_loss };
+                    let rs = if avg_loss == 0.0 {
+                        0.0
+                    } else {
+                        avg_gain / avg_loss
+                    };
                     let _rsi = 100.0 - (100.0 / (1.0 + rs));
 
                     black_box((sma_fast, sma_slow, sma_signal, _rsi));

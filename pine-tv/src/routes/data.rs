@@ -11,7 +11,6 @@ use serde::Serialize;
 use std::sync::Arc;
 
 use crate::data::binance::BinanceClient;
-use crate::data::OhlcvBar;
 use crate::data::loader::DataLoader;
 
 /// Data response

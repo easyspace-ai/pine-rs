@@ -157,6 +157,8 @@ pub struct Block {
 pub enum AssignTarget {
     /// Simple variable: x
     Var(Ident),
+    /// Tuple destructuring assignment: [a, b, c]
+    Tuple(Vec<Ident>),
     /// Array/series index: arr[0], close[1]
     Index { base: Box<Expr>, offset: Box<Expr> },
     /// Field access: obj.field
@@ -168,6 +170,9 @@ impl AssignTarget {
     pub fn span(&self) -> Span {
         match self {
             AssignTarget::Var(ident) => ident.span,
+            AssignTarget::Tuple(idents) => idents
+                .iter()
+                .fold(Span::default(), |acc, ident| acc.merge(ident.span)),
             AssignTarget::Index { base, offset } => base.span().merge(offset.span()),
             AssignTarget::Field { base, field } => base.span().merge(field.span),
         }

@@ -1,9 +1,9 @@
 //! Data loader for pine-tv
 //! Loads OHLCV data from CSV files or Binance API.
 
-use std::path::{Path, PathBuf};
 use std::fs::File;
 use std::io::{self, BufRead, BufReader};
+use std::path::{Path, PathBuf};
 
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
@@ -66,6 +66,7 @@ pub enum DataLoadError {
 /// Data loader for OHLCV data
 pub struct DataLoader {
     data_dir: PathBuf,
+    #[allow(dead_code)]
     binance_client: BinanceClient,
 }
 
@@ -79,21 +80,26 @@ impl DataLoader {
     }
 
     /// Load OHLCV data for a symbol and timeframe
-    pub async fn load(&self, symbol: &str, timeframe: &str) -> Result<Vec<OhlcvBar>, DataLoadError> {
-        // First try to load from Binance API
+    #[allow(dead_code)]
+    pub async fn load(
+        &self,
+        symbol: &str,
+        timeframe: &str,
+    ) -> Result<Vec<OhlcvBar>, DataLoadError> {
         match self.load_from_binance(symbol, timeframe, 500).await {
-            Ok(bars) if !bars.is_empty() => {
-                return Ok(bars);
-            }
-            _ => {
-                // Fall back to local CSV or sample data
-                self.load_local(symbol, timeframe)
-            }
+            Ok(bars) if !bars.is_empty() => Ok(bars),
+            _ => self.load_local(symbol, timeframe),
         }
     }
 
     /// Load data from Binance API
-    pub async fn load_from_binance(&self, symbol: &str, timeframe: &str, limit: usize) -> Result<Vec<OhlcvBar>, DataLoadError> {
+    #[allow(dead_code)]
+    pub async fn load_from_binance(
+        &self,
+        symbol: &str,
+        timeframe: &str,
+        limit: usize,
+    ) -> Result<Vec<OhlcvBar>, DataLoadError> {
         // Map pine-tv timeframe to Binance interval
         let binance_interval = match timeframe {
             "1m" => "1m",
@@ -106,7 +112,8 @@ impl DataLoader {
             _ => "1h",
         };
 
-        let bars = self.binance_client
+        let bars = self
+            .binance_client
             .fetch_klines(symbol, binance_interval, limit)
             .await?;
 
@@ -114,7 +121,11 @@ impl DataLoader {
     }
 
     /// Load data from local sources (CSV or sample)
-    pub fn load_local(&self, symbol: &str, timeframe: &str) -> Result<Vec<OhlcvBar>, DataLoadError> {
+    pub fn load_local(
+        &self,
+        symbol: &str,
+        timeframe: &str,
+    ) -> Result<Vec<OhlcvBar>, DataLoadError> {
         // Try to find a matching CSV file
         let filename = format!("{}_{}.csv", symbol, timeframe);
         let path = self.data_dir.join(&filename);
@@ -188,25 +199,25 @@ impl DataLoader {
         // Parse time - can be Unix timestamp or ISO string
         let time = self.parse_timestamp(parts[0])?;
 
-        let open = parts[1].parse::<f64>().map_err(|_| {
-            DataLoadError::InvalidNumber(format!("invalid open: {}", parts[1]))
-        })?;
+        let open = parts[1]
+            .parse::<f64>()
+            .map_err(|_| DataLoadError::InvalidNumber(format!("invalid open: {}", parts[1])))?;
 
-        let high = parts[2].parse::<f64>().map_err(|_| {
-            DataLoadError::InvalidNumber(format!("invalid high: {}", parts[2]))
-        })?;
+        let high = parts[2]
+            .parse::<f64>()
+            .map_err(|_| DataLoadError::InvalidNumber(format!("invalid high: {}", parts[2])))?;
 
-        let low = parts[3].parse::<f64>().map_err(|_| {
-            DataLoadError::InvalidNumber(format!("invalid low: {}", parts[3]))
-        })?;
+        let low = parts[3]
+            .parse::<f64>()
+            .map_err(|_| DataLoadError::InvalidNumber(format!("invalid low: {}", parts[3])))?;
 
-        let close = parts[4].parse::<f64>().map_err(|_| {
-            DataLoadError::InvalidNumber(format!("invalid close: {}", parts[4]))
-        })?;
+        let close = parts[4]
+            .parse::<f64>()
+            .map_err(|_| DataLoadError::InvalidNumber(format!("invalid close: {}", parts[4])))?;
 
-        let volume = parts[5].parse::<f64>().map_err(|_| {
-            DataLoadError::InvalidNumber(format!("invalid volume: {}", parts[5]))
-        })?;
+        let volume = parts[5]
+            .parse::<f64>()
+            .map_err(|_| DataLoadError::InvalidNumber(format!("invalid volume: {}", parts[5])))?;
 
         Ok(OhlcvBar::new(time, open, high, low, close, volume))
     }

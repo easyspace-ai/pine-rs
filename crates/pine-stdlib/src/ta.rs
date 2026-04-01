@@ -4,62 +4,42 @@
 //! All functions follow TradingView's exact semantics including NA handling and initialization.
 
 use crate::registry::{FunctionMeta, FunctionRegistry};
-use pine_runtime::series::SeriesBufF64;
 use pine_runtime::value::Value;
 use std::sync::Arc;
 
-/// Optimized SMA calculation using SeriesBufF64
+/// SMA calculation over the trailing window ending at the current bar.
 ///
-/// This is faster than the generic calculate_sma because it uses SIMD-optimized
-/// sum operations on contiguous f64 data.
-///
-/// # Note
-/// The `values` slice should be in chronological order [oldest, ..., newest].
-/// This function will reverse them to match SeriesBufF64's [newest, ..., oldest] convention.
+/// The `values` slice is in chronological order: `[oldest, ..., newest]`.
 pub fn calculate_sma_f64(values: &[f64], length: usize) -> Option<f64> {
     if length == 0 || values.len() < length {
         return None;
     }
 
-    // Use SeriesBufF64 for SIMD-optimized calculation
-    // Reverse the values since SeriesBufF64 expects newest first
-    let mut series = SeriesBufF64::new(values.len().max(length));
-    for &v in values.iter().rev() {
-        series.push(v);
-    }
-    series.sma(length)
+    let start = values.len() - length;
+    let window = &values[start..];
+    Some(window.iter().sum::<f64>() / length as f64)
 }
 
-/// Optimized highest calculation using SeriesBufF64
-///
-/// # Note
-/// The `values` slice should be in chronological order [oldest, ..., newest].
+/// Highest calculation over the trailing window ending at the current bar.
 pub fn calculate_highest_f64(values: &[f64], length: usize) -> Option<f64> {
     if length == 0 || values.is_empty() {
         return None;
     }
 
-    let mut series = SeriesBufF64::new(values.len().max(length));
-    for &v in values.iter().rev() {
-        series.push(v);
-    }
-    series.max(length.min(values.len()))
+    let window_len = length.min(values.len());
+    let start = values.len() - window_len;
+    values[start..].iter().copied().reduce(f64::max)
 }
 
-/// Optimized lowest calculation using SeriesBufF64
-///
-/// # Note
-/// The `values` slice should be in chronological order [oldest, ..., newest].
+/// Lowest calculation over the trailing window ending at the current bar.
 pub fn calculate_lowest_f64(values: &[f64], length: usize) -> Option<f64> {
     if length == 0 || values.is_empty() {
         return None;
     }
 
-    let mut series = SeriesBufF64::new(values.len().max(length));
-    for &v in values.iter().rev() {
-        series.push(v);
-    }
-    series.min(length.min(values.len()))
+    let window_len = length.min(values.len());
+    let start = values.len() - window_len;
+    values[start..].iter().copied().reduce(f64::min)
 }
 
 /// Convert Value slice to f64 vec, skipping NA values
@@ -145,9 +125,7 @@ fn calculate_sma(values: &[Value], length: usize) -> Value {
         return Value::Na;
     }
 
-    // Convert to f64 slice for SIMD optimization
-    // Values are in order [oldest, ..., newest] in the array
-    // but SeriesBufF64 expects [newest, ..., oldest]
+    // Convert to f64 slice in chronological order [oldest, ..., newest]
     let f64_values: Vec<f64> = values
         .iter()
         .filter_map(|v| match v {
@@ -171,8 +149,10 @@ fn calculate_sma(values: &[Value], length: usize) -> Value {
 /// Exponential Moving Average calculation
 /// EMA = alpha * current + (1 - alpha) * previous_ema
 /// where alpha = 2 / (length + 1)
+///
+/// The `values` slice is in chronological order: `[oldest, ..., newest]`.
 fn calculate_ema(values: &[Value], length: usize, wilder: bool) -> Value {
-    if length == 0 || values.is_empty() {
+    if length == 0 {
         return Value::Na;
     }
 
@@ -183,74 +163,67 @@ fn calculate_ema(values: &[Value], length: usize, wilder: bool) -> Value {
         2.0 / (length as f64 + 1.0)
     };
 
-    // Get current value
-    let current = match values.first().and_then(get_float) {
-        Some(f) => f,
-        None => return Value::Na,
-    };
-
-    // For the first values until we have enough data, use SMA
     let valid_values: Vec<f64> = values.iter().filter_map(get_float).collect();
-
     if valid_values.len() < length {
-        // Not enough data yet, calculate SMA of available values
-        if valid_values.is_empty() {
-            return Value::Na;
-        }
-        let sum: f64 = valid_values.iter().sum();
-        return Value::Float(sum / valid_values.len() as f64);
+        return Value::Na;
     }
 
-    // Calculate EMA recursively
-    // Start with SMA as the seed
+    // Seed EMA with the first trailing full window available.
     let mut ema = valid_values.iter().take(length).sum::<f64>() / length as f64;
-
-    // Apply EMA formula for remaining values (in reverse chronological order)
-    // values[0] is newest, so we need to process from oldest to newest
     for val in valid_values.iter().skip(length) {
         ema = alpha * val + (1.0 - alpha) * ema;
     }
 
-    // Update with current value
-    ema = alpha * current + (1.0 - alpha) * ema;
-
     Value::Float(ema)
 }
 
+fn calculate_ema_from_f64(values: &[f64], length: usize, wilder: bool) -> Option<f64> {
+    if length == 0 || values.len() < length {
+        return None;
+    }
+
+    let alpha = if wilder {
+        1.0 / length as f64
+    } else {
+        2.0 / (length as f64 + 1.0)
+    };
+
+    let mut ema = values.iter().take(length).sum::<f64>() / length as f64;
+    for val in values.iter().skip(length) {
+        ema = alpha * val + (1.0 - alpha) * ema;
+    }
+    Some(ema)
+}
+
 /// Weighted Moving Average calculation
-/// WMA = (N*P1 + (N-1)*P2 + ... + 1*PN) / (N + (N-1) + ... + 1)
+/// WMA = (1*oldest + 2*... + N*newest) / (1 + 2 + ... + N)
 fn calculate_wma(values: &[Value], length: usize) -> Value {
-    if length == 0 || values.is_empty() {
+    let valid_values: Vec<f64> = values.iter().filter_map(get_float).collect();
+    if length == 0 || valid_values.len() < length {
         return Value::Na;
     }
 
+    let window = &valid_values[valid_values.len() - length..];
     let mut weighted_sum = 0.0;
     let mut weight_sum = 0;
 
-    for i in 0..length.min(values.len()) {
-        let weight = length - i; // N, N-1, ..., 1
-        if let Some(f) = values.get(i).and_then(get_float) {
-            weighted_sum += weight as f64 * f;
-            weight_sum += weight;
-        }
-        // NA values contribute nothing
+    for (idx, value) in window.iter().enumerate() {
+        let weight = idx + 1;
+        weighted_sum += weight as f64 * value;
+        weight_sum += weight;
     }
 
-    if weight_sum == 0 {
-        Value::Na
-    } else {
-        Value::Float(weighted_sum / weight_sum as f64)
-    }
+    Value::Float(weighted_sum / weight_sum as f64)
 }
 
 /// Calculate True Range
 fn calculate_tr(high: &[Value], low: &[Value], close: &[Value]) -> Value {
-    let current_high = match high.first().and_then(get_float) {
+    let current_high = match high.last().and_then(get_float) {
         Some(f) => f,
         None => return Value::Na,
     };
 
-    let current_low = match low.first().and_then(get_float) {
+    let current_low = match low.last().and_then(get_float) {
         Some(f) => f,
         None => return Value::Na,
     };
@@ -258,7 +231,11 @@ fn calculate_tr(high: &[Value], low: &[Value], close: &[Value]) -> Value {
     // TR = max(high - low, |high - previous_close|, |low - previous_close|)
     let tr1 = current_high - current_low;
 
-    let prev_close = close.get(1).and_then(get_float);
+    let prev_close = if close.len() >= 2 {
+        close.get(close.len() - 2).and_then(get_float)
+    } else {
+        None
+    };
 
     match prev_close {
         Some(pc) => {
@@ -394,12 +371,12 @@ fn register_rsi(registry: &mut FunctionRegistry) {
         let mut gains = Vec::new();
         let mut losses = Vec::new();
 
-        for i in 0..series.len().saturating_sub(1) {
-            let current = match series.get(i).and_then(get_float) {
+        for i in 1..series.len() {
+            let previous = match series.get(i - 1).and_then(get_float) {
                 Some(f) => f,
                 None => continue,
             };
-            let previous = match series.get(i + 1).and_then(get_float) {
+            let current = match series.get(i).and_then(get_float) {
                 Some(f) => f,
                 None => continue,
             };
@@ -451,26 +428,46 @@ fn register_macd(registry: &mut FunctionRegistry) {
 
         let fast_len = extract_length(args, 1, 12);
         let slow_len = extract_length(args, 2, 26);
-        let _signal_len = extract_length(args, 3, 9);
+        let signal_len = extract_length(args, 3, 9);
 
-        // Calculate fast and slow EMAs
-        let fast_ema = calculate_ema(series, fast_len, false);
-        let slow_ema = calculate_ema(series, slow_len, false);
+        let prices = value_slice_to_f64(series);
+        if prices.len() < slow_len {
+            return Value::Tuple(Box::new([Value::Na, Value::Na, Value::Na]));
+        }
 
-        // MACD line = Fast EMA - Slow EMA
-        let macd_line = match (&fast_ema, &slow_ema) {
-            (Value::Float(f), Value::Float(s)) => Value::Float(f - s),
-            _ => Value::Na,
+        let fast = match calculate_ema_from_f64(&prices, fast_len, false) {
+            Some(v) => v,
+            None => return Value::Tuple(Box::new([Value::Na, Value::Na, Value::Na])),
+        };
+        let slow = match calculate_ema_from_f64(&prices, slow_len, false) {
+            Some(v) => v,
+            None => return Value::Tuple(Box::new([Value::Na, Value::Na, Value::Na])),
+        };
+        let macd = fast - slow;
+
+        let mut macd_series = Vec::new();
+        for end in 1..=prices.len() {
+            let prefix = &prices[..end];
+            if let (Some(f), Some(s)) = (
+                calculate_ema_from_f64(prefix, fast_len, false),
+                calculate_ema_from_f64(prefix, slow_len, false),
+            ) {
+                macd_series.push(f - s);
+            }
+        }
+
+        let signal = match calculate_ema_from_f64(&macd_series, signal_len, false) {
+            Some(v) => v,
+            None => return Value::Tuple(Box::new([Value::Float(macd), Value::Na, Value::Na])),
         };
 
-        // Signal line = EMA of MACD line
-        // We need to maintain state for this, so return tuple
-        // For now, return MACD line only (full implementation needs series state)
-        let _signal_line = Value::Na; // Placeholder
-        let _histogram = Value::Na; // Placeholder
+        let histogram = macd - signal;
 
-        // Return as tuple [macd_line, signal_line, histogram]
-        Value::Tuple(Box::new([macd_line, Value::Na, Value::Na]))
+        Value::Tuple(Box::new([
+            Value::Float(macd),
+            Value::Float(signal),
+            Value::Float(histogram),
+        ]))
     });
 
     registry.register(meta, func);
@@ -492,12 +489,16 @@ fn register_mom(registry: &mut FunctionRegistry) {
 
         let length = extract_length(args, 1, 10);
 
-        let current = match series.first().and_then(get_float) {
+        let current = match series.last().and_then(get_float) {
             Some(f) => f,
             None => return Value::Na,
         };
 
-        let previous = match series.get(length).and_then(get_float) {
+        if series.len() <= length {
+            return Value::Na;
+        }
+
+        let previous = match series.get(series.len() - 1 - length).and_then(get_float) {
             Some(f) => f,
             None => return Value::Na,
         };
@@ -512,60 +513,31 @@ fn register_mom(registry: &mut FunctionRegistry) {
 fn register_cci(registry: &mut FunctionRegistry) {
     let meta = FunctionMeta::new("cci")
         .with_namespace("ta")
-        .with_required_args(3)
+        .with_required_args(2)
         .with_optional_args(1)
         .with_series_return();
 
     let func: crate::registry::BuiltinFn = Arc::new(|args| {
-        // CCI requires high, low, close series
-        let high = match args.first().and_then(extract_array) {
+        let source = match args.first().and_then(extract_array) {
             Some(s) => s,
             None => return Value::Na,
         };
-        let low = match args.get(1).and_then(extract_array) {
-            Some(s) => s,
-            None => return Value::Na,
-        };
-        let close = match args.get(2).and_then(extract_array) {
-            Some(s) => s,
-            None => return Value::Na,
-        };
-
-        let length = extract_length(args, 3, 20);
-
-        // Typical Price = (High + Low + Close) / 3
-        let tp = match (
-            high.first().and_then(get_float),
-            low.first().and_then(get_float),
-            close.first().and_then(get_float),
-        ) {
-            (Some(h), Some(l), Some(c)) => (h + l + c) / 3.0,
-            _ => return Value::Na,
-        };
-
-        // Calculate SMA of typical prices
-        let mut tp_values = Vec::new();
-        for i in 0..high.len().min(low.len()).min(close.len()).min(length) {
-            let val = match (
-                high.get(i).and_then(get_float),
-                low.get(i).and_then(get_float),
-                close.get(i).and_then(get_float),
-            ) {
-                (Some(h), Some(l), Some(c)) => (h + l + c) / 3.0,
-                _ => continue,
-            };
-            tp_values.push(val);
-        }
-
-        if tp_values.len() < length {
+        let length = extract_length(args, 1, 20);
+        let values = value_slice_to_f64(source);
+        if values.len() < length {
             return Value::Na;
         }
 
-        let sma_tp: f64 = tp_values.iter().sum::<f64>() / tp_values.len() as f64;
+        let window = &values[values.len() - length..];
+        let tp = *values.last().unwrap_or(&f64::NAN);
+        if tp.is_nan() {
+            return Value::Na;
+        }
+
+        let sma_tp: f64 = window.iter().sum::<f64>() / length as f64;
 
         // Calculate mean deviation
-        let mean_dev: f64 =
-            tp_values.iter().map(|v| (v - sma_tp).abs()).sum::<f64>() / tp_values.len() as f64;
+        let mean_dev: f64 = window.iter().map(|v| (v - sma_tp).abs()).sum::<f64>() / length as f64;
 
         if mean_dev == 0.0 {
             return Value::Na;
@@ -586,8 +558,8 @@ fn register_cci(registry: &mut FunctionRegistry) {
 fn register_atr(registry: &mut FunctionRegistry) {
     let meta = FunctionMeta::new("atr")
         .with_namespace("ta")
-        .with_required_args(3)
-        .with_optional_args(1)
+        .with_required_args(1)
+        .with_optional_args(3)
         .with_series_return();
 
     let func: crate::registry::BuiltinFn = Arc::new(|args| {
@@ -606,7 +578,7 @@ fn register_atr(registry: &mut FunctionRegistry) {
 
         let length = extract_length(args, 3, 14);
 
-        // Calculate TR values
+        // Calculate TR values in chronological order.
         let mut tr_values = Vec::new();
         for i in 0..high.len().min(low.len()).min(close.len()) {
             let h = match high.get(i).and_then(get_float) {
@@ -619,8 +591,8 @@ fn register_atr(registry: &mut FunctionRegistry) {
             };
 
             let tr1 = h - l;
-            let tr = if i + 1 < close.len() {
-                match close.get(i + 1).and_then(get_float) {
+            let tr = if i > 0 {
+                match close.get(i - 1).and_then(get_float) {
                     Some(pc) => {
                         let tr2 = (h - pc).abs();
                         let tr3 = (l - pc).abs();
@@ -638,6 +610,10 @@ fn register_atr(registry: &mut FunctionRegistry) {
             return Value::Na;
         }
 
+        if tr_values.len() < length {
+            return Value::Na;
+        }
+
         // Use RMA (Wilder's smoothing) for ATR
         let atr = calculate_smoothed_avg(&tr_values, length);
         Value::Float(atr)
@@ -650,7 +626,8 @@ fn register_atr(registry: &mut FunctionRegistry) {
 fn register_tr(registry: &mut FunctionRegistry) {
     let meta = FunctionMeta::new("tr")
         .with_namespace("ta")
-        .with_required_args(3)
+        .with_required_args(0)
+        .with_optional_args(4)
         .with_series_return();
 
     let func: crate::registry::BuiltinFn = Arc::new(|args| {
@@ -677,42 +654,35 @@ fn register_tr(registry: &mut FunctionRegistry) {
 fn register_bbands(registry: &mut FunctionRegistry) {
     let meta = FunctionMeta::new("bb")
         .with_namespace("ta")
-        .with_required_args(1)
-        .with_optional_args(3)
+        .with_required_args(3)
         .with_series_return();
 
     let func: crate::registry::BuiltinFn = Arc::new(|args| {
         let series = match args.first().and_then(extract_array) {
             Some(s) => s,
-            None => return Value::Na,
+            None => return Value::Tuple(Box::new([Value::Na, Value::Na, Value::Na])),
         };
 
         let length = extract_length(args, 1, 20);
         let mult = args.get(2).and_then(|v| v.as_float()).unwrap_or(2.0);
 
-        // Calculate SMA
-        let sma = match calculate_sma(series, length) {
-            Value::Float(f) => f,
-            _ => return Value::Na,
-        };
-
-        // Calculate standard deviation
-        let mut sum_sq_diff = 0.0;
-        let mut count = 0;
-
-        for i in 0..length.min(series.len()) {
-            if let Some(val) = series.get(i).and_then(get_float) {
-                let diff = val - sma;
-                sum_sq_diff += diff * diff;
-                count += 1;
-            }
+        let f64_values = value_slice_to_f64(series);
+        if f64_values.len() < length {
+            return Value::Tuple(Box::new([Value::Na, Value::Na, Value::Na]));
         }
 
-        if count < 2 {
-            return Value::Na;
-        }
+        let start = f64_values.len() - length;
+        let window = &f64_values[start..];
+        let sma = window.iter().sum::<f64>() / length as f64;
 
-        let variance = sum_sq_diff / count as f64;
+        let sum_sq_diff = window
+            .iter()
+            .map(|value| {
+                let diff = value - sma;
+                diff * diff
+            })
+            .sum::<f64>();
+        let variance = sum_sq_diff / length as f64;
         let stdev = variance.sqrt();
 
         // Return [basis (SMA), upper, lower]
@@ -734,65 +704,52 @@ fn register_bbands(registry: &mut FunctionRegistry) {
 fn register_stoch(registry: &mut FunctionRegistry) {
     let meta = FunctionMeta::new("stoch")
         .with_namespace("ta")
-        .with_required_args(3)
-        .with_optional_args(3)
+        .with_required_args(4)
         .with_series_return();
 
     let func: crate::registry::BuiltinFn = Arc::new(|args| {
-        let high = match args.first().and_then(extract_array) {
+        let source = match args.first().and_then(extract_array) {
             Some(s) => s,
             None => return Value::Na,
         };
-        let low = match args.get(1).and_then(extract_array) {
+        let high = match args.get(1).and_then(extract_array) {
             Some(s) => s,
             None => return Value::Na,
         };
-        let close = match args.get(2).and_then(extract_array) {
+        let low = match args.get(2).and_then(extract_array) {
             Some(s) => s,
             None => return Value::Na,
         };
 
-        let k_len = extract_length(args, 3, 14);
-        let _k_smooth = extract_length(args, 4, 1);
-        let _d_smooth = extract_length(args, 5, 3);
+        let length = extract_length(args, 3, 14);
+        let source_values = value_slice_to_f64(source);
+        let high_values = value_slice_to_f64(high);
+        let low_values = value_slice_to_f64(low);
 
-        // Get current close
-        let current_close = match close.first().and_then(get_float) {
-            Some(f) => f,
-            None => return Value::Na,
-        };
-
-        // Find highest high and lowest low over k_len period
-        let mut highest_high = f64::NEG_INFINITY;
-        let mut lowest_low = f64::INFINITY;
-
-        for i in 0..k_len.min(high.len()).min(low.len()) {
-            let h = match high.get(i).and_then(get_float) {
-                Some(f) => f,
-                None => continue,
-            };
-            let l = match low.get(i).and_then(get_float) {
-                Some(f) => f,
-                None => continue,
-            };
-            highest_high = highest_high.max(h);
-            lowest_low = lowest_low.min(l);
-        }
-
-        if highest_high == f64::NEG_INFINITY || lowest_low == f64::INFINITY {
+        if source_values.len() < length || high_values.len() < length || low_values.len() < length {
             return Value::Na;
         }
+
+        let current_close = *source_values.last().unwrap_or(&f64::NAN);
+        if current_close.is_nan() {
+            return Value::Na;
+        }
+
+        let highest_high = match calculate_highest_f64(&high_values, length) {
+            Some(value) => value,
+            None => return Value::Na,
+        };
+        let lowest_low = match calculate_lowest_f64(&low_values, length) {
+            Some(value) => value,
+            None => return Value::Na,
+        };
 
         let range = highest_high - lowest_low;
         if range == 0.0 {
             return Value::Na;
         }
 
-        // %K = (close - lowest_low) / (highest_high - lowest_low) * 100
-        let k = (current_close - lowest_low) / range * 100.0;
-
-        // Return [%K, %D] - %D would need smoothing
-        Value::Tuple(Box::new([Value::Float(k), Value::Na]))
+        Value::Float((current_close - lowest_low) / range * 100.0)
     });
 
     registry.register(meta, func);
@@ -953,19 +910,19 @@ fn register_crossover(registry: &mut FunctionRegistry) {
             return Value::Bool(false);
         }
 
-        let curr1 = match series1.first().and_then(get_float) {
+        let curr1 = match series1.last().and_then(get_float) {
             Some(f) => f,
             None => return Value::Bool(false),
         };
-        let prev1 = match series1.get(1).and_then(get_float) {
+        let prev1 = match series1.get(series1.len() - 2).and_then(get_float) {
             Some(f) => f,
             None => return Value::Bool(false),
         };
-        let curr2 = match series2.first().and_then(get_float) {
+        let curr2 = match series2.last().and_then(get_float) {
             Some(f) => f,
             None => return Value::Bool(false),
         };
-        let prev2 = match series2.get(1).and_then(get_float) {
+        let prev2 = match series2.get(series2.len() - 2).and_then(get_float) {
             Some(f) => f,
             None => return Value::Bool(false),
         };
@@ -998,19 +955,19 @@ fn register_crossunder(registry: &mut FunctionRegistry) {
             return Value::Bool(false);
         }
 
-        let curr1 = match series1.first().and_then(get_float) {
+        let curr1 = match series1.last().and_then(get_float) {
             Some(f) => f,
             None => return Value::Bool(false),
         };
-        let prev1 = match series1.get(1).and_then(get_float) {
+        let prev1 = match series1.get(series1.len() - 2).and_then(get_float) {
             Some(f) => f,
             None => return Value::Bool(false),
         };
-        let curr2 = match series2.first().and_then(get_float) {
+        let curr2 = match series2.last().and_then(get_float) {
             Some(f) => f,
             None => return Value::Bool(false),
         };
-        let prev2 = match series2.get(1).and_then(get_float) {
+        let prev2 = match series2.get(series2.len() - 2).and_then(get_float) {
             Some(f) => f,
             None => return Value::Bool(false),
         };
@@ -1035,15 +992,13 @@ fn register_barssince(registry: &mut FunctionRegistry) {
             None => return Value::Na,
         };
 
-        for (i, val) in condition.iter().enumerate() {
-            match val {
-                Value::Bool(true) => return Value::Int(i as i64),
-                _ => continue,
+        for (idx, val) in condition.iter().enumerate().rev() {
+            if matches!(val, Value::Bool(true)) {
+                return Value::Int((condition.len() - 1 - idx) as i64);
             }
         }
 
-        // Condition never true
-        Value::Int(-1)
+        Value::Na
     });
 
     registry.register(meta, func);
@@ -1070,8 +1025,8 @@ mod tests {
         let data = series(vec![10.0, 20.0, 30.0, 40.0, 50.0]);
         let result = registry.dispatch("ta.sma", &[data, Value::Int(3)]);
 
-        // SMA of [10, 20, 30] = 20
-        assert_eq!(result, Some(Value::Float(20.0)));
+        // SMA of trailing window [30, 40, 50] = 40
+        assert_eq!(result, Some(Value::Float(40.0)));
     }
 
     #[test]
@@ -1106,12 +1061,21 @@ mod tests {
     }
 
     #[test]
+    fn test_highest_trailing_window() {
+        let registry = test_registry();
+
+        let data = series(vec![100.0, 110.0, 120.0, 130.0, 125.0]);
+        let result = registry.dispatch("ta.highest", &[data, Value::Int(3)]);
+
+        assert_eq!(result, Some(Value::Float(130.0)));
+    }
+
+    #[test]
     fn test_crossover() {
         let registry = test_registry();
 
-        // Series1 crosses over series2
-        let s1 = series(vec![30.0, 20.0]); // current=30, prev=20
-        let s2 = series(vec![25.0, 25.0]); // current=25, prev=25
+        let s1 = series(vec![20.0, 30.0]); // prev=20, current=30
+        let s2 = series(vec![25.0, 25.0]); // prev=25, current=25
 
         let result = registry.dispatch("ta.crossover", &[s1, s2]);
         assert_eq!(result, Some(Value::Bool(true)));
@@ -1121,9 +1085,8 @@ mod tests {
     fn test_crossunder() {
         let registry = test_registry();
 
-        // Series1 crosses under series2
-        let s1 = series(vec![20.0, 30.0]); // current=20, prev=30
-        let s2 = series(vec![25.0, 25.0]); // current=25, prev=25
+        let s1 = series(vec![30.0, 20.0]); // prev=30, current=20
+        let s2 = series(vec![25.0, 25.0]); // prev=25, current=25
 
         let result = registry.dispatch("ta.crossunder", &[s1, s2]);
         assert_eq!(result, Some(Value::Bool(true)));
@@ -1135,13 +1098,26 @@ mod tests {
 
         let cond = Value::Array(vec![
             Value::Bool(false),
-            Value::Bool(false),
             Value::Bool(true),
+            Value::Bool(false),
             Value::Bool(false),
         ]);
 
         let result = registry.dispatch("ta.barssince", &[cond]);
         assert_eq!(result, Some(Value::Int(2)));
+    }
+
+    #[test]
+    fn test_barssince_returns_na_when_never_true() {
+        let registry = test_registry();
+
+        let cond = Value::Array(vec![
+            Value::Bool(false),
+            Value::Bool(false),
+            Value::Bool(false),
+        ]);
+        let result = registry.dispatch("ta.barssince", &[cond]);
+        assert_eq!(result, Some(Value::Na));
     }
 
     #[test]
@@ -1156,5 +1132,62 @@ mod tests {
 
         let result = registry.dispatch("ta.rsi", &[data, Value::Int(14)]);
         assert!(matches!(result, Some(Value::Float(v)) if v > 0.0 && v < 100.0));
+    }
+
+    #[test]
+    fn test_bb_returns_tuple_with_warmup_na() {
+        let registry = test_registry();
+
+        let data = series(vec![10.0, 20.0, 30.0]);
+        let result = registry.dispatch("ta.bb", &[data, Value::Int(5), Value::Float(2.0)]);
+
+        assert_eq!(
+            result,
+            Some(Value::Tuple(Box::new([Value::Na, Value::Na, Value::Na])))
+        );
+    }
+
+    #[test]
+    fn test_stoch_returns_percent_k() {
+        let registry = test_registry();
+
+        let source = series(vec![10.0, 12.0, 14.0, 16.0, 18.0]);
+        let high = series(vec![11.0, 13.0, 15.0, 17.0, 19.0]);
+        let low = series(vec![9.0, 11.0, 13.0, 15.0, 17.0]);
+        let result = registry.dispatch("ta.stoch", &[source, high, low, Value::Int(5)]);
+
+        assert_eq!(result, Some(Value::Float(90.0)));
+    }
+
+    #[test]
+    fn test_mom_uses_current_minus_length_bars_ago() {
+        let registry = test_registry();
+
+        let data = series(vec![10.0, 12.0, 15.0, 19.0]);
+        let result = registry.dispatch("ta.mom", &[data, Value::Int(2)]);
+
+        assert_eq!(result, Some(Value::Float(7.0)));
+    }
+
+    #[test]
+    fn test_cci_uses_source_series() {
+        let registry = test_registry();
+
+        let data = series(vec![100.0, 110.0, 120.0]);
+        let result = registry.dispatch("ta.cci", &[data, Value::Int(3)]);
+
+        assert!(matches!(result, Some(Value::Float(v)) if (v - 100.0).abs() < 1e-10));
+    }
+
+    #[test]
+    fn test_tr_returns_first_bar_range_without_prev_close() {
+        let registry = test_registry();
+
+        let high = series(vec![10.0]);
+        let low = series(vec![7.0]);
+        let close = series(vec![8.0]);
+        let result = registry.dispatch("ta.tr", &[high, low, close]);
+
+        assert_eq!(result, Some(Value::Float(3.0)));
     }
 }

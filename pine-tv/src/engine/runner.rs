@@ -46,10 +46,7 @@ impl PineEngine {
     pub fn run(&self, code: &str, bars: &[OhlcvBar]) -> Result<ApiResponse, Vec<ApiError>> {
         let start = Instant::now();
 
-        // First check the code
-        if let Err(e) = self.check(code) {
-            return Err(e);
-        }
+        self.check(code)?;
 
         let times: Vec<i64> = bars.iter().map(|b| b.time).collect();
         let closes: Vec<f64> = bars.iter().map(|b| b.close).collect();
@@ -60,7 +57,10 @@ impl PineEngine {
         let close_data = times
             .iter()
             .zip(closes.iter())
-            .map(|(&time, &value)| PlotData { time, value: Some(value) })
+            .map(|(&time, &value)| PlotData {
+                time,
+                value: Some(value),
+            })
             .collect();
 
         plots.push(Plot {

@@ -268,7 +268,10 @@ mod tests {
         assert_eq!(result, Some(Value::Int(10)));
 
         // Test with maxval constraint
-        let result = registry.dispatch("input.int", &[Value::Int(100), Value::Int(0), Value::Int(50)]);
+        let result = registry.dispatch(
+            "input.int",
+            &[Value::Int(100), Value::Int(0), Value::Int(50)],
+        );
         // 100 > maxval(50), so should return 50
         assert_eq!(result, Some(Value::Int(50)));
     }

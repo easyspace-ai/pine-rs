@@ -1,0 +1,13 @@
+// Golden test: ta.crossover / ta.crossunder / ta.barssince
+
+indicator("Cross Events Golden Test")
+
+fast = ta.sma(close, 3)
+slow = ta.sma(close, 5)
+cross_up = ta.crossover(fast, slow)
+cross_down = ta.crossunder(fast, slow)
+bars_since_up = ta.barssince(cross_up)
+
+plot(cross_up ? 1 : 0, title="Cross Up", color=color.green)
+plot(cross_down ? 1 : 0, title="Cross Down", color=color.red)
+plot(bars_since_up, title="Bars Since Up", color=color.blue)

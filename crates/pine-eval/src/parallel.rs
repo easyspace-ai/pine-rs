@@ -280,7 +280,11 @@ mod tests {
 
     #[test]
     fn test_scan_symbols_parallel() {
-        let symbols = vec!["BTCUSDT".to_string(), "ETHUSDT".to_string(), "SOLUSDT".to_string()];
+        let symbols = vec![
+            "BTCUSDT".to_string(),
+            "ETHUSDT".to_string(),
+            "SOLUSDT".to_string(),
+        ];
 
         let results = scan_symbols_parallel(
             "plot(close)".to_string(),
@@ -313,15 +317,10 @@ mod tests {
 
     #[test]
     fn test_batch_process_parallel() {
-        let batches: Vec<Vec<i32>> = vec![
-            vec![1, 2, 3],
-            vec![4, 5, 6],
-            vec![7, 8, 9],
-        ];
+        let batches: Vec<Vec<i32>> = vec![vec![1, 2, 3], vec![4, 5, 6], vec![7, 8, 9]];
 
-        let results: Vec<Vec<i32>> = batch_process_parallel(batches, |batch| {
-            batch.into_iter().map(|x| x * 2).collect()
-        });
+        let results: Vec<Vec<i32>> =
+            batch_process_parallel(batches, |batch| batch.into_iter().map(|x| x * 2).collect());
 
         assert_eq!(results.len(), 3);
         assert_eq!(results[0], vec![2, 4, 6]);

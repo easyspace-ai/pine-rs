@@ -36,7 +36,8 @@ pub fn call_fn(
                 match fn_value {
                     Value::Closure(closure) => {
                         // Call user-defined function with call-site isolation
-                        call_user_fn(&closure,
+                        call_user_fn(
+                            &closure,
                             &arg_values,
                             ctx,
                             &format!("{}.{}", ident.name, call_site_id),
@@ -56,9 +57,7 @@ pub fn call_fn(
             // Complex function expression (e.g., lambda)
             let fn_value = eval_expr(func, ctx)?;
             match fn_value {
-                Value::Closure(closure) => {
-                    call_user_fn(&closure, &arg_values, ctx, call_site_id)
-                }
+                Value::Closure(closure) => call_user_fn(&closure, &arg_values, ctx, call_site_id),
                 _ => Err(EvalError::TypeError {
                     message: format!("Expected function, got {:?}", fn_value),
                     span: pine_lexer::Span::default(),

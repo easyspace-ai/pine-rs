@@ -293,8 +293,7 @@ impl ExecutionContext {
     /// Get a variable value by name
     /// Prefer `get_slot` for better performance.
     pub fn get_var(&self, name: &str) -> Option<&Value> {
-        self.lookup_slot(name)
-            .and_then(|slot| self.get_slot(slot))
+        self.lookup_slot(name).and_then(|slot| self.get_slot(slot))
     }
 
     /// Get a mutable reference to a variable by name
@@ -315,9 +314,7 @@ impl ExecutionContext {
     /// Returns the removed value if it existed.
     pub fn remove_var(&mut self, name: &str) -> Option<Value> {
         self.lookup_slot(name)
-            .and_then(|slot| {
-                self.variables.get_mut(slot).and_then(|v| v.take())
-            })
+            .and_then(|slot| self.variables.get_mut(slot).and_then(|v| v.take()))
     }
 
     //========================================================================

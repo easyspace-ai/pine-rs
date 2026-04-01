@@ -1,4 +1,4 @@
-use criterion::{black_box, criterion_group, criterion_main, Criterion, BenchmarkId};
+use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion};
 use pine_runtime::series::SeriesBufF64;
 
 fn generate_test_data(size: usize) -> Vec<f64> {
