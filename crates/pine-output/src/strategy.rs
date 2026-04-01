@@ -108,8 +108,10 @@ impl Strategy {
 
     /// Create a default strategy
     pub fn default_with_name(name: impl Into<String>) -> Self {
-        let mut config = StrategyConfig::default();
-        config.name = name.into();
+        let config = StrategyConfig {
+            name: name.into(),
+            ..Default::default()
+        };
         Self::new(config)
     }
 
@@ -287,9 +289,7 @@ impl Strategy {
             Some(q) => q,
             None => match self.config.default_qty_type {
                 QtyType::Contracts => self.config.default_qty_value,
-                QtyType::PercentOfEquity => {
-                    self.equity * self.config.default_qty_value / 100.0
-                }
+                QtyType::PercentOfEquity => self.equity * self.config.default_qty_value / 100.0,
                 QtyType::Currency => self.config.default_qty_value,
             },
         }
@@ -407,7 +407,8 @@ mod tests {
     #[test]
     fn test_entry_long() {
         let mut strategy = Strategy::default_with_name("Test");
-        strategy.entry_long(0, Some(10.0), Some(100.0), Some("Entry".to_string()))
+        strategy
+            .entry_long(0, Some(10.0), Some(100.0), Some("Entry".to_string()))
             .unwrap();
 
         assert_eq!(strategy.position_size, 10.0);
@@ -418,7 +419,8 @@ mod tests {
     #[test]
     fn test_entry_short() {
         let mut strategy = Strategy::default_with_name("Test");
-        strategy.entry_short(0, Some(10.0), Some(100.0), Some("Short Entry".to_string()))
+        strategy
+            .entry_short(0, Some(10.0), Some(100.0), Some("Short Entry".to_string()))
             .unwrap();
 
         assert_eq!(strategy.position_size, -10.0);
@@ -429,8 +431,12 @@ mod tests {
     #[test]
     fn test_close_position() {
         let mut strategy = Strategy::default_with_name("Test");
-        strategy.entry_long(0, Some(10.0), Some(100.0), None).unwrap();
-        strategy.close(1, Some(110.0), Some("Take Profit".to_string())).unwrap();
+        strategy
+            .entry_long(0, Some(10.0), Some(100.0), None)
+            .unwrap();
+        strategy
+            .close(1, Some(110.0), Some("Take Profit".to_string()))
+            .unwrap();
 
         assert_eq!(strategy.position_size, 0.0);
         assert_eq!(strategy.exits.len(), 1);
@@ -444,10 +450,16 @@ mod tests {
         let mut strategy = Strategy::new(config);
 
         // Should allow 2 entries
-        strategy.entry_long(0, Some(1.0), Some(100.0), None).unwrap();
-        strategy.entry_long(1, Some(1.0), Some(101.0), None).unwrap();
+        strategy
+            .entry_long(0, Some(1.0), Some(100.0), None)
+            .unwrap();
+        strategy
+            .entry_long(1, Some(1.0), Some(101.0), None)
+            .unwrap();
         // Third entry should be ignored due to pyramiding limit
-        strategy.entry_long(2, Some(1.0), Some(102.0), None).unwrap();
+        strategy
+            .entry_long(2, Some(1.0), Some(102.0), None)
+            .unwrap();
 
         assert_eq!(strategy.entries.len(), 2);
     }
@@ -457,11 +469,15 @@ mod tests {
         let mut strategy = Strategy::default_with_name("Test");
 
         // Enter long
-        strategy.entry_long(0, Some(10.0), Some(100.0), None).unwrap();
+        strategy
+            .entry_long(0, Some(10.0), Some(100.0), None)
+            .unwrap();
         assert_eq!(strategy.position_direction(), Direction::Long);
 
         // Enter short should close long first
-        strategy.entry_short(1, Some(5.0), Some(105.0), None).unwrap();
+        strategy
+            .entry_short(1, Some(5.0), Some(105.0), None)
+            .unwrap();
         assert_eq!(strategy.position_direction(), Direction::Short);
         assert_eq!(strategy.exits.len(), 1); // Long position was closed
     }

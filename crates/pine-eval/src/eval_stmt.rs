@@ -64,15 +64,15 @@ pub fn eval_stmt(stmt: &ast::Stmt, ctx: &mut EvaluationContext) -> Result<()> {
             Ok(())
         }
         // Import statement: import "path" [as alias]
-        ast::Stmt::Import { path, alias, span } => {
-            eval_import(path, alias.as_ref(), *span, ctx)
-        }
+        ast::Stmt::Import { path, alias, span } => eval_import(path, alias.as_ref(), *span, ctx),
         // Export statement: export name
-        ast::Stmt::Export { name, span } => {
-            eval_export(&name.name, *span, ctx)
-        }
+        ast::Stmt::Export { name, span } => eval_export(&name.name, *span, ctx),
         // Library declaration: library(name, ...)
-        ast::Stmt::Library { name: _, props: _, span: _ } => {
+        ast::Stmt::Library {
+            name: _,
+            props: _,
+            span: _,
+        } => {
             // Library declarations are processed during semantic analysis
             // and module loading. At runtime, we just record that this is a library.
             // The actual module registration happens elsewhere.
@@ -431,6 +431,9 @@ mod tests {
         // Test current module
         assert!(ctx.current_module().is_none());
         ctx.set_current_module(Some(pine_runtime::module::ModuleId(1)));
-        assert_eq!(ctx.current_module(), Some(pine_runtime::module::ModuleId(1)));
+        assert_eq!(
+            ctx.current_module(),
+            Some(pine_runtime::module::ModuleId(1))
+        );
     }
 }

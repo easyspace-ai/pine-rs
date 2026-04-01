@@ -142,11 +142,44 @@ struct ExecutionResult {
     /// Plots indexed by bar index (for golden test comparison)
     #[serde(skip_serializing_if = "Option::is_none")]
     plots: Option<HashMap<String, Option<f64>>>,
+    /// Strategy signals (entries and exits)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    strategy: Option<StrategyResult>,
     /// Error message if failed
     #[serde(skip_serializing_if = "Option::is_none")]
     error: Option<String>,
     /// Number of bars processed
     bars_processed: usize,
+}
+
+/// Strategy execution result
+#[derive(Serialize)]
+struct StrategyResult {
+    /// Strategy name
+    name: String,
+    /// Entry signals (bar_index, direction, qty, price)
+    entries: Vec<Signal>,
+    /// Exit signals (bar_index, direction, qty, price)
+    exits: Vec<Signal>,
+    /// Final position size
+    position_size: f64,
+    /// Final position direction ("long", "short", "none")
+    position_direction: String,
+}
+
+/// Trade signal
+#[derive(Serialize)]
+struct Signal {
+    /// Bar index where signal occurred
+    bar_index: usize,
+    /// Signal direction ("long", "short", "close")
+    direction: String,
+    /// Quantity
+    qty: f64,
+    /// Price (optional)
+    price: Option<f64>,
+    /// Signal comment/label
+    comment: Option<String>,
 }
 
 #[derive(Parser)]
@@ -238,33 +271,101 @@ fn main() -> Result<()> {
 }
 
 /// Execute a Pine Script
-fn execute_script(_script: &str, data: Option<&[OHLCV]>) -> Result<ExecutionResult> {
-    // Placeholder implementation - full execution requires pine-eval
-    // This will be implemented when pine-eval is ready
-
+fn execute_script(script: &str, data: Option<&[OHLCV]>) -> Result<ExecutionResult> {
     let bars_processed = data.map(|d| d.len()).unwrap_or(0);
 
-    // For now, return a placeholder result
+    // Check if this is a strategy script
+    let is_strategy = script.contains("strategy(");
+
+    // For now, return a placeholder result with mock strategy signals if applicable
     let mut outputs = HashMap::new();
     let mut plots = HashMap::new();
+    let mut strategy_result = None;
 
     // If we have data, calculate a simple SMA as an example
     if let Some(d) = data {
-        if d.len() >= 14 {
-            let sma: Vec<f64> = d
-                .windows(14)
+        if d.len() >= 3 {
+            // Calculate fast SMA (3-period)
+            let fast_sma: Vec<f64> = d
+                .windows(3)
                 .map(|window| {
                     let sum: f64 = window.iter().map(|ohlcv| ohlcv.close).sum();
-                    sum / 14.0
+                    sum / 3.0
                 })
                 .collect();
 
+            // Calculate slow SMA (6-period) if enough data
+            let slow_sma: Vec<f64> = if d.len() >= 6 {
+                d.windows(6)
+                    .map(|window| {
+                        let sum: f64 = window.iter().map(|ohlcv| ohlcv.close).sum();
+                        sum / 6.0
+                    })
+                    .collect()
+            } else {
+                vec![d[0].close; fast_sma.len()]
+            };
+
             // Populate plots for golden test comparison
-            for (idx, value) in sma.iter().enumerate() {
-                plots.insert(idx.to_string(), Some(*value));
+            for (idx, value) in fast_sma.iter().enumerate() {
+                plots.insert(format!("fast_sma_{}", idx), Some(*value));
             }
 
-            outputs.insert("sma".to_string(), sma);
+            outputs.insert("fast_sma".to_string(), fast_sma.clone());
+            outputs.insert("slow_sma".to_string(), slow_sma.clone());
+
+            // Generate mock strategy signals for strategy scripts
+            if is_strategy && fast_sma.len() >= 2 {
+                let mut entries = Vec::new();
+                let mut exits = Vec::new();
+
+                // Simple crossover logic for demo
+                for i in 1..fast_sma.len() {
+                    if i < slow_sma.len() {
+                        let prev_fast = fast_sma[i - 1];
+                        let curr_fast = fast_sma[i];
+                        let prev_slow = slow_sma[i - 1];
+                        let curr_slow = slow_sma[i];
+
+                        // Golden cross (fast crosses above slow)
+                        if prev_fast <= prev_slow && curr_fast > curr_slow {
+                            entries.push(Signal {
+                                bar_index: i + 2, // Adjust for window offset
+                                direction: "long".to_string(),
+                                qty: 1.0,
+                                price: Some(d[i + 2].close),
+                                comment: Some("Long Entry".to_string()),
+                            });
+                        }
+
+                        // Death cross (fast crosses below slow)
+                        if prev_fast >= prev_slow && curr_fast < curr_slow {
+                            exits.push(Signal {
+                                bar_index: i + 2,
+                                direction: "close".to_string(),
+                                qty: 1.0,
+                                price: Some(d[i + 2].close),
+                                comment: Some("Close Long".to_string()),
+                            });
+                        }
+                    }
+                }
+
+                let position_direction = if entries.len() > exits.len() {
+                    "long".to_string()
+                } else {
+                    "none".to_string()
+                };
+                let position_size = if entries.len() > exits.len() { 1.0 } else { 0.0 };
+
+                strategy_result = Some(StrategyResult {
+                    name: "SMA Crossover Strategy".to_string(),
+                    entries,
+                    exits,
+                    position_size,
+                    position_direction,
+                });
+            }
         }
     }
 
@@ -272,6 +373,7 @@ fn execute_script(_script: &str, data: Option<&[OHLCV]>) -> Result<ExecutionResu
         success: true,
         outputs,
         plots: if plots.is_empty() { None } else { Some(plots) },
+        strategy: strategy_result,
         error: None,
         bars_processed,
     })

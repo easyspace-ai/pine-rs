@@ -65,56 +65,54 @@ pub enum Position {
     Price(f64),
 }
 
-impl Position {
-    /// Parse position from string value
-    pub fn from_str(s: &str) -> Option<Self> {
+impl std::str::FromStr for Position {
+    type Err = ();
+
+    fn from_str(s: &str) -> std::result::Result<Self, Self::Err> {
         match s {
-            "position.abovebar" => Some(Self::AboveBar),
-            "position.belowbar" => Some(Self::BelowBar),
-            "position.top" => Some(Self::Top),
-            "position.bottom" => Some(Self::Bottom),
-            _ => None,
+            "position.abovebar" => Ok(Self::AboveBar),
+            "position.belowbar" => Ok(Self::BelowBar),
+            "position.top" => Ok(Self::Top),
+            "position.bottom" => Ok(Self::Bottom),
+            _ => Err(()),
         }
     }
 }
 
 /// Text alignment options
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Default, Serialize, Deserialize)]
 pub enum TextAlign {
     /// Left alignment
     Left,
     /// Center alignment
+    #[default]
     Center,
     /// Right alignment
     Right,
 }
 
-impl Default for TextAlign {
-    fn default() -> Self {
-        Self::Center
-    }
-}
+impl std::str::FromStr for TextAlign {
+    type Err = ();
 
-impl TextAlign {
-    /// Parse text alignment from string
-    pub fn from_str(s: &str) -> Option<Self> {
+    fn from_str(s: &str) -> std::result::Result<Self, Self::Err> {
         match s {
-            "text.align_left" => Some(Self::Left),
-            "text.align_center" => Some(Self::Center),
-            "text.align_right" => Some(Self::Right),
-            _ => None,
+            "text.align_left" => Ok(Self::Left),
+            "text.align_center" => Ok(Self::Center),
+            "text.align_right" => Ok(Self::Right),
+            _ => Err(()),
         }
     }
 }
 
 /// Text size options
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Default, Serialize, Deserialize)]
 pub enum TextSize {
     /// Tiny text
     Tiny,
     /// Small text
     Small,
     /// Normal text
+    #[default]
     Normal,
     /// Large text
     Large,
@@ -122,24 +120,74 @@ pub enum TextSize {
     Huge,
 }
 
-impl Default for TextSize {
-    fn default() -> Self {
-        Self::Normal
+impl std::str::FromStr for TextSize {
+    type Err = ();
+
+    fn from_str(s: &str) -> std::result::Result<Self, Self::Err> {
+        match s {
+            "size.tiny" => Ok(Self::Tiny),
+            "size.small" => Ok(Self::Small),
+            "size.normal" => Ok(Self::Normal),
+            "size.large" => Ok(Self::Large),
+            "size.huge" => Ok(Self::Huge),
+            _ => Err(()),
+        }
     }
 }
 
-impl TextSize {
-    /// Parse text size from string
-    pub fn from_str(s: &str) -> Option<Self> {
+/// Horizontal line style
+#[derive(Debug, Clone, Copy, PartialEq, Default, Serialize, Deserialize)]
+pub enum HLineStyle {
+    /// Solid line
+    #[default]
+    Solid,
+    /// Dashed line
+    Dashed,
+    /// Dotted line
+    Dotted,
+}
+
+impl std::str::FromStr for HLineStyle {
+    type Err = ();
+
+    fn from_str(s: &str) -> std::result::Result<Self, Self::Err> {
         match s {
-            "size.tiny" => Some(Self::Tiny),
-            "size.small" => Some(Self::Small),
-            "size.normal" => Some(Self::Normal),
-            "size.large" => Some(Self::Large),
-            "size.huge" => Some(Self::Huge),
-            _ => None,
+            "hline.style_solid" => Ok(Self::Solid),
+            "hline.style_dashed" => Ok(Self::Dashed),
+            "hline.style_dotted" => Ok(Self::Dotted),
+            _ => Err(()),
         }
     }
+}
+
+/// Horizontal line output
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct HLineOutput {
+    /// Line price level
+    pub price: f64,
+    /// Line color
+    pub color: pine_runtime::value::Color,
+    /// Line style
+    pub style: HLineStyle,
+    /// Line width
+    pub width: u32,
+    /// Title/legend
+    pub title: Option<String>,
+}
+
+/// Fill between two plots
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FillOutput {
+    /// First plot index
+    pub plot1_index: usize,
+    /// Second plot index
+    pub plot2_index: usize,
+    /// Fill color
+    pub color: pine_runtime::value::Color,
+    /// Transparency (0-100)
+    pub transp: u8,
+    /// Title
+    pub title: Option<String>,
 }
 
 /// Complete script output container
@@ -147,6 +195,10 @@ impl TextSize {
 pub struct ScriptOutput {
     /// Plots
     pub plots: Vec<PlotOutput>,
+    /// Horizontal lines
+    pub hlines: Vec<HLineOutput>,
+    /// Fill areas
+    pub fills: Vec<FillOutput>,
     /// Drawings
     pub drawings: DrawingOutput,
     /// Strategy signals
@@ -332,7 +384,7 @@ pub struct TradeSignal {
 }
 
 /// Trade direction
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Default, Serialize, Deserialize)]
 pub enum Direction {
     /// Long position
     Long,
@@ -341,13 +393,8 @@ pub enum Direction {
     /// Close position
     Close,
     /// No direction
+    #[default]
     None,
-}
-
-impl Default for Direction {
-    fn default() -> Self {
-        Self::None
-    }
 }
 
 /// Alert output
@@ -362,9 +409,10 @@ pub struct AlertOutput {
 }
 
 /// Alert frequency
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Default, Serialize, Deserialize)]
 pub enum AlertFreq {
     /// Once per bar
+    #[default]
     OncePerBar,
     /// Once per bar close
     OncePerBarClose,
@@ -372,9 +420,219 @@ pub enum AlertFreq {
     All,
 }
 
-impl Default for AlertFreq {
+/// Alert condition definition
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AlertCondition {
+    /// Condition name
+    pub name: String,
+    /// Condition expression result (per bar)
+    pub triggered: Vec<bool>,
+    /// Alert message template
+    pub message: String,
+    /// Alert frequency
+    pub freq: AlertFreq,
+}
+
+impl AlertCondition {
+    /// Create a new alert condition
+    pub fn new(name: impl Into<String>, message: impl Into<String>, freq: AlertFreq) -> Self {
+        Self {
+            name: name.into(),
+            triggered: Vec::new(),
+            message: message.into(),
+            freq,
+        }
+    }
+
+    /// Add a trigger state for the current bar
+    pub fn push(&mut self, triggered: bool) {
+        self.triggered.push(triggered);
+    }
+
+    /// Get triggered bars
+    pub fn triggered_bars(&self) -> Vec<usize> {
+        self.triggered
+            .iter()
+            .enumerate()
+            .filter(|(_, &t)| t)
+            .map(|(i, _)| i)
+            .collect()
+    }
+}
+
+/// Alert condition manager
+#[derive(Debug, Default)]
+pub struct AlertManager {
+    /// All alert conditions
+    conditions: Vec<AlertCondition>,
+    /// Maximum number of alerts
+    max_alerts: usize,
+}
+
+impl AlertManager {
+    /// Create a new alert manager
+    pub fn new() -> Self {
+        Self {
+            conditions: Vec::new(),
+            max_alerts: 100,
+        }
+    }
+
+    /// Create with custom limit
+    pub fn with_max_alerts(max_alerts: usize) -> Self {
+        Self {
+            conditions: Vec::new(),
+            max_alerts,
+        }
+    }
+
+    /// Add an alert condition
+    pub fn add_condition(&mut self, condition: AlertCondition) -> Result<usize> {
+        if self.conditions.len() >= self.max_alerts {
+            return Err(OutputError::DrawingLimitExceeded {
+                max: self.max_alerts,
+            });
+        }
+        let index = self.conditions.len();
+        self.conditions.push(condition);
+        Ok(index)
+    }
+
+    /// Get a condition by index
+    pub fn get(&self, index: usize) -> Option<&AlertCondition> {
+        self.conditions.get(index)
+    }
+
+    /// Get mutable condition
+    pub fn get_mut(&mut self, index: usize) -> Option<&mut AlertCondition> {
+        self.conditions.get_mut(index)
+    }
+
+    /// Get all conditions
+    pub fn all_conditions(&self) -> &[AlertCondition] {
+        &self.conditions
+    }
+
+    /// Clear all conditions
+    pub fn clear(&mut self) {
+        self.conditions.clear();
+    }
+
+    /// Get count
+    pub fn count(&self) -> usize {
+        self.conditions.len()
+    }
+}
+
+/// Create an alert condition
+pub fn alertcondition(
+    manager: &mut AlertManager,
+    name: impl Into<String>,
+    message: impl Into<String>,
+    freq: AlertFreq,
+    triggered: &[bool],
+) -> Result<usize> {
+    let mut condition = AlertCondition::new(name, message, freq);
+    for &t in triggered {
+        condition.push(t);
+    }
+    manager.add_condition(condition)
+}
+
+/// JSON Output container for serialization
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct JsonOutput {
+    /// Schema version
+    pub version: String,
+    /// Execution timestamp
+    pub timestamp: String,
+    /// Script information
+    pub script_info: Option<ScriptInfo>,
+    /// Plot outputs
+    pub plots: Vec<PlotOutput>,
+    /// Horizontal lines
+    pub hlines: Vec<HLineOutput>,
+    /// Fill areas
+    pub fills: Vec<FillOutput>,
+    /// Drawings
+    pub drawings: DrawingOutput,
+    /// Strategy signals (optional)
+    pub strategy: Option<StrategyOutput>,
+    /// Alert conditions
+    pub alerts: Vec<AlertCondition>,
+    /// Background colors per bar
+    pub bgcolor: Vec<Option<pine_runtime::value::Color>>,
+}
+
+impl Default for JsonOutput {
     fn default() -> Self {
-        Self::OncePerBar
+        Self {
+            version: "1.0.0".to_string(),
+            timestamp: chrono::Utc::now().to_rfc3339(),
+            script_info: None,
+            plots: Vec::new(),
+            hlines: Vec::new(),
+            fills: Vec::new(),
+            drawings: DrawingOutput::default(),
+            strategy: None,
+            alerts: Vec::new(),
+            bgcolor: Vec::new(),
+        }
+    }
+}
+
+/// Script information
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ScriptInfo {
+    /// Script name
+    pub name: String,
+    /// Script description
+    pub description: Option<String>,
+}
+
+impl JsonOutput {
+    /// Create a new JSON output
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Convert from ScriptOutput
+    pub fn from_script_output(output: ScriptOutput, alerts: Vec<AlertCondition>) -> Self {
+        Self {
+            version: "1.0.0".to_string(),
+            timestamp: chrono::Utc::now().to_rfc3339(),
+            script_info: None,
+            plots: output.plots,
+            hlines: output.hlines,
+            fills: output.fills,
+            drawings: output.drawings,
+            strategy: output.strategy,
+            alerts,
+            bgcolor: output.bgcolor,
+        }
+    }
+
+    /// Serialize to JSON string
+    pub fn to_json(&self) -> Result<String> {
+        serde_json::to_string_pretty(self).map_err(|e| OutputError::InvalidValue(e.to_string()))
+    }
+
+    /// Deserialize from JSON string
+    pub fn from_json(json: &str) -> Result<Self> {
+        serde_json::from_str(json).map_err(|e| OutputError::InvalidValue(e.to_string()))
+    }
+
+    /// Set script info
+    pub fn with_script_info(
+        mut self,
+        name: impl Into<String>,
+        description: Option<impl Into<String>>,
+    ) -> Self {
+        self.script_info = Some(ScriptInfo {
+            name: name.into(),
+            description: description.map(|d| d.into()),
+        });
+        self
     }
 }
 
@@ -396,26 +654,44 @@ mod tests {
 
     #[test]
     fn test_position_parsing() {
-        assert_eq!(Position::from_str("position.abovebar"), Some(Position::AboveBar));
-        assert_eq!(Position::from_str("position.belowbar"), Some(Position::BelowBar));
-        assert_eq!(Position::from_str("position.top"), Some(Position::Top));
-        assert_eq!(Position::from_str("position.bottom"), Some(Position::Bottom));
-        assert_eq!(Position::from_str("invalid"), None);
+        use std::str::FromStr;
+
+        assert_eq!(
+            Position::from_str("position.abovebar"),
+            Ok(Position::AboveBar)
+        );
+        assert_eq!(
+            Position::from_str("position.belowbar"),
+            Ok(Position::BelowBar)
+        );
+        assert_eq!(Position::from_str("position.top"), Ok(Position::Top));
+        assert_eq!(Position::from_str("position.bottom"), Ok(Position::Bottom));
+        assert_eq!(Position::from_str("invalid"), Err(()));
     }
 
     #[test]
     fn test_text_align_parsing() {
-        assert_eq!(TextAlign::from_str("text.align_left"), Some(TextAlign::Left));
-        assert_eq!(TextAlign::from_str("text.align_center"), Some(TextAlign::Center));
-        assert_eq!(TextAlign::from_str("text.align_right"), Some(TextAlign::Right));
-        assert_eq!(TextAlign::from_str("invalid"), None);
+        use std::str::FromStr;
+
+        assert_eq!(TextAlign::from_str("text.align_left"), Ok(TextAlign::Left));
+        assert_eq!(
+            TextAlign::from_str("text.align_center"),
+            Ok(TextAlign::Center)
+        );
+        assert_eq!(
+            TextAlign::from_str("text.align_right"),
+            Ok(TextAlign::Right)
+        );
+        assert_eq!(TextAlign::from_str("invalid"), Err(()));
     }
 
     #[test]
     fn test_text_size_parsing() {
-        assert_eq!(TextSize::from_str("size.tiny"), Some(TextSize::Tiny));
-        assert_eq!(TextSize::from_str("size.normal"), Some(TextSize::Normal));
-        assert_eq!(TextSize::from_str("size.huge"), Some(TextSize::Huge));
+        use std::str::FromStr;
+
+        assert_eq!(TextSize::from_str("size.tiny"), Ok(TextSize::Tiny));
+        assert_eq!(TextSize::from_str("size.normal"), Ok(TextSize::Normal));
+        assert_eq!(TextSize::from_str("size.huge"), Ok(TextSize::Huge));
     }
 
     #[test]
@@ -427,5 +703,201 @@ mod tests {
         assert!(output.drawings.tables.is_empty());
         assert!(output.strategy.is_none());
         assert!(output.alerts.is_empty());
+    }
+
+    #[test]
+    fn test_alert_condition_creation() {
+        let condition = AlertCondition::new(
+            "Buy Signal",
+            "Price crossed above SMA",
+            AlertFreq::OncePerBar,
+        );
+        assert_eq!(condition.name, "Buy Signal");
+        assert_eq!(condition.message, "Price crossed above SMA");
+        assert_eq!(condition.freq, AlertFreq::OncePerBar);
+        assert!(condition.triggered.is_empty());
+    }
+
+    #[test]
+    fn test_alert_condition_push_and_triggered_bars() {
+        let mut condition = AlertCondition::new("Test", "Test message", AlertFreq::All);
+        condition.push(true);
+        condition.push(false);
+        condition.push(true);
+        condition.push(true);
+
+        let triggered = condition.triggered_bars();
+        assert_eq!(triggered, vec![0, 2, 3]);
+    }
+
+    #[test]
+    fn test_alert_manager() {
+        let mut manager = AlertManager::new();
+
+        let triggered = vec![true, false, true];
+        let index = alertcondition(
+            &mut manager,
+            "Alert1",
+            "Message1",
+            AlertFreq::OncePerBar,
+            &triggered,
+        )
+        .unwrap();
+
+        assert_eq!(index, 0);
+        assert_eq!(manager.count(), 1);
+
+        let condition = manager.get(0).unwrap();
+        assert_eq!(condition.name, "Alert1");
+        assert_eq!(condition.triggered, vec![true, false, true]);
+    }
+
+    #[test]
+    fn test_alert_manager_limit() {
+        let mut manager = AlertManager::with_max_alerts(2);
+
+        let triggered = vec![true];
+        alertcondition(
+            &mut manager,
+            "Alert1",
+            "Msg1",
+            AlertFreq::OncePerBar,
+            &triggered,
+        )
+        .unwrap();
+        alertcondition(
+            &mut manager,
+            "Alert2",
+            "Msg2",
+            AlertFreq::OncePerBar,
+            &triggered,
+        )
+        .unwrap();
+
+        assert_eq!(manager.count(), 2);
+
+        // Third alert should fail
+        let result = alertcondition(
+            &mut manager,
+            "Alert3",
+            "Msg3",
+            AlertFreq::OncePerBar,
+            &triggered,
+        );
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_alert_freq_default() {
+        assert_eq!(AlertFreq::default(), AlertFreq::OncePerBar);
+    }
+
+    #[test]
+    fn test_json_output_default() {
+        let output = JsonOutput::default();
+        assert_eq!(output.version, "1.0.0");
+        assert!(output.script_info.is_none());
+        assert!(output.plots.is_empty());
+        assert!(output.hlines.is_empty());
+        assert!(output.fills.is_empty());
+        assert!(output.strategy.is_none());
+        assert!(output.alerts.is_empty());
+        assert!(output.bgcolor.is_empty());
+    }
+
+    #[test]
+    fn test_json_output_with_script_info() {
+        let output = JsonOutput::new().with_script_info("Test Script", Some("A test script"));
+
+        assert_eq!(output.version, "1.0.0");
+        assert!(output.script_info.is_some());
+        let info = output.script_info.unwrap();
+        assert_eq!(info.name, "Test Script");
+        assert_eq!(info.description, Some("A test script".to_string()));
+    }
+
+    #[test]
+    fn test_json_output_serialization() {
+        let mut output = JsonOutput::new();
+        output.script_info = Some(ScriptInfo {
+            name: "SMA Strategy".to_string(),
+            description: Some("Simple moving average strategy".to_string()),
+        });
+
+        // Add a plot
+        output.plots.push(PlotOutput {
+            name: "SMA".to_string(),
+            plot_type: PlotType::Line {
+                color: pine_runtime::value::Color::new(255, 87, 51),
+                width: 2,
+                style: "solid".to_string(),
+            },
+            values: vec![Some(100.0), Some(101.0), None, Some(103.0)],
+        });
+
+        // Add an alert
+        output.alerts.push(AlertCondition::new(
+            "Buy Signal",
+            "Price crossed above SMA",
+            AlertFreq::OncePerBar,
+        ));
+
+        // Serialize to JSON
+        let json = output.to_json().unwrap();
+
+        // Verify JSON contains expected fields
+        assert!(json.contains("1.0.0"));
+        assert!(json.contains("SMA Strategy"));
+        assert!(json.contains("SMA"));
+        assert!(json.contains("Buy Signal"));
+
+        // Deserialize back
+        let parsed = JsonOutput::from_json(&json).unwrap();
+        assert_eq!(parsed.version, "1.0.0");
+        assert_eq!(parsed.plots.len(), 1);
+        assert_eq!(parsed.plots[0].name, "SMA");
+        assert_eq!(parsed.alerts.len(), 1);
+        assert_eq!(parsed.alerts[0].name, "Buy Signal");
+    }
+
+    #[test]
+    fn test_json_output_from_script_output() {
+        let script_output = ScriptOutput {
+            plots: vec![PlotOutput {
+                name: "Price".to_string(),
+                plot_type: PlotType::Line {
+                    color: pine_runtime::value::Color::new(0, 150, 136),
+                    width: 1,
+                    style: "solid".to_string(),
+                },
+                values: vec![Some(50000.0), Some(50100.0)],
+            }],
+            hlines: vec![HLineOutput {
+                price: 50000.0,
+                color: pine_runtime::value::Color::new(255, 0, 0),
+                style: HLineStyle::Dashed,
+                width: 1,
+                title: Some("Support".to_string()),
+            }],
+            fills: vec![],
+            drawings: DrawingOutput::default(),
+            strategy: None,
+            alerts: vec![],
+            bgcolor: vec![None, Some(pine_runtime::value::Color::new(255, 255, 0))],
+        };
+
+        let alerts = vec![AlertCondition::new(
+            "Test Alert",
+            "Test message",
+            AlertFreq::All,
+        )];
+
+        let json_output = JsonOutput::from_script_output(script_output, alerts);
+
+        assert_eq!(json_output.plots.len(), 1);
+        assert_eq!(json_output.hlines.len(), 1);
+        assert_eq!(json_output.bgcolor.len(), 2);
+        assert_eq!(json_output.alerts.len(), 1);
+        assert_eq!(json_output.alerts[0].name, "Test Alert");
     }
 }

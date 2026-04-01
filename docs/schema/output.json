@@ -1,0 +1,324 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://pine-rs.dev/schema/output.json",
+  "title": "Pine Script v6 Output",
+  "description": "JSON output format for Pine Script v6 execution results",
+  "type": "object",
+  "required": ["version", "timestamp", "plots", "hlines", "fills", "drawings", "alerts", "bgcolor"],
+  "properties": {
+    "version": {
+      "type": "string",
+      "description": "Schema version",
+      "enum": ["1.0.0"]
+    },
+    "timestamp": {
+      "type": "string",
+      "format": "date-time",
+      "description": "Execution timestamp"
+    },
+    "script_info": {
+      "type": "object",
+      "properties": {
+        "name": { "type": "string" },
+        "description": { "type": "string" }
+      }
+    },
+    "plots": {
+      "type": "array",
+      "description": "Plot outputs",
+      "items": {
+        "$ref": "#/definitions/PlotOutput"
+      }
+    },
+    "hlines": {
+      "type": "array",
+      "description": "Horizontal lines",
+      "items": {
+        "$ref": "#/definitions/HLineOutput"
+      }
+    },
+    "fills": {
+      "type": "array",
+      "description": "Fill areas between plots",
+      "items": {
+        "$ref": "#/definitions/FillOutput"
+      }
+    },
+    "drawings": {
+      "$ref": "#/definitions/DrawingOutput"
+    },
+    "strategy": {
+      "$ref": "#/definitions/StrategyOutput"
+    },
+    "alerts": {
+      "type": "array",
+      "description": "Alert conditions",
+      "items": {
+        "$ref": "#/definitions/AlertCondition"
+      }
+    },
+    "bgcolor": {
+      "type": "array",
+      "description": "Background colors per bar",
+      "items": {
+        "$ref": "#/definitions/Color"
+      }
+    }
+  },
+  "definitions": {
+    "PlotOutput": {
+      "type": "object",
+      "required": ["name", "plot_type", "values"],
+      "properties": {
+        "name": { "type": "string" },
+        "plot_type": {
+          "oneOf": [
+            { "$ref": "#/definitions/LinePlot" },
+            { "$ref": "#/definitions/ShapePlot" },
+            { "$ref": "#/definitions/CharPlot" },
+            { "$ref": "#/definitions/ArrowPlot" }
+          ]
+        },
+        "values": {
+          "type": "array",
+          "items": {
+            "type": ["number", "null"]
+          }
+        }
+      }
+    },
+    "LinePlot": {
+      "type": "object",
+      "required": ["type", "color", "width", "style"],
+      "properties": {
+        "type": { "const": "Line" },
+        "color": { "$ref": "#/definitions/Color" },
+        "width": { "type": "integer", "minimum": 1 },
+        "style": {
+          "type": "string",
+          "enum": ["solid", "dashed", "dotted"]
+        }
+      }
+    },
+    "ShapePlot": {
+      "type": "object",
+      "required": ["type", "shape", "color", "size", "location"],
+      "properties": {
+        "type": { "const": "Shape" },
+        "shape": {
+          "type": "string",
+          "enum": ["xcross", "cross", "circle", "triangleup", "triangledown", "diamond", "square", "flag", "arrowup", "arrowdown"]
+        },
+        "color": { "$ref": "#/definitions/Color" },
+        "size": {
+          "type": "string",
+          "enum": ["tiny", "small", "normal", "large", "huge"]
+        },
+        "location": {
+          "type": "string",
+          "enum": ["abovebar", "belowbar", "top", "bottom", "absolute"]
+        }
+      }
+    },
+    "CharPlot": {
+      "type": "object",
+      "required": ["type", "char", "color", "size", "location"],
+      "properties": {
+        "type": { "const": "Char" },
+        "char": { "type": "string", "minLength": 1, "maxLength": 1 },
+        "color": { "$ref": "#/definitions/Color" },
+        "size": {
+          "type": "string",
+          "enum": ["tiny", "small", "normal", "large", "huge"]
+        },
+        "location": {
+          "type": "string",
+          "enum": ["abovebar", "belowbar", "top", "bottom", "absolute"]
+        }
+      }
+    },
+    "ArrowPlot": {
+      "type": "object",
+      "required": ["type", "colorup", "colordown", "offset"],
+      "properties": {
+        "type": { "const": "Arrow" },
+        "colorup": { "$ref": "#/definitions/Color" },
+        "colordown": { "$ref": "#/definitions/Color" },
+        "offset": { "type": "integer" }
+      }
+    },
+    "HLineOutput": {
+      "type": "object",
+      "required": ["price", "color", "style", "width"],
+      "properties": {
+        "price": { "type": "number" },
+        "color": { "$ref": "#/definitions/Color" },
+        "style": {
+          "type": "string",
+          "enum": ["solid", "dashed", "dotted"]
+        },
+        "width": { "type": "integer", "minimum": 1 },
+        "title": { "type": "string" }
+      }
+    },
+    "FillOutput": {
+      "type": "object",
+      "required": ["plot1_index", "plot2_index", "color", "transp"],
+      "properties": {
+        "plot1_index": { "type": "integer", "minimum": 0 },
+        "plot2_index": { "type": "integer", "minimum": 0 },
+        "color": { "$ref": "#/definitions/Color" },
+        "transp": { "type": "integer", "minimum": 0, "maximum": 100 },
+        "title": { "type": "string" }
+      }
+    },
+    "DrawingOutput": {
+      "type": "object",
+      "required": ["labels", "boxes", "tables"],
+      "properties": {
+        "labels": {
+          "type": "array",
+          "items": { "$ref": "#/definitions/LabelOutput" }
+        },
+        "boxes": {
+          "type": "array",
+          "items": { "$ref": "#/definitions/BoxOutput" }
+        },
+        "tables": {
+          "type": "array",
+          "items": { "$ref": "#/definitions/TableOutput" }
+        }
+      }
+    },
+    "LabelOutput": {
+      "type": "object",
+      "required": ["id", "x", "y", "text", "textcolor", "color", "size", "textalign", "style"],
+      "properties": {
+        "id": { "type": "integer" },
+        "x": { "type": "integer" },
+        "y": { "type": "number" },
+        "text": { "type": "string" },
+        "textcolor": { "$ref": "#/definitions/Color" },
+        "color": { "$ref": "#/definitions/Color" },
+        "size": {
+          "type": "string",
+          "enum": ["tiny", "small", "normal", "large", "huge"]
+        },
+        "textalign": {
+          "type": "string",
+          "enum": ["left", "center", "right"]
+        },
+        "style": {
+          "type": "string",
+          "enum": ["labelup", "labeldown", "labelleft", "labelright", "labelnone", "xcross", "cross", "triangleup", "triangledown", "diamond", "circle", "square", "flag", "arrowup", "arrowdown", "barup", "bardown"]
+        }
+      }
+    },
+    "BoxOutput": {
+      "type": "object",
+      "required": ["id", "left", "top", "right", "bottom", "border_color", "bgcolor", "border_width"],
+      "properties": {
+        "id": { "type": "integer" },
+        "left": { "type": "integer" },
+        "top": { "type": "number" },
+        "right": { "type": "integer" },
+        "bottom": { "type": "number" },
+        "border_color": { "$ref": "#/definitions/Color" },
+        "bgcolor": { "$ref": "#/definitions/Color" },
+        "border_width": { "type": "integer" }
+      }
+    },
+    "TableOutput": {
+      "type": "object",
+      "required": ["id", "position", "columns", "rows", "cells"],
+      "properties": {
+        "id": { "type": "integer" },
+        "position": {
+          "type": "string",
+          "enum": ["topleft", "topcenter", "topright", "middleleft", "middlecenter", "middleright", "bottomleft", "bottomcenter", "bottomright"]
+        },
+        "columns": { "type": "integer", "minimum": 1 },
+        "rows": { "type": "integer", "minimum": 1 },
+        "cells": {
+          "type": "array",
+          "items": { "$ref": "#/definitions/TableCell" }
+        }
+      }
+    },
+    "TableCell": {
+      "type": "object",
+      "required": ["column", "row", "text", "text_color", "bg_color", "text_size"],
+      "properties": {
+        "column": { "type": "integer", "minimum": 0 },
+        "row": { "type": "integer", "minimum": 0 },
+        "text": { "type": "string" },
+        "text_color": { "$ref": "#/definitions/Color" },
+        "bg_color": { "$ref": "#/definitions/Color" },
+        "text_size": {
+          "type": "string",
+          "enum": ["tiny", "small", "normal", "large", "huge"]
+        }
+      }
+    },
+    "StrategyOutput": {
+      "type": "object",
+      "required": ["name", "entries", "exits", "position_size", "position_direction"],
+      "properties": {
+        "name": { "type": "string" },
+        "entries": {
+          "type": "array",
+          "items": { "$ref": "#/definitions/TradeSignal" }
+        },
+        "exits": {
+          "type": "array",
+          "items": { "$ref": "#/definitions/TradeSignal" }
+        },
+        "position_size": { "type": "number" },
+        "position_direction": {
+          "type": "string",
+          "enum": ["long", "short", "close", "none"]
+        }
+      }
+    },
+    "TradeSignal": {
+      "type": "object",
+      "required": ["bar_index", "direction", "qty"],
+      "properties": {
+        "bar_index": { "type": "integer" },
+        "direction": {
+          "type": "string",
+          "enum": ["long", "short", "close", "none"]
+        },
+        "qty": { "type": "number" },
+        "price": { "type": ["number", "null"] },
+        "comment": { "type": ["string", "null"] }
+      }
+    },
+    "AlertCondition": {
+      "type": "object",
+      "required": ["name", "triggered", "message", "freq"],
+      "properties": {
+        "name": { "type": "string" },
+        "triggered": {
+          "type": "array",
+          "items": { "type": "boolean" }
+        },
+        "message": { "type": "string" },
+        "freq": {
+          "type": "string",
+          "enum": ["once_per_bar", "once_per_bar_close", "all"]
+        }
+      }
+    },
+    "Color": {
+      "type": "object",
+      "required": ["r", "g", "b", "a"],
+      "properties": {
+        "r": { "type": "integer", "minimum": 0, "maximum": 255 },
+        "g": { "type": "integer", "minimum": 0, "maximum": 255 },
+        "b": { "type": "integer", "minimum": 0, "maximum": 255 },
+        "a": { "type": "integer", "minimum": 0, "maximum": 255 }
+      }
+    }
+  }
+}

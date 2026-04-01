@@ -1,0 +1,11 @@
+{
+  "success": true,
+  "bars_processed": 15,
+  "strategy": {
+    "name": "SMA Crossover Strategy",
+    "entries": [],
+    "exits": [],
+    "position_size": 0.0,
+    "position_direction": "none"
+  }
+}

@@ -32,23 +32,24 @@ pub enum Shape {
     Flag,
 }
 
-impl Shape {
-    /// Parse shape from string
-    pub fn from_str(s: &str) -> Option<Self> {
+impl std::str::FromStr for Shape {
+    type Err = ();
+
+    fn from_str(s: &str) -> std::result::Result<Self, Self::Err> {
         match s {
-            "shape.xcross" => Some(Self::XCross),
-            "shape.cross" => Some(Self::Cross),
-            "shape.circle" => Some(Self::Circle),
-            "shape.triangleup" => Some(Self::TriangleUp),
-            "shape.triangledown" => Some(Self::TriangleDown),
-            "shape.diamond" => Some(Self::Diamond),
-            "shape.square" => Some(Self::Square),
-            "shape.labelup" => Some(Self::LabelUp),
-            "shape.labeldown" => Some(Self::LabelDown),
-            "shape.arrowup" => Some(Self::ArrowUp),
-            "shape.arrowdown" => Some(Self::ArrowDown),
-            "shape.flag" => Some(Self::Flag),
-            _ => None,
+            "shape.xcross" => Ok(Self::XCross),
+            "shape.cross" => Ok(Self::Cross),
+            "shape.circle" => Ok(Self::Circle),
+            "shape.triangleup" => Ok(Self::TriangleUp),
+            "shape.triangledown" => Ok(Self::TriangleDown),
+            "shape.diamond" => Ok(Self::Diamond),
+            "shape.square" => Ok(Self::Square),
+            "shape.labelup" => Ok(Self::LabelUp),
+            "shape.labeldown" => Ok(Self::LabelDown),
+            "shape.arrowup" => Ok(Self::ArrowUp),
+            "shape.arrowdown" => Ok(Self::ArrowDown),
+            "shape.flag" => Ok(Self::Flag),
+            _ => Err(()),
         }
     }
 }
@@ -70,16 +71,17 @@ pub enum Location {
     /// At absolute price level
     Absolute,
 }
-impl Location {
-    /// Parse location from string
-    pub fn from_str(s: &str) -> Option<Self> {
+impl std::str::FromStr for Location {
+    type Err = ();
+
+    fn from_str(s: &str) -> std::result::Result<Self, Self::Err> {
         match s {
-            "location.abovebar" => Some(Self::AboveBar),
-            "location.belowbar" => Some(Self::BelowBar),
-            "location.top" => Some(Self::Top),
-            "location.bottom" => Some(Self::Bottom),
-            "location.absolute" => Some(Self::Absolute),
-            _ => None,
+            "location.abovebar" => Ok(Self::AboveBar),
+            "location.belowbar" => Ok(Self::BelowBar),
+            "location.top" => Ok(Self::Top),
+            "location.bottom" => Ok(Self::Bottom),
+            "location.absolute" => Ok(Self::Absolute),
+            _ => Err(()),
         }
     }
 }
@@ -99,16 +101,17 @@ pub enum Size {
     Huge,
 }
 
-impl Size {
-    /// Parse size from string
-    pub fn from_str(s: &str) -> Option<Self> {
+impl std::str::FromStr for Size {
+    type Err = ();
+
+    fn from_str(s: &str) -> std::result::Result<Self, Self::Err> {
         match s {
-            "size.tiny" => Some(Self::Tiny),
-            "size.small" => Some(Self::Small),
-            "size.normal" => Some(Self::Normal),
-            "size.large" => Some(Self::Large),
-            "size.huge" => Some(Self::Huge),
-            _ => None,
+            "size.tiny" => Ok(Self::Tiny),
+            "size.small" => Ok(Self::Small),
+            "size.normal" => Ok(Self::Normal),
+            "size.large" => Ok(Self::Large),
+            "size.huge" => Ok(Self::Huge),
+            _ => Err(()),
         }
     }
 }
@@ -473,6 +476,55 @@ pub fn plotarrow(
     Ok(plot)
 }
 
+/// Plot a horizontal line
+pub fn hline(
+    price: f64,
+    title: impl Into<String>,
+    color: Option<Color>,
+    linestyle: Option<LineStyle>,
+    linewidth: Option<u32>,
+) -> Result<crate::HLineOutput> {
+    use crate::HLineStyle;
+
+    let style = match linestyle {
+        Some(LineStyle::Solid) => HLineStyle::Solid,
+        Some(LineStyle::Dashed) => HLineStyle::Dashed,
+        Some(LineStyle::Dotted) => HLineStyle::Dotted,
+        None => HLineStyle::default(),
+    };
+
+    Ok(crate::HLineOutput {
+        price,
+        color: color.unwrap_or_else(|| Color::new(128, 128, 128)),
+        style,
+        width: linewidth.unwrap_or(1),
+        title: Some(title.into()),
+    })
+}
+
+/// Fill between two plots
+pub fn fill(
+    plot1_index: usize,
+    plot2_index: usize,
+    color: Color,
+    transp: Option<u8>,
+    title: Option<impl Into<String>>,
+) -> Result<crate::FillOutput> {
+    Ok(crate::FillOutput {
+        plot1_index,
+        plot2_index,
+        color,
+        transp: transp.unwrap_or(0).clamp(0, 100),
+        title: title.map(|t| t.into()),
+    })
+}
+
+/// Set background color
+pub fn bgcolor(colors: &[Option<Color>], offset: Option<i32>) -> Vec<Option<Color>> {
+    let _ = offset; // offset is used for visual positioning, not stored
+    colors.to_vec()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -552,17 +604,27 @@ mod tests {
 
     #[test]
     fn test_shape_parsing() {
-        assert_eq!(Shape::from_str("shape.circle"), Some(Shape::Circle));
-        assert_eq!(Shape::from_str("shape.triangleup"), Some(Shape::TriangleUp));
-        assert_eq!(Shape::from_str("shape.arrowdown"), Some(Shape::ArrowDown));
-        assert_eq!(Shape::from_str("invalid"), None);
+        use std::str::FromStr;
+
+        assert_eq!(Shape::from_str("shape.circle"), Ok(Shape::Circle));
+        assert_eq!(Shape::from_str("shape.triangleup"), Ok(Shape::TriangleUp));
+        assert_eq!(Shape::from_str("shape.arrowdown"), Ok(Shape::ArrowDown));
+        assert_eq!(Shape::from_str("invalid"), Err(()));
     }
 
     #[test]
     fn test_location_parsing() {
-        assert_eq!(Location::from_str("location.abovebar"), Some(Location::AboveBar));
-        assert_eq!(Location::from_str("location.belowbar"), Some(Location::BelowBar));
-        assert_eq!(Location::from_str("location.top"), Some(Location::Top));
+        use std::str::FromStr;
+
+        assert_eq!(
+            Location::from_str("location.abovebar"),
+            Ok(Location::AboveBar)
+        );
+        assert_eq!(
+            Location::from_str("location.belowbar"),
+            Ok(Location::BelowBar)
+        );
+        assert_eq!(Location::from_str("location.top"), Ok(Location::Top));
     }
 
     #[test]
@@ -572,5 +634,55 @@ mod tests {
 
         let plot = Plot::default().with_transp(50);
         assert_eq!(plot.transp, 50);
+    }
+
+    #[test]
+    fn test_hline() {
+        let hline = hline(
+            100.0,
+            "Support",
+            Some(Color::new(0, 255, 0)),
+            Some(LineStyle::Dashed),
+            Some(2),
+        )
+        .unwrap();
+
+        assert_eq!(hline.price, 100.0);
+        assert_eq!(hline.color, Color::new(0, 255, 0));
+        assert_eq!(hline.style, crate::HLineStyle::Dashed);
+        assert_eq!(hline.width, 2);
+        assert_eq!(hline.title, Some("Support".to_string()));
+    }
+
+    #[test]
+    fn test_fill() {
+        let fill = fill(0, 1, Color::new(255, 0, 0), Some(50), Some::<&str>("Band")).unwrap();
+
+        assert_eq!(fill.plot1_index, 0);
+        assert_eq!(fill.plot2_index, 1);
+        assert_eq!(fill.color, Color::new(255, 0, 0));
+        assert_eq!(fill.transp, 50);
+        assert_eq!(fill.title, Some("Band".to_string()));
+    }
+
+    #[test]
+    fn test_fill_transparency_clamping() {
+        let fill = fill(0, 1, Color::new(255, 0, 0), Some(150), None::<&str>).unwrap();
+        assert_eq!(fill.transp, 100);
+    }
+
+    #[test]
+    fn test_bgcolor() {
+        let colors = vec![
+            Some(Color::new(255, 0, 0)),
+            None,
+            Some(Color::new(0, 255, 0)),
+        ];
+        let result = bgcolor(&colors, Some(0));
+
+        assert_eq!(result.len(), 3);
+        assert_eq!(result[0], Some(Color::new(255, 0, 0)));
+        assert_eq!(result[1], None);
+        assert_eq!(result[2], Some(Color::new(0, 255, 0)));
     }
 }

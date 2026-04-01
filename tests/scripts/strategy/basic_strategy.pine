@@ -1,0 +1,31 @@
+// Basic strategy test - SMA crossover with entry/exit signals
+//@version=6
+strategy("SMA Crossover Strategy", overlay=true)
+
+// Inputs
+fastLength = input.int(3, "Fast SMA Length")
+slowLength = input.int(6, "Slow SMA Length")
+
+// Calculations
+fastSMA = ta.sma(close, fastLength)
+slowSMA = ta.sma(close, slowLength)
+
+// Plot SMAs
+plot(fastSMA, "Fast SMA", color=color.new(color.blue, 0))
+plot(slowSMA, "Slow SMA", color=color.new(color.orange, 0))
+
+// Strategy logic
+longCondition = ta.crossover(fastSMA, slowSMA)
+shortCondition = ta.crossunder(fastSMA, slowSMA)
+
+// Execute trades
+if longCondition
+    strategy.entry("Long", strategy.long)
+
+if shortCondition
+    strategy.close("Long")
+    strategy.entry("Short", strategy.short)
+
+// Plot buy/sell signals
+plotshape(longCondition, "Buy Signal", shape.triangleup, location.belowbar, color.green, size=size.small)
+plotshape(shortCondition, "Sell Signal", shape.triangledown, location.abovebar, color.red, size=size.small)
