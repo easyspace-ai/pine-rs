@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# 运行黄金测试
+# 运行黄金测试：每个 tests/golden/*.csv 必须在 tests/scripts 下存在同名 *.pine，否则失败（禁止静默跳过）。
 
 set -u
 
@@ -23,7 +23,11 @@ for csv in $pattern; do
 
   base=$(basename "$csv" .csv)
   script=$(find_script "$base")
-  [ -n "$script" ] || continue
+  if [ -z "$script" ]; then
+    echo "✗ $csv: 未找到 tests/scripts/**/${base}.pine"
+    FAIL=$((FAIL+1))
+    continue
+  fi
 
   if cargo run -p pine-cli -- run "$script" --data "$csv" 2>/dev/null | \
      python3 tests/compare_golden.py "$csv"; then

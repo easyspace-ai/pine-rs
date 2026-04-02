@@ -43,5 +43,11 @@
   "修正 sma_manual 测试脚本预热规则，使 Manual SMA 黄金测试与 Phase 2 验收通过",
   "打通 ta.* 真实脚本执行中的 series 参数传递，并补齐 SMA 14 / EMA 12 / Highest 10 黄金样例",
   "修正 ta.bb 与 ta.stoch 的核心语义，并补齐 BBands 20/2 与 Stochastic 14 的黄金样例",
-  "修正 ta.tr / ta.cci / ta.mom / crossover / crossunder / barssince 的核心语义，并补齐对应黄金样例"
+  "修正 ta.tr / ta.cci / ta.mom / crossover / crossunder / barssince 的核心语义，并补齐对应黄金样例",
+  "Phase3-四条-迭代：修正 ta.highestbars/ta.lowestbars 为尾部窗口 + bars ago；黄金 lowest_10、highestbars_10、lowestbars_10；run_golden 缺脚本计失败；pine-eval for 累加回归测；AGENTS §10.3 checklist 全部满足",
+  "P3-VM-探索（原型）：实现 Call/Return 指令、Series 操作、控制流（if/for/while）、变量作用域、AST 到字节码编译器；建立 parity 测试框架",
+  "P4-T1: VM parity 基础 - 外部函数调用支持（通过 FunctionRegistry），AST 编译器支持函数调用编译",
+  "P4-T2: VM 完整脚本执行 - executor.rs 模块（SeriesData, PlotOutputs, execute_script_with_vm），bar-by-bar 执行支持",
+  "P4-T3: VM 黄金测试链路 - vm_golden_test.rs, vm_run_golden.sh，集成到 dev_verify.sh --full",
+  "Phase 3 基线达成：C1-C6 checklist 全部满足，dev_verify.sh --full 通过，正式进入 Phase 4"
 ]

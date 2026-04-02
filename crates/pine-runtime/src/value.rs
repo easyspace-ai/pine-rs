@@ -261,6 +261,9 @@ pub enum Value {
     /// Namespace (e.g., "input", "ta", "math")
     /// Used for method-style calls on builtin namespaces
     Namespace(String),
+    /// Series reference (e.g., "close", "open")
+    /// Used in VM to pass series data to builtin functions
+    SeriesRef(String),
 }
 
 impl Value {
@@ -650,6 +653,7 @@ impl Value {
             Value::Object(obj) => Value::String(obj.type_name.clone().into()),
             Value::Map(_) => Value::String("map".into()),
             Value::Namespace(ns) => Value::String(format!("namespace {}", ns).into()),
+            Value::SeriesRef(name) => Value::String(format!("series:{}", name).into()),
         }
     }
 }
@@ -726,6 +730,7 @@ impl fmt::Display for Value {
                 write!(f, "}}")
             }
             Value::Namespace(ns) => write!(f, "namespace {ns}"),
+            Value::SeriesRef(name) => write!(f, "series:{name}"),
         }
     }
 }

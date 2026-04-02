@@ -1,0 +1,10 @@
+//@version=6
+indicator("pinets math.abs compat", overlay = true)
+
+abs_native = math.abs(close)
+abs_var = math.abs(close)
+abs_open = math.abs(open)
+
+plot(abs_native, title = "_plotchar")
+plot(abs_var, title = "_plot")
+plot(abs_open, title = "_plot_open")

@@ -828,11 +828,17 @@ fn register_highestbars(registry: &mut FunctionRegistry) {
         let length = extract_length(args, 1, 14);
 
         let mut highest = f64::NEG_INFINITY;
-        let mut highest_idx = 0;
 
-        for i in 0..length.min(series.len()) {
+        let n = series.len();
+        if n == 0 {
+            return Value::Na;
+        }
+        let wl = length.min(n);
+        let start = n - wl;
+        let mut highest_idx = start;
+        for i in start..n {
             if let Some(val) = series.get(i).and_then(get_float) {
-                if val > highest {
+                if val >= highest {
                     highest = val;
                     highest_idx = i;
                 }
@@ -842,7 +848,7 @@ fn register_highestbars(registry: &mut FunctionRegistry) {
         if highest == f64::NEG_INFINITY {
             Value::Na
         } else {
-            Value::Int(highest_idx as i64)
+            Value::Int((n - 1 - highest_idx) as i64)
         }
     });
 
@@ -864,11 +870,17 @@ fn register_lowestbars(registry: &mut FunctionRegistry) {
         let length = extract_length(args, 1, 14);
 
         let mut lowest = f64::INFINITY;
-        let mut lowest_idx = 0;
 
-        for i in 0..length.min(series.len()) {
+        let n = series.len();
+        if n == 0 {
+            return Value::Na;
+        }
+        let wl = length.min(n);
+        let start = n - wl;
+        let mut lowest_idx = start;
+        for i in start..n {
             if let Some(val) = series.get(i).and_then(get_float) {
-                if val < lowest {
+                if val <= lowest {
                     lowest = val;
                     lowest_idx = i;
                 }
@@ -878,7 +890,7 @@ fn register_lowestbars(registry: &mut FunctionRegistry) {
         if lowest == f64::INFINITY {
             Value::Na
         } else {
-            Value::Int(lowest_idx as i64)
+            Value::Int((n - 1 - lowest_idx) as i64)
         }
     });
 
@@ -1068,6 +1080,28 @@ mod tests {
         let result = registry.dispatch("ta.highest", &[data, Value::Int(3)]);
 
         assert_eq!(result, Some(Value::Float(130.0)));
+    }
+
+    #[test]
+    fn test_highestbars_trailing_most_recent_peak() {
+        let registry = test_registry();
+
+        let data = series(vec![100.0, 110.0, 120.0, 130.0, 125.0]);
+        let result = registry.dispatch("ta.highestbars", &[data.clone(), Value::Int(3)]);
+        assert_eq!(result, Some(Value::Int(1)));
+
+        let data2 = series(vec![10.0, 50.0, 30.0, 40.0, 20.0]);
+        let result2 = registry.dispatch("ta.highestbars", &[data2, Value::Int(5)]);
+        assert_eq!(result2, Some(Value::Int(3)));
+    }
+
+    #[test]
+    fn test_lowestbars_trailing_most_recent_trough() {
+        let registry = test_registry();
+
+        let data = series(vec![100.0, 110.0, 90.0, 95.0, 105.0]);
+        let result = registry.dispatch("ta.lowestbars", &[data, Value::Int(3)]);
+        assert_eq!(result, Some(Value::Int(2)));
     }
 
     #[test]

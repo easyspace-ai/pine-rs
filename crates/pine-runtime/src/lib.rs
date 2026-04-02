@@ -12,7 +12,7 @@ pub mod na_ops;
 pub mod series;
 pub mod value;
 
-pub use context::SlotId;
+pub use context::{CallSiteId, ExecutionContext, SlotId};
 
 use miette::Diagnostic;
 use thiserror::Error;

@@ -4,6 +4,7 @@
 //! All functions follow TradingView's exact semantics including NA handling.
 
 use crate::registry::{FunctionMeta, FunctionRegistry};
+use pine_builtin_macro::pine_builtin;
 use pine_runtime::value::Value;
 use std::sync::Arc;
 
@@ -50,7 +51,7 @@ pub fn register_functions(registry: &mut FunctionRegistry) {
     // Other functions
     register_isna(registry);
     register_nz(registry);
-    register_to_string(registry);
+    register_tostring(registry);
 }
 
 // ============================================================================
@@ -70,19 +71,13 @@ fn get_float(value: &Value) -> Option<f64> {
 // Basic Arithmetic
 // ============================================================================
 
-/// Register math.abs - Absolute value
-fn register_abs(registry: &mut FunctionRegistry) {
-    let meta = FunctionMeta::new("abs")
-        .with_namespace("math")
-        .with_required_args(1);
-
-    let func: crate::registry::BuiltinFn = Arc::new(|args| match args.first() {
+#[pine_builtin(name = "abs", namespace = "math", required_args = 1)]
+fn builtin_math_abs(args: &[Value]) -> Value {
+    match args.first() {
         Some(Value::Float(f)) => Value::Float(f.abs()),
         Some(Value::Int(n)) => Value::Int(n.abs()),
         _ => Value::Na,
-    });
-
-    registry.register(meta, func);
+    }
 }
 
 /// Register math.max - Maximum of two or more values
@@ -205,19 +200,13 @@ fn register_avg(registry: &mut FunctionRegistry) {
 // Power and Roots
 // ============================================================================
 
-/// Register math.sqrt - Square root
-fn register_sqrt(registry: &mut FunctionRegistry) {
-    let meta = FunctionMeta::new("sqrt")
-        .with_namespace("math")
-        .with_required_args(1);
-
-    let func: crate::registry::BuiltinFn = Arc::new(|args| match args.first() {
+#[pine_builtin(name = "sqrt", namespace = "math", required_args = 1)]
+fn builtin_math_sqrt(args: &[Value]) -> Value {
+    match args.first() {
         Some(Value::Float(f)) => Value::Float(f.sqrt()),
         Some(Value::Int(n)) => Value::Float((*n as f64).sqrt()),
         _ => Value::Na,
-    });
-
-    registry.register(meta, func);
+    }
 }
 
 /// Register math.pow - Power function
@@ -239,211 +228,120 @@ fn register_pow(registry: &mut FunctionRegistry) {
     registry.register(meta, func);
 }
 
-/// Register math.exp - Exponential function (e^x)
-fn register_exp(registry: &mut FunctionRegistry) {
-    let meta = FunctionMeta::new("exp")
-        .with_namespace("math")
-        .with_required_args(1);
-
-    let func: crate::registry::BuiltinFn =
-        Arc::new(|args| match args.first().and_then(get_float) {
-            Some(v) => Value::Float(v.exp()),
-            None => Value::Na,
-        });
-
-    registry.register(meta, func);
+#[pine_builtin(name = "exp", namespace = "math", required_args = 1)]
+fn builtin_math_exp(args: &[Value]) -> Value {
+    match args.first().and_then(get_float) {
+        Some(v) => Value::Float(v.exp()),
+        None => Value::Na,
+    }
 }
 
-/// Register math.log - Natural logarithm
-fn register_log(registry: &mut FunctionRegistry) {
-    let meta = FunctionMeta::new("log")
-        .with_namespace("math")
-        .with_required_args(1);
-
-    let func: crate::registry::BuiltinFn =
-        Arc::new(|args| match args.first().and_then(get_float) {
-            Some(v) if v > 0.0 => Value::Float(v.ln()),
-            _ => Value::Na,
-        });
-
-    registry.register(meta, func);
+#[pine_builtin(name = "log", namespace = "math", required_args = 1)]
+fn builtin_math_log(args: &[Value]) -> Value {
+    match args.first().and_then(get_float) {
+        Some(v) if v > 0.0 => Value::Float(v.ln()),
+        _ => Value::Na,
+    }
 }
 
-/// Register math.log10 - Base-10 logarithm
-fn register_log10(registry: &mut FunctionRegistry) {
-    let meta = FunctionMeta::new("log10")
-        .with_namespace("math")
-        .with_required_args(1);
-
-    let func: crate::registry::BuiltinFn =
-        Arc::new(|args| match args.first().and_then(get_float) {
-            Some(v) if v > 0.0 => Value::Float(v.log10()),
-            _ => Value::Na,
-        });
-
-    registry.register(meta, func);
+#[pine_builtin(name = "log10", namespace = "math", required_args = 1)]
+fn builtin_math_log10(args: &[Value]) -> Value {
+    match args.first().and_then(get_float) {
+        Some(v) if v > 0.0 => Value::Float(v.log10()),
+        _ => Value::Na,
+    }
 }
 
 // ============================================================================
 // Trigonometric Functions
 // ============================================================================
 
-/// Register math.sin - Sine
-fn register_sin(registry: &mut FunctionRegistry) {
-    let meta = FunctionMeta::new("sin")
-        .with_namespace("math")
-        .with_required_args(1);
-
-    let func: crate::registry::BuiltinFn =
-        Arc::new(|args| match args.first().and_then(get_float) {
-            Some(v) => Value::Float(v.sin()),
-            None => Value::Na,
-        });
-
-    registry.register(meta, func);
+#[pine_builtin(name = "sin", namespace = "math", required_args = 1)]
+fn builtin_math_sin(args: &[Value]) -> Value {
+    match args.first().and_then(get_float) {
+        Some(v) => Value::Float(v.sin()),
+        None => Value::Na,
+    }
 }
 
-/// Register math.cos - Cosine
-fn register_cos(registry: &mut FunctionRegistry) {
-    let meta = FunctionMeta::new("cos")
-        .with_namespace("math")
-        .with_required_args(1);
-
-    let func: crate::registry::BuiltinFn =
-        Arc::new(|args| match args.first().and_then(get_float) {
-            Some(v) => Value::Float(v.cos()),
-            None => Value::Na,
-        });
-
-    registry.register(meta, func);
+#[pine_builtin(name = "cos", namespace = "math", required_args = 1)]
+fn builtin_math_cos(args: &[Value]) -> Value {
+    match args.first().and_then(get_float) {
+        Some(v) => Value::Float(v.cos()),
+        None => Value::Na,
+    }
 }
 
-/// Register math.tan - Tangent
-fn register_tan(registry: &mut FunctionRegistry) {
-    let meta = FunctionMeta::new("tan")
-        .with_namespace("math")
-        .with_required_args(1);
-
-    let func: crate::registry::BuiltinFn =
-        Arc::new(|args| match args.first().and_then(get_float) {
-            Some(v) => Value::Float(v.tan()),
-            None => Value::Na,
-        });
-
-    registry.register(meta, func);
+#[pine_builtin(name = "tan", namespace = "math", required_args = 1)]
+fn builtin_math_tan(args: &[Value]) -> Value {
+    match args.first().and_then(get_float) {
+        Some(v) => Value::Float(v.tan()),
+        None => Value::Na,
+    }
 }
 
-/// Register math.asin - Arc sine
-fn register_asin(registry: &mut FunctionRegistry) {
-    let meta = FunctionMeta::new("asin")
-        .with_namespace("math")
-        .with_required_args(1);
-
-    let func: crate::registry::BuiltinFn =
-        Arc::new(|args| match args.first().and_then(get_float) {
-            Some(v) if (-1.0..=1.0).contains(&v) => Value::Float(v.asin()),
-            _ => Value::Na,
-        });
-
-    registry.register(meta, func);
+#[pine_builtin(name = "asin", namespace = "math", required_args = 1)]
+fn builtin_math_asin(args: &[Value]) -> Value {
+    match args.first().and_then(get_float) {
+        Some(v) if (-1.0..=1.0).contains(&v) => Value::Float(v.asin()),
+        _ => Value::Na,
+    }
 }
 
-/// Register math.acos - Arc cosine
-fn register_acos(registry: &mut FunctionRegistry) {
-    let meta = FunctionMeta::new("acos")
-        .with_namespace("math")
-        .with_required_args(1);
-
-    let func: crate::registry::BuiltinFn =
-        Arc::new(|args| match args.first().and_then(get_float) {
-            Some(v) if (-1.0..=1.0).contains(&v) => Value::Float(v.acos()),
-            _ => Value::Na,
-        });
-
-    registry.register(meta, func);
+#[pine_builtin(name = "acos", namespace = "math", required_args = 1)]
+fn builtin_math_acos(args: &[Value]) -> Value {
+    match args.first().and_then(get_float) {
+        Some(v) if (-1.0..=1.0).contains(&v) => Value::Float(v.acos()),
+        _ => Value::Na,
+    }
 }
 
-/// Register math.atan - Arc tangent
-fn register_atan(registry: &mut FunctionRegistry) {
-    let meta = FunctionMeta::new("atan")
-        .with_namespace("math")
-        .with_required_args(1);
-
-    let func: crate::registry::BuiltinFn =
-        Arc::new(|args| match args.first().and_then(get_float) {
-            Some(v) => Value::Float(v.atan()),
-            None => Value::Na,
-        });
-
-    registry.register(meta, func);
+#[pine_builtin(name = "atan", namespace = "math", required_args = 1)]
+fn builtin_math_atan(args: &[Value]) -> Value {
+    match args.first().and_then(get_float) {
+        Some(v) => Value::Float(v.atan()),
+        None => Value::Na,
+    }
 }
 
 // ============================================================================
 // Hyperbolic Functions
 // ============================================================================
 
-/// Register math.sinh - Hyperbolic sine
-fn register_sinh(registry: &mut FunctionRegistry) {
-    let meta = FunctionMeta::new("sinh")
-        .with_namespace("math")
-        .with_required_args(1);
-
-    let func: crate::registry::BuiltinFn =
-        Arc::new(|args| match args.first().and_then(get_float) {
-            Some(v) => Value::Float(v.sinh()),
-            None => Value::Na,
-        });
-
-    registry.register(meta, func);
+#[pine_builtin(name = "sinh", namespace = "math", required_args = 1)]
+fn builtin_math_sinh(args: &[Value]) -> Value {
+    match args.first().and_then(get_float) {
+        Some(v) => Value::Float(v.sinh()),
+        None => Value::Na,
+    }
 }
 
-/// Register math.cosh - Hyperbolic cosine
-fn register_cosh(registry: &mut FunctionRegistry) {
-    let meta = FunctionMeta::new("cosh")
-        .with_namespace("math")
-        .with_required_args(1);
-
-    let func: crate::registry::BuiltinFn =
-        Arc::new(|args| match args.first().and_then(get_float) {
-            Some(v) => Value::Float(v.cosh()),
-            None => Value::Na,
-        });
-
-    registry.register(meta, func);
+#[pine_builtin(name = "cosh", namespace = "math", required_args = 1)]
+fn builtin_math_cosh(args: &[Value]) -> Value {
+    match args.first().and_then(get_float) {
+        Some(v) => Value::Float(v.cosh()),
+        None => Value::Na,
+    }
 }
 
-/// Register math.tanh - Hyperbolic tangent
-fn register_tanh(registry: &mut FunctionRegistry) {
-    let meta = FunctionMeta::new("tanh")
-        .with_namespace("math")
-        .with_required_args(1);
-
-    let func: crate::registry::BuiltinFn =
-        Arc::new(|args| match args.first().and_then(get_float) {
-            Some(v) => Value::Float(v.tanh()),
-            None => Value::Na,
-        });
-
-    registry.register(meta, func);
+#[pine_builtin(name = "tanh", namespace = "math", required_args = 1)]
+fn builtin_math_tanh(args: &[Value]) -> Value {
+    match args.first().and_then(get_float) {
+        Some(v) => Value::Float(v.tanh()),
+        None => Value::Na,
+    }
 }
 
 // ============================================================================
 // Rounding Functions
 // ============================================================================
 
-/// Register math.round - Round to nearest integer
-fn register_round(registry: &mut FunctionRegistry) {
-    let meta = FunctionMeta::new("round")
-        .with_namespace("math")
-        .with_required_args(1);
-
-    let func: crate::registry::BuiltinFn =
-        Arc::new(|args| match args.first().and_then(get_float) {
-            Some(v) => Value::Int(v.round() as i64),
-            None => Value::Na,
-        });
-
-    registry.register(meta, func);
+#[pine_builtin(name = "round", namespace = "math", required_args = 1)]
+fn builtin_math_round(args: &[Value]) -> Value {
+    match args.first().and_then(get_float) {
+        Some(v) => Value::Int(v.round() as i64),
+        None => Value::Na,
+    }
 }
 
 /// Register math.round_to_nearest - Round to nearest multiple
@@ -465,70 +363,42 @@ fn register_round_to_nearest(registry: &mut FunctionRegistry) {
     registry.register(meta, func);
 }
 
-/// Register math.ceil - Ceiling (round up)
-fn register_ceil(registry: &mut FunctionRegistry) {
-    let meta = FunctionMeta::new("ceil")
-        .with_namespace("math")
-        .with_required_args(1);
-
-    let func: crate::registry::BuiltinFn =
-        Arc::new(|args| match args.first().and_then(get_float) {
-            Some(v) => Value::Int(v.ceil() as i64),
-            None => Value::Na,
-        });
-
-    registry.register(meta, func);
+#[pine_builtin(name = "ceil", namespace = "math", required_args = 1)]
+fn builtin_math_ceil(args: &[Value]) -> Value {
+    match args.first().and_then(get_float) {
+        Some(v) => Value::Int(v.ceil() as i64),
+        None => Value::Na,
+    }
 }
 
-/// Register math.floor - Floor (round down)
-fn register_floor(registry: &mut FunctionRegistry) {
-    let meta = FunctionMeta::new("floor")
-        .with_namespace("math")
-        .with_required_args(1);
-
-    let func: crate::registry::BuiltinFn =
-        Arc::new(|args| match args.first().and_then(get_float) {
-            Some(v) => Value::Int(v.floor() as i64),
-            None => Value::Na,
-        });
-
-    registry.register(meta, func);
+#[pine_builtin(name = "floor", namespace = "math", required_args = 1)]
+fn builtin_math_floor(args: &[Value]) -> Value {
+    match args.first().and_then(get_float) {
+        Some(v) => Value::Int(v.floor() as i64),
+        None => Value::Na,
+    }
 }
 
-/// Register math.trunc - Truncate (remove fractional part)
-fn register_trunc(registry: &mut FunctionRegistry) {
-    let meta = FunctionMeta::new("trunc")
-        .with_namespace("math")
-        .with_required_args(1);
-
-    let func: crate::registry::BuiltinFn =
-        Arc::new(|args| match args.first().and_then(get_float) {
-            Some(v) => Value::Int(v.trunc() as i64),
-            None => Value::Na,
-        });
-
-    registry.register(meta, func);
+#[pine_builtin(name = "trunc", namespace = "math", required_args = 1)]
+fn builtin_math_trunc(args: &[Value]) -> Value {
+    match args.first().and_then(get_float) {
+        Some(v) => Value::Int(v.trunc() as i64),
+        None => Value::Na,
+    }
 }
 
 // ============================================================================
 // Sign and Comparison
 // ============================================================================
 
-/// Register math.sign - Sign of number (-1, 0, or 1)
-fn register_sign(registry: &mut FunctionRegistry) {
-    let meta = FunctionMeta::new("sign")
-        .with_namespace("math")
-        .with_required_args(1);
-
-    let func: crate::registry::BuiltinFn =
-        Arc::new(|args| match args.first().and_then(get_float) {
-            Some(v) if v > 0.0 => Value::Int(1),
-            Some(v) if v < 0.0 => Value::Int(-1),
-            Some(_) => Value::Int(0),
-            None => Value::Na,
-        });
-
-    registry.register(meta, func);
+#[pine_builtin(name = "sign", namespace = "math", required_args = 1)]
+fn builtin_math_sign(args: &[Value]) -> Value {
+    match args.first().and_then(get_float) {
+        Some(v) if v > 0.0 => Value::Int(1),
+        Some(v) if v < 0.0 => Value::Int(-1),
+        Some(_) => Value::Int(0),
+        None => Value::Na,
+    }
 }
 
 /// Register math.copysign - Copy sign from one value to another
@@ -554,16 +424,9 @@ fn register_copysign(registry: &mut FunctionRegistry) {
 // Utility Functions
 // ============================================================================
 
-/// Register math.isna - Check if value is NA
-fn register_isna(registry: &mut FunctionRegistry) {
-    let meta = FunctionMeta::new("isna")
-        .with_namespace("math")
-        .with_required_args(1);
-
-    let func: crate::registry::BuiltinFn =
-        Arc::new(|args| Value::Bool(matches!(args.first(), Some(Value::Na) | None)));
-
-    registry.register(meta, func);
+#[pine_builtin(name = "isna", namespace = "math", required_args = 1)]
+fn builtin_math_isna(args: &[Value]) -> Value {
+    Value::Bool(matches!(args.first(), Some(Value::Na) | None))
 }
 
 /// Register math.nz - Not zero (returns replacement if value is 0 or NA)
@@ -587,26 +450,18 @@ fn register_nz(registry: &mut FunctionRegistry) {
     registry.register(meta, func);
 }
 
-/// Register math.tostring - Convert value to string
-fn register_to_string(registry: &mut FunctionRegistry) {
-    let meta = FunctionMeta::new("tostring")
-        .with_namespace("math")
-        .with_required_args(1);
-
-    let func: crate::registry::BuiltinFn = Arc::new(|args| {
-        let s = match args.first() {
-            Some(Value::Int(n)) => n.to_string(),
-            Some(Value::Float(f)) => f.to_string(),
-            Some(Value::Bool(b)) => b.to_string(),
-            Some(Value::String(s)) => s.to_string(),
-            Some(Value::Color(c)) => c.to_hex(),
-            Some(Value::Na) => "na".to_string(),
-            _ => return Value::Na,
-        };
-        Value::String(s.into())
-    });
-
-    registry.register(meta, func);
+#[pine_builtin(name = "tostring", namespace = "math", required_args = 1)]
+fn builtin_math_tostring(args: &[Value]) -> Value {
+    let s = match args.first() {
+        Some(Value::Int(n)) => n.to_string(),
+        Some(Value::Float(f)) => f.to_string(),
+        Some(Value::Bool(b)) => b.to_string(),
+        Some(Value::String(s)) => s.to_string(),
+        Some(Value::Color(c)) => c.to_hex(),
+        Some(Value::Na) => "na".to_string(),
+        _ => return Value::Na,
+    };
+    Value::String(s.into())
 }
 
 #[cfg(test)]

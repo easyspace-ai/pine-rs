@@ -43,12 +43,23 @@ impl Instruction {
 }
 
 /// Compiled bytecode chunk
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone)]
 pub struct BytecodeChunk {
     /// Instructions
     pub instructions: Vec<Instruction>,
     /// Constant pool
     pub constants: Vec<Value>,
+    /// Series name table (index -> series name)
+    pub series_names: Vec<String>,
+    /// Function address table (index -> instruction address)
+    ///
+    /// The Call opcode uses function indices into this table.
+    pub function_addresses: Vec<usize>,
+    /// Function name table (function name -> function index)
+    pub function_names: std::collections::HashMap<String, usize>,
+    /// External function table (function name -> external index)
+    /// External function indices start after user function indices
+    pub external_functions: Vec<String>,
     /// Line numbers for debugging (instruction index -> line)
     pub line_numbers: Vec<usize>,
 }
@@ -63,6 +74,13 @@ impl BytecodeChunk {
     pub fn add_constant(&mut self, value: Value) -> usize {
         let index = self.constants.len();
         self.constants.push(value);
+        index
+    }
+
+    /// Add a string constant to the pool and return its index
+    pub fn add_string_constant(&mut self, value: String) -> usize {
+        let index = self.constants.len();
+        self.constants.push(Value::String(value.into()));
         index
     }
 
@@ -93,16 +111,54 @@ impl BytecodeChunk {
     }
 
     /// Patch a jump target at the given position
+    ///
+    /// Stores the absolute target address for the jump instruction.
     pub fn patch_jump(&mut self, pos: usize, target: usize) {
         if pos < self.instructions.len() {
-            // Store the jump offset (target - pos)
-            let offset = target.saturating_sub(pos);
+            // Store the absolute target address
             if let Some(inst) = self.instructions.get_mut(pos) {
                 if !inst.operands.is_empty() {
-                    inst.operands[0] = offset;
+                    inst.operands[0] = target;
                 }
             }
         }
+    }
+}
+
+/// Variable scope for local variable management
+#[derive(Debug)]
+pub struct Scope {
+    /// Variable name -> slot index mapping
+    variables: std::collections::HashMap<String, usize>,
+    /// Next available slot index
+    next_slot: usize,
+}
+
+impl Scope {
+    fn new() -> Self {
+        Self {
+            variables: std::collections::HashMap::new(),
+            next_slot: 0,
+        }
+    }
+
+    fn with_parent(parent: &Scope) -> Self {
+        Self {
+            variables: std::collections::HashMap::new(),
+            next_slot: parent.next_slot,
+        }
+    }
+
+    fn declare_var(&mut self, name: impl Into<String>) -> usize {
+        let name = name.into();
+        let slot = self.next_slot;
+        self.variables.insert(name, slot);
+        self.next_slot += 1;
+        slot
+    }
+
+    fn get_var(&self, name: &str) -> Option<usize> {
+        self.variables.get(name).copied()
     }
 }
 
@@ -115,6 +171,8 @@ pub struct Compiler {
     chunk: BytecodeChunk,
     /// Current line number for debugging
     current_line: usize,
+    /// Variable scope stack
+    scopes: Vec<Scope>,
 }
 
 impl Default for Compiler {
@@ -129,6 +187,76 @@ impl Compiler {
         Self {
             chunk: BytecodeChunk::new(),
             current_line: 1,
+            scopes: vec![Scope::new()],
+        }
+    }
+
+    //========================================================================
+    // Variable Scope Management
+    //========================================================================
+
+    /// Enter a new scope
+    pub fn enter_scope(&mut self) {
+        let parent = self.scopes.last().expect("No scope available");
+        self.scopes.push(Scope::with_parent(parent));
+    }
+
+    /// Exit the current scope
+    pub fn exit_scope(&mut self) {
+        if self.scopes.len() > 1 {
+            self.scopes.pop();
+        }
+    }
+
+    /// Declare a variable in the current scope
+    pub fn declare_var(&mut self, name: impl Into<String>) -> usize {
+        let current_scope = self.scopes.last_mut().expect("No scope available");
+        current_scope.declare_var(name)
+    }
+
+    /// Lookup a variable by name
+    ///
+    /// Returns the slot index if found in any scope.
+    pub fn lookup_var(&self, name: &str) -> Option<usize> {
+        // Search from innermost to outermost scope
+        for scope in self.scopes.iter().rev() {
+            if let Some(slot) = scope.get_var(name) {
+                return Some(slot);
+            }
+        }
+        None
+    }
+
+    /// Compile a variable declaration
+    ///
+    /// Declares the variable in the current scope and stores the value from stack.
+    pub fn compile_var_decl(&mut self, name: impl Into<String>) -> usize {
+        let slot = self.declare_var(name);
+        self.compile_store_slot(slot);
+        slot
+    }
+
+    /// Compile a variable load by name
+    ///
+    /// Looks up the variable and emits a LoadSlot instruction.
+    pub fn compile_load_var(&mut self, name: &str) -> bool {
+        if let Some(slot) = self.lookup_var(name) {
+            self.compile_load_slot(slot);
+            true
+        } else {
+            false
+        }
+    }
+
+    /// Compile a variable store by name
+    ///
+    /// Looks up the variable and emits a StoreSlot instruction.
+    pub fn compile_store_var(&mut self, name: &str) -> bool {
+        if let Some(slot) = self.lookup_var(name) {
+            self.compile_store_slot(slot);
+            true
+        } else {
+            false
         }
     }
 
@@ -186,6 +314,58 @@ impl Compiler {
             .emit_op2(OpCode::Call, func_idx, arg_count, self.current_line);
     }
 
+    /// Register a series name and return its index
+    pub fn register_series(&mut self, name: impl Into<String>) -> usize {
+        let name = name.into();
+        // Check if already registered
+        if let Some(idx) = self.chunk.series_names.iter().position(|n| n == &name) {
+            return idx;
+        }
+        let idx = self.chunk.series_names.len();
+        self.chunk.series_names.push(name);
+        idx
+    }
+
+    /// Compile a push series operation (push current value to stack)
+    pub fn compile_push_series(&mut self, series_idx: usize) {
+        self.chunk
+            .emit_op1(OpCode::PushSeries, series_idx, self.current_line);
+    }
+
+    /// Compile a push series at offset operation (push historical value to stack)
+    pub fn compile_push_series_at(&mut self, series_idx: usize, offset: usize) {
+        self.chunk
+            .emit_op2(OpCode::PushSeriesAt, series_idx, offset, self.current_line);
+    }
+
+    /// Lookup a series index by name
+    pub fn lookup_series(&self, name: &str) -> Option<usize> {
+        self.chunk.series_names.iter().position(|n| n == name)
+    }
+
+    /// Compile a dynamic series access operation
+    ///
+    /// The offset is popped from the stack, then the series value at that offset
+    /// is pushed to the stack.
+    pub fn compile_push_series_dynamic(&mut self, series_idx: usize) {
+        self.chunk
+            .emit_op1(OpCode::PushSeriesAtDynamic, series_idx, self.current_line);
+    }
+
+    /// Compile a series push operation (pop value from stack and push to series)
+    pub fn compile_series_push(&mut self, series_idx: usize) {
+        self.chunk
+            .emit_op1(OpCode::SeriesPush, series_idx, self.current_line);
+    }
+
+    /// Compile an update to a user-defined series in context
+    /// This allows the value to be accessed by ta.* functions that need series history
+    pub fn compile_update_user_series(&mut self, name: &str) {
+        let name_idx = self.chunk.add_string_constant(name.to_string());
+        self.chunk
+            .emit_op1(OpCode::UpdateUserSeries, name_idx, self.current_line);
+    }
+
     /// Compile a jump (placeholder, to be patched later)
     ///
     /// Returns the position of the jump instruction for backpatching.
@@ -206,6 +386,151 @@ impl Compiler {
         self.chunk.patch_jump(jump_pos, target);
     }
 
+    /// Patch a jump to point to a specific position
+    pub fn patch_jump_to(&mut self, jump_pos: usize, target: usize) {
+        self.chunk.patch_jump(jump_pos, target);
+    }
+
+    //========================================================================
+    // Control Flow
+    //========================================================================
+
+    /// Compile an if statement
+    ///
+    /// Generates: condition, JumpIfFalse(else), then_body, Jump(end), else_body
+    ///
+    /// # Arguments
+    /// * `compile_condition` - closure to compile the condition expression
+    /// * `compile_then` - closure to compile the then body
+    /// * `compile_else` - optional closure to compile the else body
+    pub fn compile_if(
+        &mut self,
+        compile_condition: impl FnOnce(&mut Self),
+        compile_then: impl FnOnce(&mut Self),
+        compile_else: Option<impl FnOnce(&mut Self)>,
+    ) {
+        // Compile condition
+        compile_condition(self);
+
+        // Jump to else (or end) if false
+        let else_jump = self.compile_jump(JumpOp::IfFalse);
+
+        // Compile then body
+        compile_then(self);
+
+        // Jump over else body (if exists)
+        let end_jump = if compile_else.is_some() {
+            Some(self.compile_jump(JumpOp::Unconditional))
+        } else {
+            None
+        };
+
+        // Patch else jump to current position
+        self.patch_jump(else_jump);
+
+        // Compile else body if present
+        if let Some(compile_else_fn) = compile_else {
+            compile_else_fn(self);
+            // Patch end jump
+            if let Some(jump) = end_jump {
+                self.patch_jump(jump);
+            }
+        }
+    }
+
+    /// Compile a while loop
+    ///
+    /// Generates: start, condition, JumpIfFalse(end), body, Jump(start), end
+    ///
+    /// # Arguments
+    /// * `compile_condition` - closure to compile the condition expression
+    /// * `compile_body` - closure to compile the loop body
+    pub fn compile_while(
+        &mut self,
+        compile_condition: impl FnOnce(&mut Self),
+        compile_body: impl FnOnce(&mut Self),
+    ) {
+        // Start of loop
+        let start_pos = self.chunk.current_pos();
+
+        // Compile condition
+        compile_condition(self);
+
+        // Jump to end if false
+        let end_jump = self.compile_jump(JumpOp::IfFalse);
+
+        // Compile body
+        compile_body(self);
+
+        // Jump back to start
+        let loop_jump = self.compile_jump(JumpOp::Unconditional);
+        self.patch_jump_to(loop_jump, start_pos);
+
+        // Patch end jump
+        self.patch_jump(end_jump);
+    }
+
+    /// Compile a for loop (inclusive range: for i = start to end [by step])
+    ///
+    /// Generates:
+    /// - Initialize loop variable with start value
+    /// - Loop start: check condition (i <= end), jump to end if false
+    /// - Body
+    /// - Increment (i = i + step)
+    /// - Jump to loop start
+    ///
+    /// # Arguments
+    /// * `loop_var_slot` - slot index for loop variable
+    /// * `compile_start` - closure to compile start expression
+    /// * `compile_end` - closure to compile end expression
+    /// * `compile_step` - optional closure to compile step expression (default: 1)
+    /// * `compile_body` - closure to compile the loop body
+    pub fn compile_for(
+        &mut self,
+        loop_var_slot: usize,
+        compile_start: impl FnOnce(&mut Self),
+        compile_end: impl FnOnce(&mut Self),
+        compile_step: Option<impl FnOnce(&mut Self)>,
+        compile_body: impl FnOnce(&mut Self),
+    ) {
+        // Initialize loop variable with start value
+        compile_start(self);
+        self.compile_store_slot(loop_var_slot);
+        // Note: StoreSlot consumes the value from stack, no need to pop
+
+        // Loop start position
+        let start_pos = self.chunk.current_pos();
+
+        // Condition: loop_var <= end
+        self.compile_load_slot(loop_var_slot);
+        compile_end(self);
+        self.compile_binary(BinaryOp::Le);
+
+        // Jump to end if condition is false
+        let end_jump = self.compile_jump(JumpOp::IfFalse);
+
+        // Compile body
+        compile_body(self);
+
+        // Increment loop variable
+        self.compile_load_slot(loop_var_slot);
+        if let Some(compile_step_fn) = compile_step {
+            compile_step_fn(self);
+        } else {
+            self.compile_const(Value::Int(1));
+        }
+        self.compile_binary(BinaryOp::Add);
+        self.compile_store_slot(loop_var_slot);
+        // Note: StoreSlot consumes the value from stack, no need to pop
+
+        // Jump back to start
+        let loop_jump = self.compile_jump(JumpOp::Unconditional);
+        self.patch_jump_to(loop_jump, start_pos);
+
+        // Patch end jump
+        self.patch_jump(end_jump);
+    }
+
     /// Compile a pop operation
     pub fn compile_pop(&mut self) {
         self.chunk.emit_op(OpCode::Pop, self.current_line);
@@ -221,6 +546,11 @@ impl Compiler {
         self.chunk.emit_op(OpCode::Halt, self.current_line);
     }
 
+    /// Compile an arbitrary opcode
+    pub fn compile_op(&mut self, opcode: OpCode) {
+        self.chunk.emit_op(opcode, self.current_line);
+    }
+
     /// Set the current line number for debugging
     pub fn set_line(&mut self, line: usize) {
         self.current_line = line;
@@ -234,6 +564,76 @@ impl Compiler {
     /// Get a reference to the chunk (for inspection during compilation)
     pub fn chunk(&self) -> &BytecodeChunk {
         &self.chunk
+    }
+
+    //========================================================================
+    // Function Management
+    //========================================================================
+
+    /// Register a function and return its index
+    ///
+    /// The function address is set to the current instruction position.
+    /// Call this right before emitting function body instructions.
+    pub fn register_function(&mut self) -> usize {
+        let address = self.chunk.current_pos();
+        let index = self.chunk.function_addresses.len();
+        self.chunk.function_addresses.push(address);
+        index
+    }
+
+    /// Get the address of a function by index
+    pub fn get_function_address(&self, func_idx: usize) -> Option<usize> {
+        self.chunk.function_addresses.get(func_idx).copied()
+    }
+
+    /// Reserve a function slot and return its index
+    ///
+    /// Use this for forward declarations. The address is initially 0
+    /// and should be patched later using `patch_function_address`.
+    pub fn reserve_function_slot(&mut self) -> usize {
+        let index = self.chunk.function_addresses.len();
+        self.chunk.function_addresses.push(0);
+        index
+    }
+
+    /// Patch a function address after the function body is compiled
+    pub fn patch_function_address(&mut self, func_idx: usize, address: usize) {
+        if func_idx < self.chunk.function_addresses.len() {
+            self.chunk.function_addresses[func_idx] = address;
+        }
+    }
+
+    /// Register a function name to index mapping
+    pub fn register_function_name(&mut self, name: impl Into<String>, index: usize) {
+        self.chunk.function_names.insert(name.into(), index);
+    }
+
+    /// Look up a function index by name
+    pub fn lookup_function(&self, name: &str) -> Option<usize> {
+        self.chunk.function_names.get(name).copied()
+    }
+
+    /// Register an external function and return its index
+    /// External function indices start after all user-defined functions
+    pub fn register_external_function(&mut self, name: impl Into<String>) -> usize {
+        let name = name.into();
+        // Check if already registered
+        if let Some(idx) = self
+            .chunk
+            .external_functions
+            .iter()
+            .position(|n| n == &name)
+        {
+            return self.chunk.function_addresses.len() + idx;
+        }
+        let idx = self.chunk.external_functions.len();
+        self.chunk.external_functions.push(name);
+        self.chunk.function_addresses.len() + idx
+    }
+
+    /// Get the list of external functions (for VM registration)
+    pub fn external_functions(&self) -> &[String] {
+        &self.chunk.external_functions
     }
 }
 

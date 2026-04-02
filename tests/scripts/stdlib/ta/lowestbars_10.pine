@@ -1,0 +1,7 @@
+// Golden test: ta.lowestbars(low, 10)
+
+indicator("Lowest Bars 10 Golden Test", overlay = true)
+
+lb = ta.lowestbars(low, 10)
+
+plot(lb, title = "Lowest Bars 10", color = color.orange)

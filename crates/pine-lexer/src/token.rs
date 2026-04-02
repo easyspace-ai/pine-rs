@@ -59,9 +59,17 @@ pub enum Token {
     #[token("type", priority = 20)]
     Type,
 
+    /// Enum definition (v6)
+    #[token("enum", priority = 20)]
+    Enum,
+
     /// Method definition (v6)
     #[token("method", priority = 20)]
     Method,
+
+    /// for-in loop
+    #[token("in", priority = 20)]
+    In,
 
     /// Import statement (v6)
     #[token("import", priority = 20)]
@@ -227,6 +235,10 @@ pub enum Token {
     /// /=
     #[token("/=")]
     SlashEq,
+
+    /// %=
+    #[token("%=")]
+    PercentEq,
 
     /// ?
     #[token("?")]
@@ -418,7 +430,9 @@ impl Token {
             Token::Var => "'var'",
             Token::Varip => "'varip'",
             Token::Type => "'type'",
+            Token::Enum => "'enum'",
             Token::Method => "'method'",
+            Token::In => "'in'",
             Token::Import => "'import'",
             Token::Export => "'export'",
             Token::Library => "'library'",
@@ -460,6 +474,7 @@ impl Token {
             Token::MinusEq => "'-='",
             Token::StarEq => "'*='",
             Token::SlashEq => "'/='",
+            Token::PercentEq => "'%='",
             Token::Question => "'?'",
             Token::Question2 => "'??'",
             Token::Arrow => "'=>'",

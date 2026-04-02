@@ -55,36 +55,53 @@ impl Lexer {
         let mut tokens = Vec::new();
         let mut indent_stack: Vec<usize> = vec![0];
 
-        for line in source.lines() {
+        // Track absolute byte offsets so spans are stable across the full source (required for
+        // call-site interning and multi-line error locations). `lex_line` alone is line-local.
+        let mut line_start: usize = 0;
+        while line_start <= source.len() {
+            let line_end = source[line_start..]
+                .find('\n')
+                .map(|i| line_start + i)
+                .unwrap_or(source.len());
+            let raw_line = &source[line_start..line_end];
+            let line = raw_line.strip_suffix('\r').unwrap_or(raw_line);
+
             let trimmed = line.trim_start();
 
             // Skip empty lines and comment-only lines
-            if trimmed.is_empty() || trimmed.starts_with("//") {
-                continue;
+            if !trimmed.is_empty() && !trimmed.starts_with("//") {
+                // Calculate indentation
+                let indent = line.len() - trimmed.len();
+                let current_indent = *indent_stack.last().unwrap_or(&0);
+
+                // Handle indentation changes
+                if indent > current_indent {
+                    indent_stack.push(indent);
+                    tokens.push((Token::Indent, Span::new(0, 0)));
+                } else if indent < current_indent {
+                    while indent < *indent_stack.last().unwrap_or(&0) {
+                        indent_stack.pop();
+                        tokens.push((Token::Dedent, Span::new(0, 0)));
+                    }
+                    if indent != *indent_stack.last().unwrap_or(&0) {
+                        return Err(LexError);
+                    }
+                }
+
+                let payload_offset = line_start + indent;
+                let line_tokens = Self::lex_line(trimmed)?;
+                for (tok, mut sp) in line_tokens {
+                    sp.start += payload_offset;
+                    sp.end += payload_offset;
+                    tokens.push((tok, sp));
+                }
+                tokens.push((Token::Newline, Span::new(line_end, line_end)));
             }
 
-            // Calculate indentation
-            let indent = line.len() - trimmed.len();
-            let current_indent = *indent_stack.last().unwrap_or(&0);
-
-            // Handle indentation changes
-            if indent > current_indent {
-                indent_stack.push(indent);
-                tokens.push((Token::Indent, Span::new(0, 0)));
-            } else if indent < current_indent {
-                while indent < *indent_stack.last().unwrap_or(&0) {
-                    indent_stack.pop();
-                    tokens.push((Token::Dedent, Span::new(0, 0)));
-                }
-                if indent != *indent_stack.last().unwrap_or(&0) {
-                    return Err(LexError);
-                }
+            if line_end >= source.len() {
+                break;
             }
-
-            // Lex this line
-            let line_tokens = Self::lex_line(trimmed)?;
-            tokens.extend(line_tokens);
-            tokens.push((Token::Newline, Span::new(0, 0)));
+            line_start = line_end + 1;
         }
 
         // Final dedents

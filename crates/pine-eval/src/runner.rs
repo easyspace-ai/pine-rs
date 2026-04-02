@@ -151,6 +151,8 @@ pub fn run_bar_by_bar(
     bars: &[BarData],
     ctx: &mut EvaluationContext,
 ) -> Result<Vec<Value>> {
+    pine_sema::analyze(script)?;
+
     let mut state = ExecutionState::new(bars.len());
     let mut results = Vec::with_capacity(bars.len());
 
@@ -160,20 +162,14 @@ pub fn run_bar_by_bar(
     // Execute script for each bar
     for bar_idx in 0..bars.len() {
         state.current_bar = bar_idx;
+        ctx.runtime_mut().set_bar_index(bar_idx as i64);
 
         // Set up built-in variables for this bar
         setup_builtin_vars(ctx, &state, bar_idx)?;
 
         // Execute the script
         for stmt in &script.stmts {
-            match eval_stmt(stmt, ctx) {
-                Ok(_) => {}
-                Err(e) => {
-                    // Log error but continue to next bar
-                    eprintln!("Error at bar {}: {}", bar_idx, e);
-                    break;
-                }
-            }
+            eval_stmt(stmt, ctx)?;
         }
 
         // Advance plot outputs to next bar
@@ -193,20 +189,18 @@ pub fn run_single_bar(
     state: &mut ExecutionState,
     ctx: &mut EvaluationContext,
 ) -> Result<Value> {
+    pine_sema::analyze(script)?;
+
     // Add the new bar to state
     state.add_bar(bar);
 
     // Set up built-in variables
     setup_builtin_vars(ctx, state, state.current_bar)?;
+    ctx.runtime_mut().set_bar_index(state.current_bar as i64);
 
     // Execute the script
     for stmt in &script.stmts {
-        match eval_stmt(stmt, ctx) {
-            Ok(_) => {}
-            Err(e) => {
-                return Err(e);
-            }
-        }
+        eval_stmt(stmt, ctx)?;
     }
 
     // TODO: Return actual result from statement evaluation
@@ -323,6 +317,7 @@ fn setup_builtin_vars(
 
 /// Simple script execution (for testing)
 pub fn run(script: &ast::Script) -> Result<()> {
+    pine_sema::analyze(script)?;
     let mut ctx = EvaluationContext::new();
 
     for stmt in &script.stmts {

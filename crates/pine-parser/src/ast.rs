@@ -43,6 +43,8 @@ pub enum AssignOp {
     StarEq,
     /// /=
     SlashEq,
+    /// %=
+    PercentEq,
 }
 
 /// Binary operator
@@ -138,11 +140,48 @@ pub struct Arg {
     pub value: Expr,
 }
 
-/// Switch case
+/// TV v6 switch arm: [pattern] => body (pattern omitted = default arm)
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct SwitchCase {
-    pub value: Expr,
-    pub body: Block,
+pub struct SwitchArm {
+    pub pattern: Option<Expr>,
+    pub body: SwitchArmBody,
+    pub span: Span,
+}
+
+/// Body after `=>` in a switch arm
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub enum SwitchArmBody {
+    Expr(Expr),
+    Block(Block),
+}
+
+/// Function / export / method body: block or `=> expr`
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub enum FnBody {
+    Block(Block),
+    Expr(Expr),
+}
+
+/// `for ... in` loop variable pattern
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub enum ForInPattern {
+    Single(Ident),
+    Tuple(Ident, Ident),
+}
+
+/// Enum field (Pine v6)
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct EnumVariant {
+    pub name: Ident,
+    pub init: Option<Expr>,
+}
+
+/// Library import path
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub enum ImportPath {
+    String(String),
+    /// e.g. `username/lib_name/1`
+    Qualified(Vec<String>),
 }
 
 /// Block of statements
@@ -218,14 +257,21 @@ pub enum Stmt {
         span: Span,
     },
 
+    /// For-in loop: for x in arr / for [i, v] in arr
+    ForIn {
+        pattern: ForInPattern,
+        iterable: Expr,
+        body: Block,
+        span: Span,
+    },
+
     /// While loop: while cond body
     While { cond: Expr, body: Block, span: Span },
 
-    /// Switch statement (v6): switch expr { case val: ... default: ... }
+    /// Switch (TV v6): optional scrutinee + `pattern => body` arms
     Switch {
-        expr: Expr,
-        cases: Vec<SwitchCase>,
-        default: Option<Block>,
+        scrutinee: Option<Expr>,
+        arms: Vec<SwitchArm>,
         span: Span,
     },
 
@@ -238,12 +284,12 @@ pub enum Stmt {
     /// Return statement: return [value]
     Return { value: Option<Expr>, span: Span },
 
-    /// Function definition: fn name(params) [-> ret_type] body
+    /// Function definition: fn name(params) [-> ret_type] body  OR  body via =>
     FnDef {
         name: Ident,
         params: Vec<Param>,
         ret_type: Option<TypeAnn>,
-        body: Block,
+        body: FnBody,
         span: Span,
     },
 
@@ -254,25 +300,41 @@ pub enum Stmt {
         span: Span,
     },
 
+    /// Enum definition (v6): enum Name ...
+    EnumDef {
+        name: Ident,
+        variants: Vec<EnumVariant>,
+        span: Span,
+    },
+
     /// Method definition (v6): method Type.name(params) body
     MethodDef {
         type_name: Ident,
         name: Ident,
         params: Vec<Param>,
         ret_type: Option<TypeAnn>,
-        body: Block,
+        body: FnBody,
         span: Span,
     },
 
-    /// Import statement (v6): import "path" [as name]
+    /// Import: import "s" | import a/b/c [as name]
     Import {
-        path: String,
+        path: ImportPath,
         alias: Option<Ident>,
         span: Span,
     },
 
-    /// Export statement (v6): export name
-    Export { name: Ident, span: Span },
+    /// Export function (v6): export name(params) [=> expr | block]
+    ExportFn {
+        name: Ident,
+        params: Vec<Param>,
+        ret_type: Option<TypeAnn>,
+        body: FnBody,
+        span: Span,
+    },
+
+    /// Export binding (v6): `export name = expr` (e.g. lambda `(a,b) => a + b` or constant)
+    ExportAssign { name: Ident, init: Expr, span: Span },
 
     /// Library declaration (v6): library(name [, overlay = true])
     Library {
@@ -293,6 +355,7 @@ impl Stmt {
             Stmt::Assign { span, .. } => *span,
             Stmt::If { span, .. } => *span,
             Stmt::For { span, .. } => *span,
+            Stmt::ForIn { span, .. } => *span,
             Stmt::While { span, .. } => *span,
             Stmt::Switch { span, .. } => *span,
             Stmt::Break { span } => *span,
@@ -300,9 +363,11 @@ impl Stmt {
             Stmt::Return { span, .. } => *span,
             Stmt::FnDef { span, .. } => *span,
             Stmt::TypeDef { span, .. } => *span,
+            Stmt::EnumDef { span, .. } => *span,
             Stmt::MethodDef { span, .. } => *span,
             Stmt::Import { span, .. } => *span,
-            Stmt::Export { span, .. } => *span,
+            Stmt::ExportFn { span, .. } => *span,
+            Stmt::ExportAssign { span, .. } => *span,
             Stmt::Library { span, .. } => *span,
             Stmt::Expr(expr) => expr.span(),
         }

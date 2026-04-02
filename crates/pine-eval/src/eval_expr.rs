@@ -4,6 +4,7 @@ use crate::{EvalError, EvaluationContext, Result};
 use pine_lexer::Span;
 use pine_parser::ast;
 use pine_runtime::value::Value;
+use std::sync::Arc;
 
 /// Evaluate an expression
 pub fn eval_expr(expr: &ast::Expr, ctx: &mut EvaluationContext) -> Result<Value> {
@@ -52,7 +53,9 @@ pub fn eval_expr(expr: &ast::Expr, ctx: &mut EvaluationContext) -> Result<Value>
                 eval_expr(else_branch, ctx)
             }
         }
-        ast::Expr::FnCall { func, args, .. } => eval_fn_call(func, args, ctx),
+        ast::Expr::FnCall {
+            func, args, span, ..
+        } => eval_fn_call(func, args, ctx, *span),
         ast::Expr::Index { base, offset, .. } => eval_index_access(base, offset, ctx),
         _ => {
             // TODO: Implement other expression types (ArrayLit, MapLit, Lambda, etc.)
@@ -153,10 +156,28 @@ fn eval_method_call(
     ctx: &mut EvaluationContext,
 ) -> Result<Value> {
     match base {
-        Value::Object(_obj) => {
-            // TODO: Implement method dispatch
-            // For now, return NA as a placeholder
-            Ok(Value::Na)
+        Value::Object(obj) => {
+            let type_name = obj.type_name.clone();
+            let Some(user_fn) = ctx.get_type_method(&type_name, &method.name).cloned() else {
+                return Err(EvalError::UndefinedMethod {
+                    method_name: method.name.clone(),
+                    span,
+                });
+            };
+            let mut arg_values = Vec::with_capacity(1 + args.len());
+            arg_values.push(Value::Object(Arc::clone(&obj)));
+            for arg in args {
+                arg_values.push(eval_expr(&arg.value, ctx)?);
+            }
+            let key = format!("{}.{}", type_name, method.name);
+            crate::eval_stmt::invoke_user_function(
+                ctx,
+                &user_fn,
+                &key,
+                span,
+                &arg_values,
+                method.span,
+            )
         }
         Value::Namespace(ns) => {
             // Namespace function call: input.int(...), ta.sma(...), etc.
@@ -269,13 +290,7 @@ fn eval_binary_op(op: ast::BinOp, left: &Value, right: &Value) -> Result<Value> 
         BinOp::Sub => Ok(na_ops::sub(left, right)),
         BinOp::Mul => Ok(na_ops::mul(left, right)),
         BinOp::Div => Ok(na_ops::div(left, right)),
-        BinOp::Mod => {
-            // Modulo operation
-            match (left.as_float(), right.as_float()) {
-                (Some(a), Some(b)) if b != 0.0 => Ok(Value::Float(a % b)),
-                _ => Ok(Value::Na),
-            }
-        }
+        BinOp::Mod => Ok(pine_runtime::na_ops::modulo(left, right)),
         BinOp::Pow => {
             // Power operation
             match (left.as_float(), right.as_float()) {
@@ -306,26 +321,51 @@ fn eval_unary_op(op: ast::UnaryOp, operand: &Value) -> Result<Value> {
 }
 
 /// Evaluate a function call
-fn eval_fn_call(func: &ast::Expr, args: &[ast::Arg], ctx: &mut EvaluationContext) -> Result<Value> {
-    // Check if this is a plot() call
+fn eval_fn_call(
+    func: &ast::Expr,
+    args: &[ast::Arg],
+    ctx: &mut EvaluationContext,
+    call_span: Span,
+) -> Result<Value> {
     if let ast::Expr::Ident(ident) = func {
         if ident.name == "plot" {
             return eval_plot_call(args, ctx);
         }
 
-        // Try built-in functions directly
-        use crate::fn_call::call_builtin;
-        // First evaluate arguments
+        if let Some(user_fn) = ctx.get_user_fn(&ident.name).cloned() {
+            let mut arg_values = Vec::with_capacity(args.len());
+            for arg in args {
+                arg_values.push(eval_expr(&arg.value, ctx)?);
+            }
+            return crate::eval_stmt::invoke_user_function(
+                ctx,
+                &user_fn,
+                &ident.name,
+                call_span,
+                &arg_values,
+                ident.span,
+            );
+        }
+
         let mut arg_values = Vec::with_capacity(args.len());
         for arg in args {
             let val = eval_expr(&arg.value, ctx)?;
             arg_values.push(val);
         }
+        let math_name = format!("math.{}", ident.name);
+        if let Some(v) = ctx.function_registry().dispatch(&math_name, &arg_values) {
+            return Ok(v);
+        }
+        if let Some(v) = ctx.function_registry().dispatch(&ident.name, &arg_values) {
+            return Ok(v);
+        }
+        use crate::fn_call::call_builtin;
         return call_builtin(&ident.name, &arg_values, ctx);
     }
 
-    // For non-ident function expressions, return NA for now
-    Ok(Value::Na)
+    use crate::fn_call::{call_fn, make_call_site_key};
+    let key = make_call_site_key("fn", func.span());
+    call_fn(func, args, ctx, call_span, &key)
 }
 
 /// Evaluate a plot() function call
@@ -374,30 +414,30 @@ fn eval_index_access(
     offset: &ast::Expr,
     ctx: &mut EvaluationContext,
 ) -> Result<Value> {
-    // Get the series name from the base expression
-    let series_name = match base {
-        ast::Expr::Ident(ident) => &ident.name,
-        _ => {
-            // For complex expressions, evaluate the base first
-            let base_val = eval_expr(base, ctx)?;
-            // Try to get series value from the evaluated base
-            return Ok(base_val);
-        }
-    };
-
-    // Evaluate the offset expression
     let offset_val = eval_expr(offset, ctx)?;
-    let offset = match offset_val {
+    let off = match offset_val {
         Value::Int(i) => i as usize,
         Value::Float(f) => f as usize,
         _ => return Ok(Value::Na),
     };
 
-    // Get the historical value from series data
-    match ctx.get_series_value(series_name, offset) {
-        Some(val) => Ok(Value::Float(val)),
-        None => Ok(Value::Na),
+    if let ast::Expr::Ident(ident) = base {
+        let cs = ctx.current_call_site();
+        if ctx.runtime().var_scoped_contains(&ident.name, cs) {
+            return Ok(ctx
+                .runtime()
+                .get_series_at(&ident.name, cs, off)
+                .cloned()
+                .unwrap_or(Value::Na));
+        }
+        return match ctx.get_series_value(&ident.name, off) {
+            Some(val) => Ok(Value::Float(val)),
+            None => Ok(Value::Na),
+        };
     }
+
+    let base_val = eval_expr(base, ctx)?;
+    Ok(base_val)
 }
 
 #[cfg(test)]

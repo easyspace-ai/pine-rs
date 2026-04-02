@@ -8,16 +8,31 @@
 pub mod eval_expr;
 pub mod eval_stmt;
 pub mod fn_call;
+#[cfg(feature = "parallel")]
 pub mod parallel;
 pub mod runner;
 
+use indexmap::IndexMap;
 use pine_lexer::Span;
+use pine_parser::ast;
+use pine_runtime::config::RuntimeConfig;
+use pine_runtime::context::{CallSiteId, ExecutionContext};
 use pine_runtime::module::{ModuleId, ModuleRegistry};
 use pine_runtime::value::{Object, Value};
 use pine_stdlib::registry::FunctionRegistry;
 use std::collections::HashMap;
 use std::path::PathBuf;
+use std::sync::Arc;
 use thiserror::Error;
+
+/// User-defined function stored for invocation (AST body).
+#[derive(Debug, Clone)]
+pub struct UserFn {
+    /// Parameters
+    pub params: Vec<ast::Param>,
+    /// Body (`=> expr` or block)
+    pub body: ast::FnBody,
+}
 
 /// Evaluation errors
 #[derive(Debug, Error)]
@@ -97,6 +112,10 @@ pub enum EvalError {
         /// Span of the import statement
         span: Span,
     },
+
+    /// Semantic analysis failed
+    #[error(transparent)]
+    Semantic(#[from] pine_sema::SemaError),
 }
 
 /// Result type for evaluation operations
@@ -163,6 +182,10 @@ pub struct EvaluationContext {
     variables: HashMap<String, Value>,
     /// Per-variable history for series-aware ta.* calls
     variable_history: HashMap<String, Vec<Value>>,
+    /// User-defined functions by name
+    user_functions: HashMap<String, UserFn>,
+    /// UDT methods: type name -> method name -> function
+    type_methods: HashMap<String, HashMap<String, UserFn>>,
     /// Module registry for loaded libraries
     module_registry: ModuleRegistry,
     /// Function registry for built-in functions
@@ -177,6 +200,12 @@ pub struct EvaluationContext {
     pub series_data: Option<SeriesData>,
     /// Plot outputs collector
     pub plot_outputs: PlotOutputs,
+    /// Runtime: call-site IDs, per-site `var`, series ring buffers.
+    runtime: ExecutionContext,
+    /// Nested UDF call sites.
+    call_site_stack: Vec<CallSiteId>,
+    /// Stable mapping from `(fn name, call span)` to [`CallSiteId`] across bars.
+    call_site_intern: IndexMap<(String, usize, usize), CallSiteId>,
 }
 
 /// Series data for historical index access
@@ -207,6 +236,8 @@ impl Default for EvaluationContext {
         Self {
             variables: HashMap::new(),
             variable_history: HashMap::new(),
+            user_functions: HashMap::new(),
+            type_methods: HashMap::new(),
             module_registry: ModuleRegistry::new(),
             function_registry,
             loading_modules: Vec::new(),
@@ -214,6 +245,9 @@ impl Default for EvaluationContext {
             current_module: None,
             series_data: None,
             plot_outputs: PlotOutputs::new(),
+            runtime: ExecutionContext::new(Arc::new(RuntimeConfig::default())),
+            call_site_stack: Vec::new(),
+            call_site_intern: IndexMap::new(),
         }
     }
 }
@@ -227,13 +261,54 @@ impl EvaluationContext {
     /// Create a new evaluation context with a base path
     pub fn with_base_path(base_path: impl Into<PathBuf>) -> Self {
         let mut ctx = Self::new();
-        ctx.base_path = base_path.into();
+        let p = base_path.into();
+        ctx.base_path = p.clone();
+        ctx.runtime.set_base_path(p);
         ctx
+    }
+
+    /// Pine call site for `var` / scoped series (`global` when not in a UDF).
+    pub fn current_call_site(&self) -> CallSiteId {
+        self.call_site_stack
+            .last()
+            .copied()
+            .unwrap_or_else(ExecutionContext::global_call_site)
+    }
+
+    /// Intern a stable call site for `fn_name` at the given source span (shared across bars).
+    pub(crate) fn intern_call_site(&mut self, fn_name: &str, span: Span) -> CallSiteId {
+        let key = (fn_name.to_string(), span.start, span.end);
+        if let Some(id) = self.call_site_intern.get(&key).copied() {
+            return id;
+        }
+        let id = self.runtime.new_call_site();
+        self.call_site_intern.insert(key, id);
+        id
+    }
+
+    pub(crate) fn push_call_site(&mut self, site: CallSiteId) {
+        self.call_site_stack.push(site);
+    }
+
+    pub(crate) fn pop_call_site(&mut self) {
+        self.call_site_stack.pop();
+    }
+
+    pub(crate) fn runtime(&self) -> &ExecutionContext {
+        &self.runtime
+    }
+
+    pub(crate) fn runtime_mut(&mut self) -> &mut ExecutionContext {
+        &mut self.runtime
     }
 
     /// Get a variable value
     pub fn get_var(&self, name: &str) -> Option<&Value> {
-        self.variables.get(name)
+        if let Some(v) = self.variables.get(name) {
+            return Some(v);
+        }
+        let cs = self.current_call_site();
+        self.runtime.get_var_scoped(name, cs)
     }
 
     /// Set a variable value
@@ -247,6 +322,42 @@ impl EvaluationContext {
             history[series.current_bar] = value.clone();
         }
         self.variables.insert(name, value);
+    }
+
+    /// Remove a variable (restore after UDF call).
+    pub fn remove_var(&mut self, name: &str) {
+        self.variables.remove(name);
+        self.variable_history.remove(name);
+    }
+
+    /// Register a user-defined function.
+    pub fn register_user_fn(&mut self, name: impl Into<String>, user_fn: UserFn) {
+        self.user_functions.insert(name.into(), user_fn);
+    }
+
+    /// Look up a user-defined function.
+    pub fn get_user_fn(&self, name: &str) -> Option<&UserFn> {
+        self.user_functions.get(name)
+    }
+
+    /// Register a method on a UDT.
+    pub fn register_type_method(
+        &mut self,
+        type_name: impl Into<String>,
+        method_name: impl Into<String>,
+        user_fn: UserFn,
+    ) {
+        self.type_methods
+            .entry(type_name.into())
+            .or_default()
+            .insert(method_name.into(), user_fn);
+    }
+
+    /// Look up a UDT method.
+    pub fn get_type_method(&self, type_name: &str, method_name: &str) -> Option<&UserFn> {
+        self.type_methods
+            .get(type_name)
+            .and_then(|m| m.get(method_name))
     }
 
     /// Get historical values for a variable up to the current bar.
@@ -289,7 +400,9 @@ impl EvaluationContext {
 
     /// Set the base path for resolving imports
     pub fn set_base_path(&mut self, path: impl Into<PathBuf>) {
-        self.base_path = path.into();
+        let p = path.into();
+        self.base_path = p.clone();
+        self.runtime.set_base_path(p);
     }
 
     /// Check if a module is currently being loaded

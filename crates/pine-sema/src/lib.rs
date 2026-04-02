@@ -170,14 +170,33 @@ impl SeriesAnnotationPass {
                     }
                 }
             }
-            ast::Stmt::For { body, .. } | ast::Stmt::While { body, .. } => {
+            ast::Stmt::For { body, .. }
+            | ast::Stmt::ForIn { body, .. }
+            | ast::Stmt::While { body, .. } => {
                 for stmt in &body.stmts {
                     self.annotate_stmt(stmt);
                 }
             }
-            ast::Stmt::FnDef { body, .. } => {
-                for stmt in &body.stmts {
-                    self.annotate_stmt(stmt);
+            ast::Stmt::FnDef { body, .. }
+            | ast::Stmt::MethodDef { body, .. }
+            | ast::Stmt::ExportFn { body, .. } => {
+                if let ast::FnBody::Block(b) = body {
+                    for stmt in &b.stmts {
+                        self.annotate_stmt(stmt);
+                    }
+                }
+            }
+            ast::Stmt::ExportAssign { .. } => {}
+            ast::Stmt::Switch { arms, .. } => {
+                for arm in arms {
+                    match &arm.body {
+                        ast::SwitchArmBody::Block(b) => {
+                            for stmt in &b.stmts {
+                                self.annotate_stmt(stmt);
+                            }
+                        }
+                        ast::SwitchArmBody::Expr(_) => {}
+                    }
                 }
             }
             _ => {}
@@ -323,14 +342,30 @@ impl VarLiftingPass {
                     }
                 }
             }
-            ast::Stmt::For { body, .. } | ast::Stmt::While { body, .. } => {
+            ast::Stmt::For { body, .. }
+            | ast::Stmt::ForIn { body, .. }
+            | ast::Stmt::While { body, .. } => {
                 for stmt in &body.stmts {
                     self.collect_var_decls(stmt);
                 }
             }
-            ast::Stmt::FnDef { body, .. } => {
-                for stmt in &body.stmts {
-                    self.collect_var_decls(stmt);
+            ast::Stmt::FnDef { body, .. }
+            | ast::Stmt::MethodDef { body, .. }
+            | ast::Stmt::ExportFn { body, .. } => {
+                if let ast::FnBody::Block(b) = body {
+                    for stmt in &b.stmts {
+                        self.collect_var_decls(stmt);
+                    }
+                }
+            }
+            ast::Stmt::ExportAssign { .. } => {}
+            ast::Stmt::Switch { arms, .. } => {
+                for arm in arms {
+                    if let ast::SwitchArmBody::Block(b) = &arm.body {
+                        for stmt in &b.stmts {
+                            self.collect_var_decls(stmt);
+                        }
+                    }
                 }
             }
             _ => {}
@@ -584,8 +619,12 @@ impl SemanticAnalyzer {
     /// Analyze a single statement
     fn analyze_stmt(&mut self, stmt: &ast::Stmt) -> Result<()> {
         match stmt {
-            ast::Stmt::TypeDef { .. } | ast::Stmt::MethodDef { .. } => {
-                // Already handled in first/second pass
+            ast::Stmt::TypeDef { .. }
+            | ast::Stmt::MethodDef { .. }
+            | ast::Stmt::EnumDef { .. }
+            | ast::Stmt::ExportFn { .. }
+            | ast::Stmt::ExportAssign { .. } => {
+                // Already handled in first/second pass or library-only
                 Ok(())
             }
             ast::Stmt::VarDecl { name, type_ann, .. } => {

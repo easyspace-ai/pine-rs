@@ -7,6 +7,7 @@
 
 use crate::eval_expr::eval_expr;
 use crate::{EvalError, EvaluationContext, Result};
+use pine_lexer::Span;
 use pine_parser::ast;
 use pine_runtime::value::{Closure, Value};
 use std::sync::Arc;
@@ -20,6 +21,7 @@ pub fn call_fn(
     func: &ast::Expr,
     args: &[ast::Arg],
     ctx: &mut EvaluationContext,
+    call_span: Span,
     call_site_id: &str,
 ) -> Result<Value> {
     // Evaluate arguments first
@@ -31,6 +33,16 @@ pub fn call_fn(
 
     match func {
         ast::Expr::Ident(ident) => {
+            if let Some(user_fn) = ctx.get_user_fn(&ident.name).cloned() {
+                return crate::eval_stmt::invoke_user_function(
+                    ctx,
+                    &user_fn,
+                    &ident.name,
+                    call_span,
+                    &arg_values,
+                    ident.span,
+                );
+            }
             // Look up the function in the context
             if let Some(fn_value) = ctx.get_var(&ident.name).cloned() {
                 match fn_value {
@@ -60,7 +72,7 @@ pub fn call_fn(
                 Value::Closure(closure) => call_user_fn(&closure, &arg_values, ctx, call_site_id),
                 _ => Err(EvalError::TypeError {
                     message: format!("Expected function, got {:?}", fn_value),
-                    span: pine_lexer::Span::default(),
+                    span: call_span,
                 }),
             }
         }

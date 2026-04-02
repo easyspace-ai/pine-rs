@@ -298,7 +298,8 @@ impl ExprParser {
         // Check for empty args
         if self.peek_token() == Some(Token::RParen) {
             self.advance();
-            let span = func.span();
+            // Span must cover the whole call so call-site interning distinguishes f(1) vs f(2).
+            let span = func.span().merge(self.prev_span());
             return Ok(Expr::FnCall {
                 func: Box::new(func),
                 args,
@@ -340,7 +341,7 @@ impl ExprParser {
             }
         }
 
-        let span = func.span();
+        let span = func.span().merge(self.prev_span());
         Ok(Expr::FnCall {
             func: Box::new(func),
             args,
@@ -564,26 +565,25 @@ impl ExprParser {
 
     /// Check if current position looks like lambda parameters
     fn is_lambda_params(&mut self) -> bool {
-        // Look ahead to find => before matching )
+        // Caller already consumed `(`; scan to matching `)` then require `=>`.
         let saved_pos = self.pos;
-        let mut depth = 1;
-        let mut found_arrow = false;
-
-        self.advance(); // skip (
+        let mut depth = 1usize;
 
         while self.pos < self.tokens.len() && depth > 0 {
             match self.peek_token() {
-                Some(Token::LParen) => depth += 1,
-                Some(Token::RParen) => depth -= 1,
-                Some(Token::Arrow) if depth == 1 => {
-                    found_arrow = true;
-                    break;
+                Some(Token::LParen) => {
+                    depth += 1;
+                    self.advance();
                 }
-                _ => {}
+                Some(Token::RParen) => {
+                    depth -= 1;
+                    self.advance();
+                }
+                _ => self.advance(),
             }
-            self.advance();
         }
 
+        let found_arrow = depth == 0 && self.peek_token() == Some(Token::Arrow);
         self.pos = saved_pos;
         found_arrow
     }
@@ -788,6 +788,17 @@ mod tests {
     fn test_function_call() {
         let expr = parse_expr("func(a, b)").unwrap();
         assert!(matches!(expr, Expr::FnCall { .. }));
+    }
+
+    #[test]
+    fn test_fncall_span_covers_closing_paren() {
+        let e = parse_expr("f(100)").unwrap();
+        let Expr::FnCall { span, .. } = e else {
+            panic!("expected FnCall");
+        };
+        assert!(span.end > span.start);
+        // Line-local `lex()` offsets: span covers full `f(100)` in single-line snippet.
+        assert_eq!(span.end - span.start, "f(100)".len());
     }
 
     #[test]

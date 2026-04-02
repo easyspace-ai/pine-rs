@@ -21,4 +21,4 @@ plot(manualSma, title="Manual SMA", color=color.blue, linewidth=2)
 plot(close, title="Close", color=color.gray, style=plot.style_line)
 
 // Output for verification
-plot(manualSma, title="Output", display=display.none)
+plot(manualSma, title="manualSma", display=display.none)

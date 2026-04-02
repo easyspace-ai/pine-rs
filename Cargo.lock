@@ -1779,6 +1779,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a89322df9ebe1c1578d689c92318e070967d1042b512afbe49518723f4e6d5cd"
 
 [[package]]
+name = "pine-builtin-macro"
+version = "0.1.0"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn",
+]
+
+[[package]]
 name = "pine-cli"
 version = "0.1.0"
 dependencies = [
@@ -1802,6 +1811,7 @@ name = "pine-eval"
 version = "0.1.0"
 dependencies = [
  "criterion",
+ "indexmap",
  "insta",
  "miette",
  "pine-lexer",
@@ -1889,6 +1899,7 @@ dependencies = [
  "indexmap",
  "insta",
  "miette",
+ "pine-builtin-macro",
  "pine-runtime",
  "serde",
  "serde_json",
@@ -1930,11 +1941,26 @@ version = "0.1.0"
 dependencies = [
  "insta",
  "miette",
+ "pine-eval",
+ "pine-lexer",
+ "pine-parser",
  "pine-runtime",
  "pine-stdlib",
  "serde",
  "smallvec",
  "thiserror",
+]
+
+[[package]]
+name = "pine-wasm"
+version = "0.1.0"
+dependencies = [
+ "pine-eval",
+ "pine-lexer",
+ "pine-parser",
+ "serde",
+ "serde_json",
+ "wasm-bindgen",
 ]
 
 [[package]]

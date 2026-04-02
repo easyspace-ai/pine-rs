@@ -84,6 +84,9 @@ pub struct ExecutionContext {
     /// These maintain history across bars.
     series: IndexMap<SeriesKey, SeriesBuf<Value>>,
 
+    /// Last `bar_index` that appended a new element per series (not same-bar overwrites).
+    series_last_bar: IndexMap<SeriesKey, i64>,
+
     /// var/varip variable storage (persistent across bars)
     ///
     /// These are preserved between bars.
@@ -91,6 +94,12 @@ pub struct ExecutionContext {
 
     /// varip variables (reset on strategy reset)
     varip_vars: IndexMap<String, Value>,
+
+    /// `var` / `varip` values keyed by `(name, call_site)` for Pine call-site isolation.
+    ///
+    /// Global script `var` uses [`ExecutionContext::global_call_site`]. UDF `var` uses the stable
+    /// ID interned for each call expression (see pine-eval).
+    var_scoped: IndexMap<(String, CallSiteId), Value>,
 
     /// Current bar index
     bar_index: i64,
@@ -130,8 +139,10 @@ impl ExecutionContext {
             variables: vec![None; num_slots],
             name_to_slot: IndexMap::new(),
             series: IndexMap::new(),
+            series_last_bar: IndexMap::new(),
             persistent_vars: IndexMap::new(),
             varip_vars: IndexMap::new(),
+            var_scoped: IndexMap::new(),
             bar_index: 0,
             timestamp: 0,
             next_call_site_id: 1, // 0 is reserved for global scope
@@ -355,8 +366,20 @@ impl ExecutionContext {
     ///
     /// Creates the series if it doesn't exist.
     pub fn push_to_series(&mut self, name: impl Into<String>, call_site: CallSiteId, value: Value) {
+        let name = name.into();
+        let key = SeriesKey {
+            name: name.clone(),
+            call_site,
+        };
+        let bar = self.bar_index;
+        let same_bar = self.series_last_bar.get(&key).copied() == Some(bar);
         let series = self.get_or_create_series(name, call_site);
-        series.push(value);
+        if same_bar {
+            series.update_current(value);
+        } else {
+            series.push(value);
+            self.series_last_bar.insert(key, bar);
+        }
     }
 
     /// Get the latest value from a series
@@ -374,11 +397,30 @@ impl ExecutionContext {
         self.get_series(name, call_site).and_then(|s| s.get(offset))
     }
 
+    /// Get the full series history as a vector (newest first)
+    pub fn get_series_history(
+        &self,
+        name: &str,
+        call_site: CallSiteId,
+    ) -> Option<Vec<Value>> {
+        self.get_series(name, call_site).map(|s| s.to_vec())
+    }
+
+    /// Get the full series history as a vector (oldest first)
+    pub fn get_series_history_oldest_first(
+        &self,
+        name: &str,
+        call_site: CallSiteId,
+    ) -> Option<Vec<Value>> {
+        self.get_series(name, call_site).map(|s| s.iter_oldest_first().cloned().collect())
+    }
+
     /// Clear all series
     ///
     /// Called when the script is reset.
     pub fn clear_series(&mut self) {
         self.series.clear();
+        self.series_last_bar.clear();
     }
 
     //========================================================================
@@ -409,6 +451,31 @@ impl ExecutionContext {
     /// Clear persistent variables
     pub fn clear_persistent_vars(&mut self) {
         self.persistent_vars.clear();
+    }
+
+    //========================================================================
+    // Call-site scoped `var` / `varip` (Pine isolation)
+    //========================================================================
+
+    /// Whether a scoped `var` exists for this name at `call_site`.
+    pub fn var_scoped_contains(&self, name: &str, call_site: CallSiteId) -> bool {
+        self.var_scoped.contains_key(&(name.to_string(), call_site))
+    }
+
+    /// Get scoped `var` value.
+    pub fn get_var_scoped(&self, name: &str, call_site: CallSiteId) -> Option<&Value> {
+        self.var_scoped.get(&(name.to_string(), call_site))
+    }
+
+    /// Set scoped `var` value (creates or replaces).
+    pub fn set_var_scoped(&mut self, name: impl Into<String>, call_site: CallSiteId, value: Value) {
+        let n = name.into();
+        self.var_scoped.insert((n, call_site), value);
+    }
+
+    /// Clear all call-site scoped vars (e.g. full script reset).
+    pub fn clear_var_scoped(&mut self) {
+        self.var_scoped.clear();
     }
 
     //========================================================================
@@ -497,6 +564,7 @@ impl ExecutionContext {
         if full {
             self.persistent_vars.clear();
             self.varip_vars.clear();
+            self.var_scoped.clear();
         }
     }
 
@@ -611,8 +679,11 @@ mod tests {
         let mut ctx = test_context();
         let cs = ExecutionContext::global_call_site();
 
+        // One committed value per bar; history deepens when `bar_index` advances.
         ctx.push_to_series("close", cs, Value::Float(100.0));
+        ctx.set_bar_index(1);
         ctx.push_to_series("close", cs, Value::Float(101.0));
+        ctx.set_bar_index(2);
         ctx.push_to_series("close", cs, Value::Float(102.0));
 
         assert_eq!(
@@ -627,6 +698,19 @@ mod tests {
             ctx.get_series_at("close", cs, 2),
             Some(&Value::Float(100.0))
         );
+    }
+
+    #[test]
+    fn test_series_same_bar_overwrites_current() {
+        let mut ctx = test_context();
+        let cs = ExecutionContext::global_call_site();
+        ctx.push_to_series("close", cs, Value::Float(100.0));
+        ctx.push_to_series("close", cs, Value::Float(101.0));
+        assert_eq!(
+            ctx.get_series_current("close", cs),
+            Some(&Value::Float(101.0))
+        );
+        assert_eq!(ctx.get_series_at("close", cs, 1), None);
     }
 
     #[test]

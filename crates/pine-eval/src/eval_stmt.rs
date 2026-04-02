@@ -1,8 +1,9 @@
 //! Statement evaluation
 
 use crate::eval_expr::eval_expr;
-use crate::{EvalError, EvaluationContext, Result};
+use crate::{EvalError, EvaluationContext, Result, UserFn};
 use pine_parser::ast;
+use pine_parser::ast::{AssignOp, ForInPattern, ImportPath, SwitchArmBody};
 use pine_runtime::value::Value;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -15,58 +16,257 @@ pub fn eval_block(block: &ast::Block, ctx: &mut EvaluationContext) -> Result<()>
     Ok(())
 }
 
+/// Evaluate a function / export / method body and return the value (`=> expr` or last expr in block).
+pub(crate) fn eval_fn_body(body: &ast::FnBody, ctx: &mut EvaluationContext) -> Result<Value> {
+    match body {
+        ast::FnBody::Expr(e) => eval_expr(e, ctx),
+        ast::FnBody::Block(b) => eval_block_last_value(b, ctx),
+    }
+}
+
+fn eval_block_last_value(block: &ast::Block, ctx: &mut EvaluationContext) -> Result<Value> {
+    if block.stmts.is_empty() {
+        return Ok(Value::Na);
+    }
+    let n = block.stmts.len();
+    for stmt in &block.stmts[..n - 1] {
+        eval_stmt(stmt, ctx)?;
+    }
+    match &block.stmts[n - 1] {
+        ast::Stmt::Expr(e) => eval_expr(e, ctx),
+        s => {
+            eval_stmt(s, ctx)?;
+            Ok(Value::Na)
+        }
+    }
+}
+
+/// Invoke a user-defined function in the current context (parameter shadowing with restore).
+pub(crate) fn invoke_user_function(
+    ctx: &mut EvaluationContext,
+    user_fn: &UserFn,
+    fn_name: &str,
+    call_span: pine_lexer::Span,
+    arg_values: &[Value],
+    span: pine_lexer::Span,
+) -> Result<Value> {
+    if arg_values.len() != user_fn.params.len() {
+        return Err(EvalError::TypeError {
+            message: format!(
+                "function expected {} arguments, got {}",
+                user_fn.params.len(),
+                arg_values.len()
+            ),
+            span,
+        });
+    }
+
+    if !ctx.runtime_mut().enter_call() {
+        return Err(EvalError::TypeError {
+            message: "maximum function recursion depth exceeded".into(),
+            span,
+        });
+    }
+
+    let site = ctx.intern_call_site(fn_name, call_span);
+    ctx.push_call_site(site);
+
+    let mut saved: Vec<(String, Option<Value>)> = Vec::with_capacity(user_fn.params.len());
+    for p in &user_fn.params {
+        let name = p.name.name.clone();
+        saved.push((name.clone(), ctx.get_var(&name).cloned()));
+    }
+
+    for (p, v) in user_fn.params.iter().zip(arg_values.iter()) {
+        ctx.set_var(&p.name.name, v.clone());
+    }
+
+    let result = eval_fn_body(&user_fn.body, ctx);
+
+    ctx.pop_call_site();
+    ctx.runtime_mut().exit_call();
+
+    for (name, old) in saved {
+        match old {
+            Some(v) => ctx.set_var(name, v),
+            None => ctx.remove_var(&name),
+        }
+    }
+
+    result
+}
+
+fn import_path_to_string(path: &ImportPath) -> String {
+    match path {
+        ImportPath::String(s) => s.clone(),
+        ImportPath::Qualified(segs) => segs.join("/"),
+    }
+}
+
+fn eval_switch_arm_body(body: &SwitchArmBody, ctx: &mut EvaluationContext) -> Result<()> {
+    match body {
+        SwitchArmBody::Expr(e) => {
+            eval_expr(e, ctx)?;
+            Ok(())
+        }
+        SwitchArmBody::Block(b) => eval_block(b, ctx),
+    }
+}
+
+fn eval_switch_stmt(
+    scrutinee: Option<&ast::Expr>,
+    arms: &[ast::SwitchArm],
+    ctx: &mut EvaluationContext,
+) -> Result<()> {
+    let disc = scrutinee.map(|e| eval_expr(e, ctx)).transpose()?;
+
+    for arm in arms {
+        match &arm.pattern {
+            Some(pat) => {
+                let branch_matches = if let Some(ref sv) = disc {
+                    let pv = eval_expr(pat, ctx)?;
+                    values_equal(sv, &pv)
+                } else {
+                    eval_expr(pat, ctx)?.is_truthy()
+                };
+                if branch_matches {
+                    eval_switch_arm_body(&arm.body, ctx)?;
+                    return Ok(());
+                }
+            }
+            None => {
+                eval_switch_arm_body(&arm.body, ctx)?;
+                return Ok(());
+            }
+        }
+    }
+    Ok(())
+}
+
+fn eval_for_in(
+    pattern: &ForInPattern,
+    iterable: &ast::Expr,
+    body: &ast::Block,
+    ctx: &mut EvaluationContext,
+) -> Result<()> {
+    let iter_val = eval_expr(iterable, ctx)?;
+    let items: Vec<Value> = match iter_val {
+        Value::Array(values) => values,
+        other => {
+            return Err(EvalError::TypeError {
+                message: format!("for...in expects array, got {:?}", other),
+                span: body.span,
+            });
+        }
+    };
+
+    match pattern {
+        ForInPattern::Single(id) => {
+            for item in items {
+                ctx.set_var(&id.name, item);
+                eval_block(body, ctx)?;
+            }
+        }
+        ForInPattern::Tuple(idx_id, val_id) => {
+            for (i, item) in items.into_iter().enumerate() {
+                ctx.set_var(&idx_id.name, Value::Int(i as i64));
+                ctx.set_var(&val_id.name, item);
+                eval_block(body, ctx)?;
+            }
+        }
+    }
+    Ok(())
+}
+
+fn read_assign_target_value(
+    target: &ast::AssignTarget,
+    ctx: &mut EvaluationContext,
+) -> Result<Value> {
+    match target {
+        ast::AssignTarget::Var(ident) => Ok(ctx.get_var(&ident.name).cloned().unwrap_or(Value::Na)),
+        _ => Err(EvalError::TypeError {
+            message: "compound assignment is only supported for simple variables".into(),
+            span: target.span(),
+        }),
+    }
+}
+
+fn apply_assign_op(op: AssignOp, cur: &Value, rhs: &Value) -> Value {
+    use pine_runtime::na_ops;
+    match op {
+        AssignOp::PlusEq => na_ops::add(cur, rhs),
+        AssignOp::MinusEq => na_ops::sub(cur, rhs),
+        AssignOp::StarEq => na_ops::mul(cur, rhs),
+        AssignOp::SlashEq => na_ops::div(cur, rhs),
+        AssignOp::PercentEq => na_ops::modulo(cur, rhs),
+        AssignOp::Assign | AssignOp::ColonEq => rhs.clone(),
+    }
+}
+
 /// Evaluate a statement
 pub fn eval_stmt(stmt: &ast::Stmt, ctx: &mut EvaluationContext) -> Result<()> {
     match stmt {
-        ast::Stmt::VarDecl { name, init, .. } => {
-            let value = if let Some(init_expr) = init {
-                eval_expr(init_expr, ctx)?
-            } else {
-                Value::Na
-            };
-            ctx.set_var(&name.name, value);
-            Ok(())
-        }
-        ast::Stmt::Assign { target, value, .. } => {
+        ast::Stmt::VarDecl {
+            name, init, kind, ..
+        } => match kind {
+            ast::VarKind::Plain => {
+                let value = if let Some(init_expr) = init {
+                    eval_expr(init_expr, ctx)?
+                } else {
+                    Value::Na
+                };
+                ctx.set_var(&name.name, value);
+                Ok(())
+            }
+            ast::VarKind::Var | ast::VarKind::Varip => {
+                let cs = ctx.current_call_site();
+                if ctx.runtime().var_scoped_contains(&name.name, cs) {
+                    return Ok(());
+                }
+                let value = if let Some(init_expr) = init {
+                    eval_expr(init_expr, ctx)?
+                } else {
+                    Value::Na
+                };
+                let n = name.name.clone();
+                ctx.runtime_mut()
+                    .set_var_scoped(n.clone(), cs, value.clone());
+                ctx.runtime_mut().push_to_series(n, cs, value);
+                Ok(())
+            }
+        },
+        ast::Stmt::Assign {
+            target, op, value, ..
+        } => {
             let rhs_value = eval_expr(value, ctx)?;
-            eval_assign(target, rhs_value, ctx)
+            match op {
+                AssignOp::Assign | AssignOp::ColonEq => eval_assign(target, rhs_value, ctx),
+                AssignOp::PlusEq
+                | AssignOp::MinusEq
+                | AssignOp::StarEq
+                | AssignOp::SlashEq
+                | AssignOp::PercentEq => {
+                    let cur = read_assign_target_value(target, ctx)?;
+                    let combined = apply_assign_op(*op, &cur, &rhs_value);
+                    eval_assign(target, combined, ctx)
+                }
+            }
         }
         ast::Stmt::Expr(expr) => {
             eval_expr(expr, ctx)?;
             Ok(())
         }
         ast::Stmt::Switch {
-            expr,
-            cases,
-            default,
-            ..
-        } => {
-            let switch_value = eval_expr(expr, ctx)?;
-            let mut matched = false;
-
-            // Check each case
-            for case in cases {
-                let case_value = eval_expr(&case.value, ctx)?;
-                if values_equal(&switch_value, &case_value) {
-                    eval_block(&case.body, ctx)?;
-                    matched = true;
-                    break;
-                }
-            }
-
-            // If no case matched and we have a default, execute it
-            if !matched {
-                if let Some(default_block) = default {
-                    eval_block(default_block, ctx)?;
-                }
-            }
-
-            Ok(())
+            scrutinee, arms, ..
+        } => eval_switch_stmt(scrutinee.as_ref(), arms, ctx),
+        // Import statement: import "path" | import a/b/c [as alias]
+        ast::Stmt::Import { path, alias, span } => {
+            eval_import_path(path, alias.as_ref(), *span, ctx)
         }
-        // Import statement: import "path" [as alias]
-        ast::Stmt::Import { path, alias, span } => eval_import(path, alias.as_ref(), *span, ctx),
-        // Export statement: export name
-        ast::Stmt::Export { name, span } => eval_export(&name.name, *span, ctx),
+        ast::Stmt::ExportFn {
+            name, params, body, ..
+        } => eval_fn_def(name, params, body, ctx),
+        ast::Stmt::ExportAssign { name, init, .. } => eval_export_assign(name, init, ctx),
         // Library declaration: library(name, ...)
         ast::Stmt::Library {
             name: _,
@@ -95,18 +295,40 @@ pub fn eval_stmt(stmt: &ast::Stmt, ctx: &mut EvaluationContext) -> Result<()> {
             body,
             ..
         } => eval_for_loop(var, from, to, by.as_ref(), body, ctx),
+        ast::Stmt::ForIn {
+            pattern,
+            iterable,
+            body,
+            ..
+        } => eval_for_in(pattern, iterable, body, ctx),
         // While loop
         ast::Stmt::While { cond, body, .. } => eval_while_loop(cond, body, ctx),
         // Function definition
         ast::Stmt::FnDef {
             name, params, body, ..
         } => eval_fn_def(name, params, body, ctx),
-        // Type definition - handled during semantic analysis
+        // Type definition — runtime reserves type names for objects
         ast::Stmt::TypeDef { .. } => Ok(()),
-        // Method definition - handled during semantic analysis
-        ast::Stmt::MethodDef { .. } => Ok(()),
-        _ => {
-            // TODO: Handle any remaining statement types
+        ast::Stmt::MethodDef {
+            type_name,
+            name,
+            params,
+            body,
+            ..
+        } => {
+            let uf = UserFn {
+                params: params.clone(),
+                body: body.clone(),
+            };
+            ctx.register_type_method(&type_name.name, &name.name, uf);
+            Ok(())
+        }
+        ast::Stmt::EnumDef { .. } => Ok(()),
+        ast::Stmt::Break { .. } | ast::Stmt::Continue { .. } => Ok(()),
+        ast::Stmt::Return { value, .. } => {
+            if let Some(v) = value {
+                eval_expr(v, ctx)?;
+            }
             Ok(())
         }
     }
@@ -193,17 +415,44 @@ fn eval_while_loop(cond: &ast::Expr, body: &ast::Block, ctx: &mut EvaluationCont
     Ok(())
 }
 
-/// Evaluate a function definition
-fn eval_fn_def(
-    _name: &ast::Ident,
-    _params: &[ast::Param],
-    _body: &ast::Block,
-    _ctx: &mut EvaluationContext,
+/// `export name = expr`: lambda → UDF registration; otherwise evaluate and bind (library constant).
+fn eval_export_assign(
+    name: &ast::Ident,
+    init: &ast::Expr,
+    ctx: &mut EvaluationContext,
 ) -> Result<()> {
-    // Function definitions are stored during semantic analysis
-    // The actual closure is created when the function is called
-    // For now, this is a placeholder - full function support requires
-    // proper closure creation with captured environment
+    match init {
+        ast::Expr::Lambda { params, body, .. } => {
+            ctx.register_user_fn(
+                name.name.clone(),
+                UserFn {
+                    params: params.clone(),
+                    body: ast::FnBody::Expr(*body.clone()),
+                },
+            );
+        }
+        e => {
+            let v = eval_expr(e, ctx)?;
+            ctx.set_var(name.name.clone(), v);
+        }
+    }
+    Ok(())
+}
+
+/// Evaluate a function definition (register for call sites).
+fn eval_fn_def(
+    name: &ast::Ident,
+    params: &[ast::Param],
+    body: &ast::FnBody,
+    ctx: &mut EvaluationContext,
+) -> Result<()> {
+    ctx.register_user_fn(
+        name.name.clone(),
+        UserFn {
+            params: params.to_vec(),
+            body: body.clone(),
+        },
+    );
     Ok(())
 }
 
@@ -230,7 +479,15 @@ fn eval_assign(
 ) -> Result<()> {
     match target {
         ast::AssignTarget::Var(ident) => {
-            ctx.set_var(&ident.name, value);
+            let cs = ctx.current_call_site();
+            if ctx.runtime().var_scoped_contains(&ident.name, cs) {
+                let n = ident.name.clone();
+                ctx.runtime_mut()
+                    .set_var_scoped(n.clone(), cs, value.clone());
+                ctx.runtime_mut().push_to_series(n, cs, value);
+            } else {
+                ctx.set_var(&ident.name, value);
+            }
             Ok(())
         }
         ast::AssignTarget::Tuple(idents) => eval_tuple_assign(idents, value, ctx),
@@ -287,19 +544,20 @@ fn eval_field_assign(base: Value, field: &ast::Ident, value: Value) -> Result<()
 }
 
 /// Evaluate an import statement
-fn eval_import(
-    path: &str,
+fn eval_import_path(
+    path: &ImportPath,
     alias: Option<&ast::Ident>,
     span: pine_lexer::Span,
     ctx: &mut EvaluationContext,
 ) -> Result<()> {
     use std::path::Path;
 
+    let path_str = import_path_to_string(path);
     // Resolve the module path
-    let module_path = if Path::new(path).is_absolute() {
-        PathBuf::from(path)
+    let module_path = if Path::new(&path_str).is_absolute() {
+        PathBuf::from(path_str)
     } else {
-        ctx.base_path().join(path)
+        ctx.base_path().join(&path_str)
     };
 
     let path_str = module_path.to_string_lossy().to_string();
@@ -341,29 +599,12 @@ fn eval_import(
     Ok(())
 }
 
-/// Evaluate an export statement
-fn eval_export(name: &str, span: pine_lexer::Span, ctx: &mut EvaluationContext) -> Result<()> {
-    // Get the value being exported
-    let _value = ctx
-        .get_var(name)
-        .cloned()
-        .ok_or_else(|| EvalError::UndefinedVariable {
-            name: name.to_string(),
-            span,
-        })?;
-
-    // In a full implementation, we would add this to the current module's exports
-    // For now, this is a stub
-    // The actual export registration happens during module finalization
-
-    Ok(())
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::eval_expr::eval_expr;
     use pine_lexer::Span;
-    use pine_parser::ast::{Block, Ident, Lit, Stmt, SwitchCase};
+    use pine_parser::ast::{Block, FnBody, Ident, Lit, Param, Stmt, SwitchArm, SwitchArmBody};
     use pine_runtime::value::Value;
 
     #[test]
@@ -409,66 +650,61 @@ mod tests {
     fn test_switch_stmt() {
         let mut ctx = EvaluationContext::new();
 
-        // Create a simple switch statement AST
-        let switch_expr = ast::Expr::Literal(Lit::Int(2), Span::default());
+        let scrutinee = ast::Expr::Literal(Lit::Int(2), Span::default());
 
-        // Case 1: value 1
-        let case1_value = ast::Expr::Literal(Lit::Int(1), Span::default());
-        let case1_block = Block {
-            stmts: vec![Stmt::VarDecl {
-                name: Ident::new("result", Span::default()),
-                kind: ast::VarKind::Var,
-                type_ann: None,
-                init: Some(ast::Expr::Literal(Lit::Int(10), Span::default())),
+        let arm1 = SwitchArm {
+            pattern: Some(ast::Expr::Literal(Lit::Int(1), Span::default())),
+            body: SwitchArmBody::Block(Block {
+                stmts: vec![Stmt::VarDecl {
+                    name: Ident::new("result", Span::default()),
+                    kind: ast::VarKind::Var,
+                    type_ann: None,
+                    init: Some(ast::Expr::Literal(Lit::Int(10), Span::default())),
+                    span: Span::default(),
+                }],
                 span: Span::default(),
-            }],
+            }),
             span: Span::default(),
         };
-        let case1 = SwitchCase {
-            value: case1_value,
-            body: case1_block,
-        };
 
-        // Case 2: value 2
-        let case2_value = ast::Expr::Literal(Lit::Int(2), Span::default());
-        let case2_block = Block {
-            stmts: vec![Stmt::VarDecl {
-                name: Ident::new("result", Span::default()),
-                kind: ast::VarKind::Var,
-                type_ann: None,
-                init: Some(ast::Expr::Literal(Lit::Int(20), Span::default())),
+        let arm2 = SwitchArm {
+            pattern: Some(ast::Expr::Literal(Lit::Int(2), Span::default())),
+            body: SwitchArmBody::Block(Block {
+                stmts: vec![Stmt::VarDecl {
+                    name: Ident::new("result", Span::default()),
+                    kind: ast::VarKind::Var,
+                    type_ann: None,
+                    init: Some(ast::Expr::Literal(Lit::Int(20), Span::default())),
+                    span: Span::default(),
+                }],
                 span: Span::default(),
-            }],
+            }),
             span: Span::default(),
         };
-        let case2 = SwitchCase {
-            value: case2_value,
-            body: case2_block,
-        };
 
-        // Default case
-        let default_block = Block {
-            stmts: vec![Stmt::VarDecl {
-                name: Ident::new("result", Span::default()),
-                kind: ast::VarKind::Var,
-                type_ann: None,
-                init: Some(ast::Expr::Literal(Lit::Int(99), Span::default())),
+        let arm_default = SwitchArm {
+            pattern: None,
+            body: SwitchArmBody::Block(Block {
+                stmts: vec![Stmt::VarDecl {
+                    name: Ident::new("result", Span::default()),
+                    kind: ast::VarKind::Var,
+                    type_ann: None,
+                    init: Some(ast::Expr::Literal(Lit::Int(99), Span::default())),
+                    span: Span::default(),
+                }],
                 span: Span::default(),
-            }],
+            }),
             span: Span::default(),
         };
 
         let switch_stmt = Stmt::Switch {
-            expr: switch_expr,
-            cases: vec![case1, case2],
-            default: Some(default_block),
+            scrutinee: Some(scrutinee),
+            arms: vec![arm1, arm2, arm_default],
             span: Span::default(),
         };
 
-        // Evaluate the switch statement
         eval_stmt(&switch_stmt, &mut ctx).unwrap();
 
-        // Check that the correct case was executed
         assert_eq!(ctx.get_var("result"), Some(&Value::Int(20)));
     }
 
@@ -478,7 +714,7 @@ mod tests {
 
         // Create a simple import statement AST
         let import_stmt = Stmt::Import {
-            path: "test_module.pine".to_string(),
+            path: ImportPath::String("test_module.pine".to_string()),
             alias: Some(Ident::new("test", Span::default())),
             span: Span::default(),
         };
@@ -494,7 +730,7 @@ mod tests {
 
         // Create an import statement without alias
         let import_stmt = Stmt::Import {
-            path: "utils.pine".to_string(),
+            path: ImportPath::String("utils.pine".to_string()),
             alias: None,
             span: Span::default(),
         };
@@ -505,44 +741,180 @@ mod tests {
     }
 
     #[test]
-    fn test_export_stmt_with_existing_var() {
+    fn test_udf_var_isolated_per_call_site() {
+        // Block body requires `fn` form; TV `name() =>` at stmt level is expr-only.
+        let src = r#"fn f(x)
+    var a = 0
+    a := a + 1
+    x + a
+v1 = f(100)
+v2 = f(200)
+"#;
+        let tokens = pine_lexer::Lexer::lex_with_indentation(src).unwrap();
+        let mut parser = pine_parser::stmt::StmtParser::new(tokens);
+        let script = parser.parse_script().unwrap();
+
         let mut ctx = EvaluationContext::new();
-
-        // First define a variable
-        ctx.set_var("my_func", Value::from(42i64));
-
-        // Create an export statement
-        let export_stmt = Stmt::Export {
-            name: Ident::new("my_func", Span::default()),
-            span: Span::default(),
-        };
-
-        // Evaluate the export statement
-        let result = eval_stmt(&export_stmt, &mut ctx);
-        assert!(result.is_ok());
+        for stmt in &script.stmts {
+            eval_stmt(stmt, &mut ctx).unwrap();
+        }
+        assert_eq!(ctx.get_var("v1"), Some(&Value::Int(101)));
+        assert_eq!(ctx.get_var("v2"), Some(&Value::Int(201)));
     }
 
     #[test]
-    fn test_export_stmt_with_undefined_var() {
-        let mut ctx = EvaluationContext::new();
+    fn test_udf_var_series_index_two_bars() {
+        let src = r#"fn f()
+    var s = 0
+    s := s + 1
+    s[1]
+out = f()
+"#;
+        let tokens = pine_lexer::Lexer::lex_with_indentation(src).unwrap();
+        let mut parser = pine_parser::stmt::StmtParser::new(tokens);
+        let script = parser.parse_script().unwrap();
 
-        // Try to export a variable that doesn't exist
-        let export_stmt = Stmt::Export {
-            name: Ident::new("undefined_var", Span::default()),
+        let mut ctx = EvaluationContext::new();
+        for stmt in &script.stmts {
+            eval_stmt(stmt, &mut ctx).unwrap();
+        }
+        // Bar 0: no history -> na
+        assert_eq!(ctx.get_var("out"), Some(&Value::Na));
+
+        ctx.runtime_mut().set_bar_index(1);
+        for stmt in &script.stmts {
+            eval_stmt(stmt, &mut ctx).unwrap();
+        }
+        // Bar 1: s=2, s[1]=1
+        assert_eq!(ctx.get_var("out"), Some(&Value::Int(1)));
+    }
+
+    #[test]
+    fn test_udf_call_invokes_body() {
+        let mut ctx = EvaluationContext::new();
+        eval_stmt(
+            &Stmt::FnDef {
+                name: Ident::new("dbl", Span::default()),
+                params: vec![Param {
+                    name: Ident::new("x", Span::default()),
+                    type_ann: None,
+                    default: None,
+                }],
+                ret_type: None,
+                body: FnBody::Expr(ast::Expr::BinOp {
+                    op: ast::BinOp::Mul,
+                    lhs: Box::new(ast::Expr::Ident(Ident::new("x", Span::default()))),
+                    rhs: Box::new(ast::Expr::Literal(Lit::Int(2), Span::default())),
+                    span: Span::default(),
+                }),
+                span: Span::default(),
+            },
+            &mut ctx,
+        )
+        .unwrap();
+
+        let call = ast::Expr::FnCall {
+            func: Box::new(ast::Expr::Ident(Ident::new("dbl", Span::default()))),
+            args: vec![ast::Arg {
+                name: None,
+                value: ast::Expr::Literal(Lit::Int(21), Span::default()),
+            }],
+            span: Span::default(),
+        };
+        let v = eval_expr(&call, &mut ctx).unwrap();
+        assert_eq!(v, Value::Int(42));
+    }
+
+    #[test]
+    fn test_for_in_executes_body() {
+        let mut ctx = EvaluationContext::new();
+        ctx.set_var(
+            "xs",
+            Value::Array(vec![Value::Int(1), Value::Int(2), Value::Int(3)]),
+        );
+
+        let body = Block {
+            stmts: vec![Stmt::Assign {
+                target: ast::AssignTarget::Var(Ident::new("acc", Span::default())),
+                op: AssignOp::Assign,
+                value: ast::Expr::BinOp {
+                    op: ast::BinOp::Add,
+                    lhs: Box::new(ast::Expr::Ident(Ident::new("acc", Span::default()))),
+                    rhs: Box::new(ast::Expr::Ident(Ident::new("v", Span::default()))),
+                    span: Span::default(),
+                },
+                span: Span::default(),
+            }],
             span: Span::default(),
         };
 
-        // Evaluate the export statement (should fail)
-        let result = eval_stmt(&export_stmt, &mut ctx);
-        assert!(result.is_err());
+        let for_in = Stmt::ForIn {
+            pattern: ForInPattern::Single(Ident::new("v", Span::default())),
+            iterable: ast::Expr::Ident(Ident::new("xs", Span::default())),
+            body,
+            span: Span::default(),
+        };
 
-        // Verify it's the right error
-        match result {
-            Err(EvalError::UndefinedVariable { name, .. }) => {
-                assert_eq!(name, "undefined_var");
-            }
-            _ => panic!("Expected UndefinedVariable error"),
+        ctx.set_var("acc", Value::Int(0));
+        eval_stmt(&for_in, &mut ctx).unwrap();
+        assert_eq!(ctx.get_var("acc"), Some(&Value::Int(6)));
+    }
+
+    #[test]
+    fn test_for_loop_inclusive_accumulator() {
+        let src = r#"sum = 0
+for i = 1 to 3
+    sum := sum + i
+out = sum
+"#;
+        let tokens = pine_lexer::Lexer::lex_with_indentation(src).unwrap();
+        let mut parser = pine_parser::stmt::StmtParser::new(tokens);
+        let script = parser.parse_script().unwrap();
+
+        let mut ctx = EvaluationContext::new();
+        for stmt in &script.stmts {
+            eval_stmt(stmt, &mut ctx).unwrap();
         }
+        assert_eq!(ctx.get_var("out"), Some(&Value::Int(6)));
+    }
+
+    #[test]
+    fn test_export_assign_lambda_registers_udf() {
+        let src = "export dbl = (x) => x * 2\ny = dbl(21)";
+        let tokens = pine_lexer::Lexer::lex_with_indentation(src).unwrap();
+        let mut parser = pine_parser::stmt::StmtParser::new(tokens);
+        let script = parser.parse_script().unwrap();
+
+        let mut ctx = EvaluationContext::new();
+        for stmt in &script.stmts {
+            eval_stmt(stmt, &mut ctx).unwrap();
+        }
+        assert_eq!(ctx.get_var("y"), Some(&Value::Int(42)));
+    }
+
+    #[test]
+    fn test_export_fn_registers_udf() {
+        let mut ctx = EvaluationContext::new();
+
+        let export_stmt = Stmt::ExportFn {
+            name: Ident::new("add1", Span::default()),
+            params: vec![Param {
+                name: Ident::new("x", Span::default()),
+                type_ann: None,
+                default: None,
+            }],
+            ret_type: None,
+            body: FnBody::Expr(ast::Expr::BinOp {
+                op: ast::BinOp::Add,
+                lhs: Box::new(ast::Expr::Ident(Ident::new("x", Span::default()))),
+                rhs: Box::new(ast::Expr::Literal(Lit::Int(1), Span::default())),
+                span: Span::default(),
+            }),
+            span: Span::default(),
+        };
+
+        eval_stmt(&export_stmt, &mut ctx).unwrap();
+        assert!(ctx.get_user_fn("add1").is_some());
     }
 
     #[test]

@@ -7,9 +7,11 @@ members = [
     "crates/pine-eval",
     "crates/pine-vm",
     "crates/pine-runtime",
+    "crates/pine-builtin-macro",
     "crates/pine-stdlib",
     "crates/pine-output",
     "crates/pine-cli",
+    "crates/pine-wasm",
     "pine-tv",
 ]
 
@@ -27,6 +29,7 @@ insta        = "1"
 proptest     = "1"
 criterion    = { version = "0.5", features = ["html_reports"] }
 rayon        = "1"
+wasm-bindgen = "0.2"
 
 [profile.release]
 opt-level = 3

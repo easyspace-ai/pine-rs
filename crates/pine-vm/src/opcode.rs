@@ -21,6 +21,9 @@ pub enum OpCode {
     PushSeries,
     /// Push historical series value (operands: series index, offset)
     PushSeriesAt,
+    /// Push historical series value with dynamic offset (operand: series index)
+    /// The offset is popped from the stack
+    PushSeriesAtDynamic,
     /// Push value to series
     SeriesPush,
 
@@ -85,6 +88,10 @@ pub enum OpCode {
     IsNa,
     /// Coalesce: if top is NA, replace with next
     Coalesce,
+
+    /// Update user-defined series in context (operand: series name index)
+    /// Pops value from stack and pushes it to the named series
+    UpdateUserSeries,
 }
 
 impl OpCode {
@@ -125,6 +132,8 @@ impl OpCode {
             30 => Some(LoadSlot),
             31 => Some(IsNa),
             32 => Some(Coalesce),
+            33 => Some(PushSeriesAtDynamic),
+            34 => Some(UpdateUserSeries),
             _ => None,
         }
     }
@@ -133,8 +142,10 @@ impl OpCode {
     pub fn operand_count(&self) -> usize {
         use OpCode::*;
         match self {
-            PushConst | PushSlot | Jump | JumpIfFalse | JumpIfTrue | StoreSlot | LoadSlot => 1,
+            PushConst | PushSlot | Jump | JumpIfFalse | JumpIfTrue | StoreSlot | LoadSlot
+            | PushSeriesAtDynamic => 1,
             PushSeriesAt | Call => 2,
+            UpdateUserSeries => 1,
             _ => 0,
         }
     }

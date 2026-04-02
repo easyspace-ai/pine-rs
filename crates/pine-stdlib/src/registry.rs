@@ -365,6 +365,7 @@ impl FunctionRegistry {
         crate::map::register_functions(self);
         crate::str::register_functions(self);
         crate::color::register_functions(self);
+        crate::input::register_functions(self);
     }
 
     /// Get the number of registered functions
@@ -379,6 +380,7 @@ impl FunctionRegistry {
 
     /// Get the Bloom filter (for testing/debugging)
     #[cfg(test)]
+    #[allow(dead_code)]
     fn bloom_filter(&self) -> &BloomFilter {
         &self.bloom
     }

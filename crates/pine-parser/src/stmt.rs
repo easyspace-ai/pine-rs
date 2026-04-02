@@ -69,6 +69,7 @@ impl StmtParser {
             Token::Switch => self.parse_switch_stmt(),
             Token::Fn => self.parse_fn_def(),
             Token::Type => self.parse_type_def(),
+            Token::Enum => self.parse_enum_def(),
             Token::Method => self.parse_method_def(),
             Token::Import => self.parse_import(),
             Token::Export => self.parse_export(),
@@ -77,7 +78,11 @@ impl StmtParser {
             Token::Continue => self.parse_continue(),
             Token::Return => self.parse_return(),
             _ => {
-                // Could be assignment or expression statement
+                if matches!(self.peek_token(), Some(Token::Ident(_))) {
+                    if let Some(stmt) = self.try_parse_tv_arrow_function_stmt()? {
+                        return Ok(stmt);
+                    }
+                }
                 self.parse_assign_or_expr()
             }
         }
@@ -152,13 +157,22 @@ impl StmtParser {
             elifs.push((elif_cond, elif_block));
         }
 
-        // Parse optional else block
-        let else_block = if self.peek_token() == Some(Token::Else) {
+        let mut else_block = None;
+        while self.peek_token() == Some(Token::Else) {
             self.advance();
-            Some(self.parse_block()?)
-        } else {
-            None
-        };
+            while self.peek_token() == Some(Token::Newline) {
+                self.advance();
+            }
+            if self.peek_token() == Some(Token::If) {
+                self.advance();
+                let cond = self.parse_expr()?;
+                let block = self.parse_block()?;
+                elifs.push((cond, block));
+                continue;
+            }
+            else_block = Some(self.parse_block()?);
+            break;
+        }
 
         let span = start_span.merge(self.prev_span());
 
@@ -171,20 +185,48 @@ impl StmtParser {
         })
     }
 
-    /// Parse for loop: for var = from to to [by step] body
+    /// Parse for loop: numeric `for i = a to b` or `for x in arr` / `for [i,v] in arr`
     fn parse_for_stmt(&mut self) -> Result<Stmt, ParseError> {
         let start_span = self.peek_span().unwrap_or_default();
         self.expect_token(Token::For, "expected 'for'")?;
 
-        let var = self.expect_ident("expected loop variable")?;
-        self.expect_token(Token::Assign, "expected '='")?;
+        if self.peek_token() == Some(Token::LBracket) {
+            self.advance();
+            let a = self.expect_ident("expected index name")?;
+            self.expect_token(Token::Comma, "expected ','")?;
+            let b = self.expect_ident("expected value name")?;
+            self.expect_token(Token::RBracket, "expected ']'")?;
+            self.expect_token(Token::In, "expected 'in'")?;
+            let iterable = self.parse_expr()?;
+            let body = self.parse_block()?;
+            let span = start_span.merge(self.prev_span());
+            return Ok(Stmt::ForIn {
+                pattern: ForInPattern::Tuple(a, b),
+                iterable,
+                body,
+                span,
+            });
+        }
 
+        let var = self.expect_ident("expected loop variable")?;
+        if self.peek_token() == Some(Token::In) {
+            self.advance();
+            let iterable = self.parse_expr()?;
+            let body = self.parse_block()?;
+            let span = start_span.merge(self.prev_span());
+            return Ok(Stmt::ForIn {
+                pattern: ForInPattern::Single(var),
+                iterable,
+                body,
+                span,
+            });
+        }
+
+        self.expect_token(Token::Assign, "expected '=' or 'in'")?;
         let from = self.parse_expr()?;
         self.expect_token(Token::To, "expected 'to'")?;
-
         let to = self.parse_expr()?;
 
-        // Optional by clause
         let by = if self.peek_token() == Some(Token::By) {
             self.advance();
             Some(self.parse_expr()?)
@@ -217,69 +259,88 @@ impl StmtParser {
         Ok(Stmt::While { cond, body, span })
     }
 
-    /// Parse switch statement
+    /// Parse TV v6 switch: optional scrutinee; arms are `expr => body` or `=> body`
     fn parse_switch_stmt(&mut self) -> Result<Stmt, ParseError> {
         let start_span = self.peek_span().unwrap_or_default();
         self.expect_token(Token::Switch, "expected 'switch'")?;
 
-        let expr = self.parse_expr()?;
+        while self.peek_token() == Some(Token::Newline) {
+            self.advance();
+        }
 
-        // Expect indent before cases
+        let scrutinee = if self.peek_token() == Some(Token::Indent) {
+            None
+        } else {
+            let s = self.parse_expr()?;
+            while self.peek_token() == Some(Token::Newline) {
+                self.advance();
+            }
+            Some(s)
+        };
+
         self.expect_token(Token::Indent, "expected indentation")?;
 
-        let mut cases = Vec::new();
-        let mut default = None;
+        let mut arms = Vec::new();
 
-        loop {
-            match self.peek_token() {
-                Some(Token::Case) => {
-                    self.advance();
-                    let value = self.parse_expr()?;
-                    self.expect_token(Token::Colon, "expected ':'")?;
-                    let body = self.parse_case_body()?;
-                    cases.push(SwitchCase { value, body });
-                }
-                Some(Token::Default) => {
-                    self.advance();
-                    self.expect_token(Token::Colon, "expected ':'")?;
-                    default = Some(self.parse_case_body()?);
-                }
-                _ => break,
+        while self.peek_token() != Some(Token::Dedent) && self.peek_token().is_some() {
+            while self.peek_token() == Some(Token::Newline) {
+                self.advance();
             }
+            if self.peek_token() == Some(Token::Dedent) {
+                break;
+            }
+
+            let arm_start = self.peek_span().unwrap_or_default();
+
+            let pattern = if self.peek_token() == Some(Token::Arrow) {
+                None
+            } else {
+                let p = self.parse_expr()?;
+                Some(p)
+            };
+
+            self.expect_token(Token::Arrow, "expected '=>'")?;
+
+            while self.peek_token() == Some(Token::Newline) {
+                self.advance();
+            }
+
+            let body = if self.peek_token() == Some(Token::Indent) {
+                SwitchArmBody::Block(self.parse_block()?)
+            } else {
+                SwitchArmBody::Expr(self.parse_expr()?)
+            };
+
+            let span = arm_start.merge(self.prev_span());
+            arms.push(SwitchArm {
+                pattern,
+                body,
+                span,
+            });
         }
 
         self.expect_token(Token::Dedent, "expected dedent")?;
         let span = start_span.merge(self.prev_span());
 
         Ok(Stmt::Switch {
-            expr,
-            cases,
-            default,
+            scrutinee,
+            arms,
             span,
         })
     }
 
-    /// Parse function definition: fn name(params) [-> type] body
+    /// Parse function definition: fn name(params) [=> expr | block]
     fn parse_fn_def(&mut self) -> Result<Stmt, ParseError> {
         let start_span = self.peek_span().unwrap_or_default();
         self.expect_token(Token::Fn, "expected 'fn'")?;
 
         let name = self.expect_ident("expected function name")?;
 
-        // Parse parameters
         self.expect_token(Token::LParen, "expected '('")?;
         let params = self.parse_params()?;
         self.expect_token(Token::RParen, "expected ')'")?;
 
-        // Optional return type
-        let ret_type = if self.peek_token() == Some(Token::Arrow) {
-            self.advance();
-            Some(self.parse_type_ann()?)
-        } else {
-            None
-        };
-
-        let body = self.parse_block()?;
+        let (ret_type, body) = self.parse_fn_sig_body_after_params(None)?;
         let span = start_span.merge(self.prev_span());
 
         Ok(Stmt::FnDef {
@@ -289,6 +350,22 @@ impl StmtParser {
             body,
             span,
         })
+    }
+
+    /// After `)`: `=> expr` or indented / single-line block.
+    fn parse_fn_sig_body_after_params(
+        &mut self,
+        ret_type: Option<TypeAnn>,
+    ) -> Result<(Option<TypeAnn>, FnBody), ParseError> {
+        while self.peek_token() == Some(Token::Newline) {
+            self.advance();
+        }
+        if self.peek_token() == Some(Token::Arrow) {
+            self.advance();
+            let e = self.parse_expr()?;
+            return Ok((ret_type, FnBody::Expr(e)));
+        }
+        Ok((ret_type, FnBody::Block(self.parse_block()?)))
     }
 
     /// Parse type definition: type Name { fields... }
@@ -314,6 +391,41 @@ impl StmtParser {
         Ok(Stmt::TypeDef { name, fields, span })
     }
 
+    /// Parse enum definition: enum Name newline indent fields...
+    fn parse_enum_def(&mut self) -> Result<Stmt, ParseError> {
+        let start_span = self.peek_span().unwrap_or_default();
+        self.expect_token(Token::Enum, "expected 'enum'")?;
+        let name = self.expect_ident("expected enum name")?;
+        self.expect_token(Token::Indent, "expected indentation")?;
+
+        let mut variants = Vec::new();
+        while self.peek_token() != Some(Token::Dedent) && self.peek_token().is_some() {
+            if self.peek_token() == Some(Token::Newline) {
+                self.advance();
+                continue;
+            }
+            let vname = self.expect_ident("expected enum variant name")?;
+            let init = if self.peek_token() == Some(Token::Assign) {
+                self.advance();
+                Some(self.parse_expr()?)
+            } else {
+                None
+            };
+            variants.push(EnumVariant { name: vname, init });
+            if self.peek_token() == Some(Token::Newline) {
+                self.advance();
+            }
+        }
+
+        self.expect_token(Token::Dedent, "expected dedent")?;
+        let span = start_span.merge(self.prev_span());
+        Ok(Stmt::EnumDef {
+            name,
+            variants,
+            span,
+        })
+    }
+
     /// Parse method definition: method Type.name(params) body
     fn parse_method_def(&mut self) -> Result<Stmt, ParseError> {
         let start_span = self.peek_span().unwrap_or_default();
@@ -327,14 +439,7 @@ impl StmtParser {
         let params = self.parse_params()?;
         self.expect_token(Token::RParen, "expected ')'")?;
 
-        let ret_type = if self.peek_token() == Some(Token::Arrow) {
-            self.advance();
-            Some(self.parse_type_ann()?)
-        } else {
-            None
-        };
-
-        let body = self.parse_block()?;
+        let (ret_type, body) = self.parse_fn_sig_body_after_params(None)?;
         let span = start_span.merge(self.prev_span());
 
         Ok(Stmt::MethodDef {
@@ -347,7 +452,7 @@ impl StmtParser {
         })
     }
 
-    /// Parse import statement: import "path" [as name]
+    /// Parse import: import "path" | import a/b/c [as name]
     fn parse_import(&mut self) -> Result<Stmt, ParseError> {
         let start_span = self.peek_span().unwrap_or_default();
         self.expect_token(Token::Import, "expected 'import'")?;
@@ -356,12 +461,38 @@ impl StmtParser {
             Some(Token::String(s)) => {
                 let s = s.clone();
                 self.advance();
-                s
+                ImportPath::String(s)
+            }
+            Some(Token::Ident(_)) => {
+                let mut segments = Vec::new();
+                loop {
+                    let seg = match self.peek_token() {
+                        Some(Token::Ident(s)) => {
+                            let x = s.clone();
+                            self.advance();
+                            x
+                        }
+                        Some(Token::Int(n)) => {
+                            self.advance();
+                            n.to_string()
+                        }
+                        _ => {
+                            return Err(ParseError::unexpected_eof(Span::default()));
+                        }
+                    };
+                    segments.push(seg);
+                    if self.peek_token() == Some(Token::Slash) {
+                        self.advance();
+                    } else {
+                        break;
+                    }
+                }
+                ImportPath::Qualified(segments)
             }
             _ => return Err(ParseError::unexpected_eof(Span::default())),
         };
 
-        let alias = if self.peek_token() == Some(Token::Ident("as".to_string())) {
+        let alias = if matches!(self.peek_token(), Some(Token::Ident(ref s)) if s == "as") {
             self.advance();
             Some(self.expect_ident("expected alias name")?)
         } else {
@@ -370,7 +501,6 @@ impl StmtParser {
 
         let span = start_span.merge(self.prev_span());
 
-        // Skip trailing newline
         if self.peek_token() == Some(Token::Newline) {
             self.advance();
         }
@@ -378,20 +508,41 @@ impl StmtParser {
         Ok(Stmt::Import { path, alias, span })
     }
 
-    /// Parse export statement: export name
+    /// Parse export: `export name(params) => expr | block` or `export name = expr`
     fn parse_export(&mut self) -> Result<Stmt, ParseError> {
         let start_span = self.peek_span().unwrap_or_default();
         self.expect_token(Token::Export, "expected 'export'")?;
 
-        let name = self.expect_ident("expected name to export")?;
+        let name = self.expect_ident("expected export name")?;
+
+        if self.peek_token() == Some(Token::Assign) {
+            self.advance();
+            let init = self.parse_expr()?;
+            let span = start_span.merge(self.prev_span());
+            if self.peek_token() == Some(Token::Newline) {
+                self.advance();
+            }
+            return Ok(Stmt::ExportAssign { name, init, span });
+        }
+
+        self.expect_token(Token::LParen, "expected '('")?;
+        let params = self.parse_params()?;
+        self.expect_token(Token::RParen, "expected ')'")?;
+
+        let (ret_type, body) = self.parse_fn_sig_body_after_params(None)?;
         let span = start_span.merge(self.prev_span());
 
-        // Skip trailing newline
         if self.peek_token() == Some(Token::Newline) {
             self.advance();
         }
 
-        Ok(Stmt::Export { name, span })
+        Ok(Stmt::ExportFn {
+            name,
+            params,
+            ret_type,
+            body,
+            span,
+        })
     }
 
     /// Parse library declaration: library(name [, ...])
@@ -590,23 +741,6 @@ impl StmtParser {
         })
     }
 
-    /// Parse case body (simplified - just a single statement or block)
-    fn parse_case_body(&mut self) -> Result<Block, ParseError> {
-        // If we see indent, parse a block
-        if self.peek_token() == Some(Token::Indent) {
-            return self.parse_block();
-        }
-
-        // Otherwise, parse a single statement
-        let stmt = self.parse_stmt()?;
-        let span = stmt.span();
-
-        Ok(Block {
-            stmts: vec![stmt],
-            span,
-        })
-    }
-
     /// Parse function parameters
     fn parse_params(&mut self) -> Result<Vec<Param>, ParseError> {
         let mut params = Vec::new();
@@ -785,7 +919,8 @@ impl StmtParser {
                 | Token::PlusEq
                 | Token::MinusEq
                 | Token::StarEq
-                | Token::SlashEq => {
+                | Token::SlashEq
+                | Token::PercentEq => {
                     if paren_depth == 0 && bracket_depth == 0 {
                         break;
                     }
@@ -818,8 +953,69 @@ impl StmtParser {
             Some(Token::MinusEq) => Some(AssignOp::MinusEq),
             Some(Token::StarEq) => Some(AssignOp::StarEq),
             Some(Token::SlashEq) => Some(AssignOp::SlashEq),
+            Some(Token::PercentEq) => Some(AssignOp::PercentEq),
             _ => None,
         }
+    }
+
+    /// `name(params) => expr` at statement level (TV style, no `fn` keyword)
+    fn try_parse_tv_arrow_function_stmt(&mut self) -> Result<Option<Stmt>, ParseError> {
+        let start_pos = self.pos;
+        let start_span = match self.peek_span() {
+            Some(s) => s,
+            None => return Ok(None),
+        };
+        let name = match self.peek_info() {
+            Some(info) => {
+                if let Token::Ident(n) = &info.token {
+                    Ident::new(n.clone(), info.span)
+                } else {
+                    return Ok(None);
+                }
+            }
+            None => return Ok(None),
+        };
+
+        self.advance();
+        if self.peek_token() != Some(Token::LParen) {
+            self.pos = start_pos;
+            return Ok(None);
+        }
+        self.advance(); // past '('
+                        // TV `name(params) => expr` only: parameter lists start with `)` or an identifier.
+                        // Reject call-shaped opens like `indicator("title", ...)` or `plot(na)`.
+        match self.peek_token() {
+            Some(Token::RParen) | Some(Token::Ident(_)) => {}
+            _ => {
+                self.pos = start_pos;
+                return Ok(None);
+            }
+        }
+        let params = self.parse_params()?;
+        if self.expect_token(Token::RParen, "expected ')'").is_err() {
+            self.pos = start_pos;
+            return Ok(None);
+        }
+        while self.peek_token() == Some(Token::Newline) {
+            self.advance();
+        }
+        if self.peek_token() != Some(Token::Arrow) {
+            self.pos = start_pos;
+            return Ok(None);
+        }
+        self.advance();
+        let body_expr = self.parse_expr()?;
+        if self.peek_token() == Some(Token::Newline) {
+            self.advance();
+        }
+        let span = start_span.merge(self.prev_span());
+        Ok(Some(Stmt::FnDef {
+            name,
+            params,
+            ret_type: None,
+            body: FnBody::Expr(body_expr),
+            span,
+        }))
     }
 
     /// Peek at current token
@@ -978,5 +1174,62 @@ mod tests {
         let script = parse(input).unwrap();
         assert_eq!(script.stmts.len(), 1);
         assert!(matches!(script.stmts[0], Stmt::FnDef { .. }));
+    }
+
+    #[test]
+    fn test_indicator_call_not_arrow_fn() {
+        let input = r#"indicator("Hello pine-rs", shorttitle="hello")"#;
+        let script = parse(input).unwrap();
+        assert_eq!(script.stmts.len(), 1);
+        assert!(matches!(script.stmts[0], Stmt::Expr(..)));
+    }
+
+    #[test]
+    fn test_export_assign_lambda() {
+        let input = "export add = (a, b) => a + b";
+        let script = parse(input).unwrap();
+        assert!(matches!(
+            &script.stmts[0],
+            Stmt::ExportAssign {
+                init: Expr::Lambda { .. },
+                ..
+            }
+        ));
+    }
+
+    #[test]
+    fn test_export_assign_const() {
+        let input = "export PI = 3.14159";
+        let script = parse(input).unwrap();
+        let Stmt::ExportAssign { init, .. } = &script.stmts[0] else {
+            panic!("expected ExportAssign");
+        };
+        assert!(matches!(init, Expr::Literal(Lit::Float(_), _)));
+    }
+
+    #[test]
+    fn test_two_udf_call_sites_have_distinct_fn_call_spans() {
+        let input = r#"fn f(x)
+    x
+v1 = f(100)
+v2 = f(200)
+"#;
+        let tokens = pine_lexer::Lexer::lex_with_indentation(input).unwrap();
+        let mut parser = StmtParser::new(tokens);
+        let script = parser.parse_script().unwrap();
+        let Stmt::VarDecl { init: Some(v1), .. } = &script.stmts[1] else {
+            panic!("expected v1 = ..., got {:?}", script.stmts[1]);
+        };
+        let Stmt::VarDecl { init: Some(v2), .. } = &script.stmts[2] else {
+            panic!("expected v2 = ..., got {:?}", script.stmts[2]);
+        };
+        let (Expr::FnCall { span: s1, .. }, Expr::FnCall { span: s2, .. }) = (v1, v2) else {
+            panic!("expected FnCall values");
+        };
+        assert_ne!(
+            (s1.start, s1.end),
+            (s2.start, s2.end),
+            "full-script offsets must differ for call-site interning"
+        );
     }
 }

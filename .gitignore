@@ -32,3 +32,4 @@ docs/book/
 # Environment
 .env
 .env.local
+three/

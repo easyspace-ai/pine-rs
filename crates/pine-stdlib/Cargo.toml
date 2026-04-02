@@ -4,6 +4,7 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
+pine-builtin-macro = { path = "../pine-builtin-macro" }
 pine-runtime = { path = "../pine-runtime" }
 indexmap = { workspace = true }
 miette = { workspace = true }

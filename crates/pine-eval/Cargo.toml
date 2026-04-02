@@ -2,6 +2,11 @@
 name = "pine-eval"
 version = "0.1.0"
 edition = "2021"
+autotests = false
+
+[features]
+default = ["parallel"]
+parallel = ["dep:rayon"]
 
 [dependencies]
 pine-lexer = { path = "../pine-lexer" }
@@ -14,8 +19,19 @@ miette = { workspace = true }
 thiserror = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
-rayon = { workspace = true }
+rayon = { workspace = true, optional = true }
+indexmap = { workspace = true }
 
 [dev-dependencies]
 insta = { workspace = true }
 criterion = { workspace = true }
+
+[[bench]]
+name = "parallel_bench"
+harness = false
+required-features = ["parallel"]
+
+[[test]]
+name = "performance_test"
+path = "tests/performance_test.rs"
+required-features = ["parallel"]

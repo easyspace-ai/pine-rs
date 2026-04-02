@@ -1,0 +1,7 @@
+// Golden test: ta.lowest(low, 10)
+
+indicator("Lowest 10 Golden Test", overlay = true)
+
+lowest_10 = ta.lowest(low, 10)
+
+plot(lowest_10, title = "Lowest 10", color = color.green)

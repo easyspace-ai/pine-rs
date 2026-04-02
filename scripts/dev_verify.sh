@@ -32,6 +32,8 @@ if [[ "$FULL" -eq 1 ]]; then
   bash tests/phase_acceptance.sh 2
   echo "==> golden tests"
   bash tests/run_golden.sh
+  echo "==> VM golden tests"
+  bash tests/vm_run_golden.sh
 fi
 
 echo "OK: dev_verify.sh completed (full=$FULL)"

@@ -9,6 +9,7 @@ use crate::VmError;
 use pine_runtime::context::ExecutionContext;
 use pine_runtime::na_ops;
 use pine_runtime::value::Value;
+use pine_stdlib::registry::FunctionRegistry;
 
 /// VM execution result
 pub type VmResult<T> = Result<T, VmError>;
@@ -18,7 +19,7 @@ pub type VmResult<T> = Result<T, VmError>;
 /// Uses a fixed-size array for performance, with bounds checking.
 pub struct VmStack {
     /// Stack storage
-    data: Vec<Value>,
+    pub(crate) data: Vec<Value>,
     /// Current stack pointer (next free position)
     sp: usize,
 }
@@ -118,6 +119,15 @@ impl CallFrame {
     }
 }
 
+/// Plot record for a single bar
+#[derive(Debug, Clone)]
+pub struct PlotRecord {
+    /// Plot title
+    pub title: String,
+    /// Plot value
+    pub value: Option<f64>,
+}
+
 /// Stack-based VM for Pine Script execution
 pub struct VM {
     /// Operand stack
@@ -130,6 +140,14 @@ pub struct VM {
     chunk: Option<BytecodeChunk>,
     /// Program counter
     pc: usize,
+    /// Base pointer (current frame's base in stack)
+    bp: usize,
+    /// Function registry for external function calls
+    function_registry: FunctionRegistry,
+    /// External function table (index -> name mapping for fast dispatch)
+    external_functions: Vec<String>,
+    /// Plot outputs collected during execution
+    plot_outputs: Vec<PlotRecord>,
 }
 
 impl VM {
@@ -146,7 +164,34 @@ impl VM {
             context,
             chunk: None,
             pc: 0,
+            bp: 0,
+            function_registry: FunctionRegistry::with_stdlib(),
+            external_functions: Vec::new(),
+            plot_outputs: Vec::new(),
         }
+    }
+
+    /// Register an external function with the VM
+    pub fn register_external_function(&mut self, name: impl Into<String>) -> usize {
+        let name = name.into();
+        let idx = self.external_functions.len();
+        self.external_functions.push(name);
+        idx
+    }
+
+    /// Get the function registry (for inspection/testing)
+    pub fn function_registry(&self) -> &FunctionRegistry {
+        &self.function_registry
+    }
+
+    /// Get the plot outputs collected during execution
+    pub fn plot_outputs(&self) -> &[PlotRecord] {
+        &self.plot_outputs
+    }
+
+    /// Clear plot outputs
+    pub fn clear_plot_outputs(&mut self) {
+        self.plot_outputs.clear();
     }
 
     /// Load a bytecode chunk for execution
@@ -164,7 +209,7 @@ impl VM {
             // Check if we have a chunk and a valid PC
             let chunk = match self.chunk.as_ref() {
                 Some(c) => c,
-                None => return Err(VmError::NotImplemented),
+                None => return Err(VmError::NoBytecode),
             };
 
             if self.pc >= chunk.instructions.len() {
@@ -174,30 +219,53 @@ impl VM {
             let instruction = &chunk.instructions[self.pc];
             let opcode = instruction.opcode;
 
+            // Trace every instruction
+            if matches!(opcode, OpCode::Call | OpCode::Not | OpCode::JumpIfFalse) {
+                let stack_top = self.stack.peek().cloned().unwrap_or(Value::Na);
+                eprintln!("DEBUG VM TRACE: pc={}, opcode={:?}, operands={:?}, stack_top={:?}",
+                         self.pc, opcode, instruction.operands, stack_top);
+            }
+
             match opcode {
                 OpCode::Halt => break,
                 OpCode::PushConst => {
                     let idx = instruction.operands.first().copied().unwrap_or(0);
+                    eprintln!("DEBUG PushConst: idx={}, constants.len()={}", idx, chunk.constants.len());
                     if let Some(value) = chunk.constants.get(idx) {
+                        eprintln!("DEBUG PushConst: pushing {:?}", value);
                         self.stack.push(value.clone());
                     } else {
-                        return Err(VmError::NotImplemented);
+                        return Err(VmError::InvalidConstant(idx));
                     }
                     self.pc += 1;
                 }
                 OpCode::LoadSlot => {
                     let slot = instruction.operands.first().copied().unwrap_or(0);
-                    if let Some(value) = self.context.get_slot(slot) {
-                        self.stack.push(value.clone());
-                    } else {
-                        self.stack.push(Value::Na);
-                    }
+                    // Load from stack relative to base pointer (for function arguments/locals)
+                    let value = self
+                        .stack
+                        .data
+                        .get(self.bp + slot)
+                        .cloned()
+                        .unwrap_or(Value::Na);
+                    self.stack.push(value);
                     self.pc += 1;
                 }
                 OpCode::StoreSlot => {
                     let slot = instruction.operands.first().copied().unwrap_or(0);
                     if let Some(value) = self.stack.pop() {
-                        self.context.set_slot(slot, value);
+                        // Store to stack relative to base pointer
+                        let idx = self.bp + slot;
+                        if idx < self.stack.data.len() {
+                            self.stack.data[idx] = value;
+                        } else {
+                            // Extend stack if needed
+                            while self.stack.data.len() <= idx {
+                                self.stack.data.push(Value::Na);
+                            }
+                            self.stack.data[idx] = value;
+                            self.stack.sp = self.stack.data.len();
+                        }
                     }
                     self.pc += 1;
                 }
@@ -213,7 +281,14 @@ impl VM {
                 OpCode::Eq => self.op_eq()?,
                 OpCode::Ne => self.op_ne()?,
                 OpCode::Lt => self.op_lt()?,
-                OpCode::Le => self.op_le()?,
+                OpCode::Le => {
+                    let b = self.stack.peek_at(0).cloned().unwrap_or(Value::Na);
+                    let a = self.stack.peek_at(1).cloned().unwrap_or(Value::Na);
+                    eprintln!("DEBUG VM Le: a={:?}, b={:?}", a, b);
+                    self.op_le()?;
+                    let result = self.stack.peek().cloned().unwrap_or(Value::Na);
+                    eprintln!("DEBUG VM Le: result={:?}", result);
+                }
                 OpCode::Gt => self.op_gt()?,
                 OpCode::Ge => self.op_ge()?,
                 OpCode::And => self.op_and()?,
@@ -221,41 +296,278 @@ impl VM {
                 OpCode::Not => self.op_not()?,
                 OpCode::IsNa => self.op_is_na()?,
                 OpCode::Coalesce => self.op_coalesce()?,
+                OpCode::UpdateUserSeries => {
+                    let name_idx = instruction.operands.first().copied().unwrap_or(0);
+                    let name = chunk
+                        .constants
+                        .get(name_idx)
+                        .and_then(|v| match v {
+                            Value::String(s) => Some(s.to_string()),
+                            _ => None,
+                        })
+                        .unwrap_or_default();
+                    let value = self.stack.pop().unwrap_or(Value::Na);
+                    eprintln!("DEBUG UpdateUserSeries: name={}, value={:?}", name, value);
+                    let call_site = ExecutionContext::global_call_site();
+                    let series = self.context
+                        .get_or_create_series(&name, call_site);
+                    series.push(value);
+                    eprintln!("DEBUG UpdateUserSeries: series.len={}", series.len());
+                    self.pc += 1;
+                }
                 OpCode::Jump => {
-                    let offset = instruction.operands.first().copied().unwrap_or(0);
-                    self.pc += offset;
+                    let target = instruction.operands.first().copied().unwrap_or(0);
+                    self.pc = target;
                 }
                 OpCode::JumpIfFalse => {
-                    let offset = instruction.operands.first().copied().unwrap_or(0);
+                    let target = instruction.operands.first().copied().unwrap_or(0);
                     let condition = self.stack.peek().unwrap_or(&Value::Na);
+                    eprintln!("DEBUG VM JumpIfFalse: condition={:?}, target={}, is_truthy={}, will_jump={}", condition, target, condition.is_truthy(), !condition.is_truthy());
                     if !condition.is_truthy() {
-                        self.pc += offset;
+                        self.pc = target;
                     } else {
                         self.pc += 1;
                     }
                 }
                 OpCode::JumpIfTrue => {
-                    let offset = instruction.operands.first().copied().unwrap_or(0);
+                    let target = instruction.operands.first().copied().unwrap_or(0);
                     let condition = self.stack.peek().unwrap_or(&Value::Na);
                     if condition.is_truthy() {
-                        self.pc += offset;
+                        self.pc = target;
                     } else {
                         self.pc += 1;
                     }
                 }
                 OpCode::Return => {
-                    // Pop return value and restore frame
-                    let result = self.stack.pop();
+                    // Pop return value
+                    let result = self.stack.pop().unwrap_or(Value::Na);
+
                     if let Some(frame) = self.call_stack.pop() {
+                        // Restore base pointer
+                        self.bp = frame.bp;
+                        // Jump to return address
                         self.pc = frame.return_pc;
+                        // Push return value back to stack
+                        self.stack.push(result);
                     } else {
                         // Top-level return - exit execution
-                        return Ok(result);
+                        self.stack.push(result);
+                        return Ok(self.stack.pop());
+                    }
+                }
+                OpCode::PushSeries => {
+                    let series_idx = instruction.operands.first().copied().unwrap_or(0);
+                    let series_name = chunk
+                        .series_names
+                        .get(series_idx)
+                        .ok_or(VmError::InvalidSeries(series_idx))?;
+                    let call_site = ExecutionContext::global_call_site();
+                    let value = self
+                        .context
+                        .get_series_current(series_name, call_site)
+                        .cloned()
+                        .unwrap_or(Value::Na);
+                    self.stack.push(value);
+                    self.pc += 1;
+                }
+                OpCode::PushSeriesAt => {
+                    let series_idx = instruction.operands.first().copied().unwrap_or(0);
+                    let offset = instruction.operands.get(1).copied().unwrap_or(0);
+                    let series_name = chunk
+                        .series_names
+                        .get(series_idx)
+                        .ok_or(VmError::InvalidSeries(series_idx))?;
+                    let call_site = ExecutionContext::global_call_site();
+                    let value = self
+                        .context
+                        .get_series_at(series_name, call_site, offset)
+                        .cloned()
+                        .unwrap_or(Value::Na);
+                    self.stack.push(value);
+                    self.pc += 1;
+                }
+                OpCode::SeriesPush => {
+                    let series_idx = instruction.operands.first().copied().unwrap_or(0);
+                    let series_name = chunk
+                        .series_names
+                        .get(series_idx)
+                        .ok_or(VmError::InvalidSeries(series_idx))?
+                        .clone();
+                    let value = self.stack.pop().unwrap_or(Value::Na);
+                    let call_site = ExecutionContext::global_call_site();
+                    self.context.push_to_series(series_name, call_site, value);
+                    self.pc += 1;
+                }
+                OpCode::PushSeriesAtDynamic => {
+                    let series_idx = instruction.operands.first().copied().unwrap_or(0);
+                    // Pop offset from stack (must be after series_idx is extracted)
+                    let offset_val = self.stack.pop().unwrap_or(Value::Na);
+                    let offset = match offset_val {
+                        Value::Int(i) => i as usize,
+                        Value::Float(f) => f as usize,
+                        _ => 0,
+                    };
+                    let series_name = chunk
+                        .series_names
+                        .get(series_idx)
+                        .ok_or(VmError::InvalidSeries(series_idx))?;
+                    let call_site = ExecutionContext::global_call_site();
+                    let value = self
+                        .context
+                        .get_series_at(series_name, call_site, offset)
+                        .cloned()
+                        .unwrap_or(Value::Na);
+                    self.stack.push(value);
+                    self.pc += 1;
+                }
+                OpCode::Call => {
+                    let func_idx = instruction.operands.first().copied().unwrap_or(0);
+                    let arg_count = instruction.operands.get(1).copied().unwrap_or(0);
+                    let user_func_count = chunk.function_addresses.len();
+                    eprintln!("DEBUG VM: OpCode::Call func_idx={} arg_count={} user_func_count={}", func_idx, arg_count, user_func_count);
+                    eprintln!("DEBUG VM: external_functions={:?}", self.external_functions);
+
+                    // Check if this is an external function call
+                    if func_idx >= user_func_count {
+                        // External function call
+                        let ext_idx = func_idx - user_func_count;
+                        if let Some(func_name) = self.external_functions.get(ext_idx) {
+                            // Collect arguments from stack
+                            let mut args = Vec::with_capacity(arg_count);
+                            for _ in 0..arg_count {
+                                let arg = self.stack.pop().unwrap_or(Value::Na);
+                                // Expand SeriesRef to full series data for series functions
+                                let expanded = match &arg {
+                                    Value::SeriesRef(name) => {
+                                        if is_series_function(func_name) {
+                                            // Get full series data from context (oldest first)
+                                            let call_site = ExecutionContext::global_call_site();
+                                            let series_data: Vec<Value> = self
+                                                .context
+                                                .get_series_history_oldest_first(name, call_site)
+                                                .unwrap_or_default();
+                                            Value::Array(series_data)
+                                        } else {
+                                            // For non-series functions, use current value
+                                            let call_site = ExecutionContext::global_call_site();
+                                            self.context
+                                                .get_series_current(name, call_site)
+                                                .cloned()
+                                                .unwrap_or(Value::Na)
+                                        }
+                                    }
+                                    _ => arg,
+                                };
+                                args.push(expanded);
+                            }
+                            args.reverse(); // Stack is LIFO, so reverse to get correct order
+
+                            // Check for special VM internal functions
+                            eprintln!("DEBUG VM Call: func_name={}, arg_count={}, args={:?}", func_name, arg_count, args);
+                            if func_name == "__series_at" {
+                                eprintln!("DEBUG __series_at: args={:?}", args);
+                                // Arguments: series_name (string), offset (int)
+                                // After args.reverse(), order is: series_name, offset
+                                let series_name = args.first().and_then(|v| match v {
+                                    Value::String(s) => Some(s.to_string()),
+                                    _ => None,
+                                }).unwrap_or_default();
+                                let offset = args.get(1).and_then(|v| match v {
+                                    Value::Int(i) => Some(*i as usize),
+                                    Value::Float(f) => Some(*f as usize),
+                                    _ => Some(0),
+                                }).unwrap_or(0);
+                                let call_site = ExecutionContext::global_call_site();
+                                eprintln!("DEBUG __series_at: series_name={}, offset={}, call_site={:?}", series_name, offset, call_site);
+                                let series_data = self.context.get_series(&series_name, call_site);
+                                eprintln!("DEBUG __series_at: series_data={:?}", series_data);
+                                let value = self.context
+                                    .get_series_at(&series_name, call_site, offset)
+                                    .cloned()
+                                    .unwrap_or(Value::Na);
+                                eprintln!("DEBUG __series_at: returning {:?}", value);
+                                self.stack.push(value);
+                                // Fall through to pc increment at the end
+                            } else if func_name == "plot" || func_name.starts_with("plot.") {
+                                // Extract title and value from args
+                                // plot(value, title, ...) - title is usually the second arg
+                                let value = args.first().cloned().unwrap_or(Value::Na);
+                                let title = args
+                                    .get(1)
+                                    .and_then(|v| match v {
+                                        Value::String(s) => Some(s.to_string()),
+                                        _ => None,
+                                    })
+                                    .unwrap_or_else(|| "Plot".to_string());
+
+                                self.plot_outputs.push(PlotRecord {
+                                    title,
+                                    value: value.as_float(),
+                                });
+                                self.stack.push(Value::Na); // plot returns na
+                            } else if func_name == "na" {
+                                // na(value) - returns true if value is NA, false otherwise
+                                eprintln!("DEBUG VM na: args={:?}", args);
+                                let result = if args.is_empty() {
+                                    Value::Bool(true)
+                                } else {
+                                    Value::Bool(matches!(args[0], Value::Na))
+                                };
+                                eprintln!("DEBUG VM na: returning {:?}", result);
+                                self.stack.push(result);
+                            } else if func_name == "__load_series_data" {
+                                // Load series data from context by name
+                                // args[0] should be the series name (string)
+                                let series_name = args.first().and_then(|v| match v {
+                                    Value::String(s) => Some(s.to_string()),
+                                    _ => None,
+                                }).unwrap_or_default();
+                                let call_site = ExecutionContext::global_call_site();
+                                let series_data: Vec<Value> = self
+                                    .context
+                                    .get_series_history_oldest_first(&series_name, call_site)
+                                    .unwrap_or_default();
+                                self.stack.push(Value::Array(series_data));
+                            } else {
+                                // Dispatch to external function
+                                eprintln!("DEBUG: dispatching {} with args {:?}", func_name, args);
+                                if let Some(result) =
+                                    self.function_registry.dispatch(func_name, &args)
+                                {
+                                    eprintln!("DEBUG: {} returned {:?}", func_name, result);
+                                    self.stack.push(result);
+                                } else {
+                                    eprintln!("DEBUG: {} not found in registry", func_name);
+                                    self.stack.push(Value::Na);
+                                }
+                            }
+                            self.pc += 1;  // Increment pc after all external function handlers
+                        } else {
+                            return Err(VmError::InvalidFunction(func_idx));
+                        }
+                    } else {
+                        // User-defined function call
+                        let func_addr = chunk
+                            .function_addresses
+                            .get(func_idx)
+                            .copied()
+                            .ok_or(VmError::InvalidFunction(func_idx))?;
+
+                        // Calculate base pointer for new frame (args are already on stack)
+                        let new_bp = self.stack.len().saturating_sub(arg_count);
+
+                        // Create new call frame
+                        let frame = CallFrame::new(self.pc, self.bp, self.pc + 1);
+                        self.call_stack.push(frame);
+
+                        // Set new base pointer and jump to function
+                        self.bp = new_bp;
+                        self.pc = func_addr;
                     }
                 }
                 _ => {
                     // Other opcodes not yet implemented
-                    return Err(VmError::NotImplemented);
+                    return Err(VmError::NotImplemented(format!("{:?}", opcode)));
                 }
             }
         }
@@ -298,9 +610,26 @@ impl VM {
         self.pc += 1;
     }
 
+    /// Resolve a value for arithmetic operations.
+    /// SeriesRef is resolved to the current bar's value.
+    fn resolve_value(&self, value: &Value) -> Value {
+        match value {
+            Value::SeriesRef(name) => {
+                let call_site = ExecutionContext::global_call_site();
+                self.context
+                    .get_series_current(name, call_site)
+                    .cloned()
+                    .unwrap_or(Value::Na)
+            }
+            _ => value.clone(),
+        }
+    }
+
     fn op_add(&mut self) -> VmResult<()> {
         let b = self.stack.pop().unwrap_or(Value::Na);
         let a = self.stack.pop().unwrap_or(Value::Na);
+        let b = self.resolve_value(&b);
+        let a = self.resolve_value(&a);
         self.stack.push(na_ops::add(&a, &b));
         self.pc += 1;
         Ok(())
@@ -309,6 +638,8 @@ impl VM {
     fn op_sub(&mut self) -> VmResult<()> {
         let b = self.stack.pop().unwrap_or(Value::Na);
         let a = self.stack.pop().unwrap_or(Value::Na);
+        let b = self.resolve_value(&b);
+        let a = self.resolve_value(&a);
         self.stack.push(na_ops::sub(&a, &b));
         self.pc += 1;
         Ok(())
@@ -317,6 +648,8 @@ impl VM {
     fn op_mul(&mut self) -> VmResult<()> {
         let b = self.stack.pop().unwrap_or(Value::Na);
         let a = self.stack.pop().unwrap_or(Value::Na);
+        let b = self.resolve_value(&b);
+        let a = self.resolve_value(&a);
         self.stack.push(na_ops::mul(&a, &b));
         self.pc += 1;
         Ok(())
@@ -325,6 +658,8 @@ impl VM {
     fn op_div(&mut self) -> VmResult<()> {
         let b = self.stack.pop().unwrap_or(Value::Na);
         let a = self.stack.pop().unwrap_or(Value::Na);
+        let b = self.resolve_value(&b);
+        let a = self.resolve_value(&a);
         self.stack.push(na_ops::div(&a, &b));
         self.pc += 1;
         Ok(())
@@ -333,6 +668,8 @@ impl VM {
     fn op_mod(&mut self) -> VmResult<()> {
         let b = self.stack.pop().unwrap_or(Value::Na);
         let a = self.stack.pop().unwrap_or(Value::Na);
+        let b = self.resolve_value(&b);
+        let a = self.resolve_value(&a);
         // Use remainder for now (can be refined later)
         self.stack
             .push(if let (Some(a), Some(b)) = (a.as_float(), b.as_float()) {
@@ -442,6 +779,15 @@ impl VM {
     }
 }
 
+/// Check if a function is a series function that needs full series data
+fn is_series_function(name: &str) -> bool {
+    // Check for ta.* functions
+    if name.starts_with("ta.") {
+        return true;
+    }
+    false
+}
+
 impl Default for VM {
     fn default() -> Self {
         Self::new()
@@ -531,5 +877,371 @@ mod tests {
         let result = execute_chunk(chunk).unwrap();
 
         assert_eq!(result, Some(Value::Bool(false)));
+    }
+
+    #[test]
+    fn test_vm_series_operations() {
+        let mut compiler = Compiler::new();
+
+        // Register a series named "close"
+        let series_idx = compiler.register_series("close");
+        assert_eq!(series_idx, 0);
+
+        // Push a constant value and store it to the series
+        compiler.compile_const(Value::Float(100.0));
+        compiler.compile_series_push(series_idx);
+
+        // Push the current series value to stack
+        compiler.compile_push_series(series_idx);
+        compiler.compile_halt();
+
+        let chunk = compiler.finish();
+
+        // Execute the chunk
+        let mut vm = VM::new();
+        vm.load_chunk(chunk);
+
+        // Set bar index so series operations work correctly
+        vm.context_mut().set_bar_index(0);
+
+        let result = vm.execute().unwrap();
+
+        // The value on top of stack should be 100.0
+        assert_eq!(result, Some(Value::Float(100.0)));
+
+        // Verify the series has the value
+        let call_site = ExecutionContext::global_call_site();
+        assert_eq!(
+            vm.context().get_series_current("close", call_site),
+            Some(&Value::Float(100.0))
+        );
+    }
+
+    #[test]
+    fn test_vm_series_historical_access() {
+        // Test that we can access historical series values
+        let mut vm = VM::new();
+        let call_site = ExecutionContext::global_call_site();
+
+        // Simulate bar-by-bar execution
+        for i in 0..5 {
+            vm.context_mut().set_bar_index(i);
+            vm.context_mut()
+                .push_to_series("close", call_site, Value::Float(100.0 + i as f64));
+        }
+
+        // Verify current value
+        assert_eq!(
+            vm.context().get_series_current("close", call_site),
+            Some(&Value::Float(104.0))
+        );
+
+        // Verify historical values
+        assert_eq!(
+            vm.context().get_series_at("close", call_site, 0),
+            Some(&Value::Float(104.0))
+        );
+        assert_eq!(
+            vm.context().get_series_at("close", call_site, 1),
+            Some(&Value::Float(103.0))
+        );
+        assert_eq!(
+            vm.context().get_series_at("close", call_site, 4),
+            Some(&Value::Float(100.0))
+        );
+    }
+
+    #[test]
+    fn test_vm_series_na_for_missing_history() {
+        // Test that accessing out-of-bounds history returns NA
+        let mut vm = VM::new();
+        let call_site = ExecutionContext::global_call_site();
+
+        // Only push 2 values
+        vm.context_mut().set_bar_index(0);
+        vm.context_mut()
+            .push_to_series("close", call_site, Value::Float(100.0));
+        vm.context_mut().set_bar_index(1);
+        vm.context_mut()
+            .push_to_series("close", call_site, Value::Float(101.0));
+
+        // Accessing offset 5 when only 2 values exist should return None
+        assert_eq!(vm.context().get_series_at("close", call_site, 5), None);
+    }
+
+    #[test]
+    fn test_vm_call_return() {
+        // Test a simple function: fn add(a, b) => a + b
+        let mut compiler = Compiler::new();
+
+        // Main code: push 10, push 32, call add(10, 32), halt
+        compiler.compile_const(Value::Int(10));
+        compiler.compile_const(Value::Int(32));
+        compiler.compile_call(0, 2); // Call function 0 with 2 args
+        compiler.compile_halt();
+
+        // Register function after main code
+        let func_idx = compiler.register_function();
+        assert_eq!(func_idx, 0);
+
+        // Function body: load slot 0 (a), load slot 1 (b), add, return
+        compiler.compile_load_slot(0); // Load first argument
+        compiler.compile_load_slot(1); // Load second argument
+        compiler.compile_binary(BinaryOp::Add);
+        compiler.compile_op(crate::opcode::OpCode::Return);
+
+        let chunk = compiler.finish();
+        let result = execute_chunk(chunk).unwrap();
+
+        // Result should be 42 (10 + 32)
+        assert_eq!(result, Some(Value::Int(42)));
+    }
+
+    #[test]
+    fn test_vm_call_with_nested_functions() {
+        // Test calling a function that calls another function
+        let mut compiler = Compiler::new();
+
+        // Main: quadruple(5) => 20
+        compiler.compile_const(Value::Int(5));
+        compiler.compile_call(1, 1); // Call function 1 (quadruple) with 1 arg
+        compiler.compile_halt();
+
+        // Function 0: double(x) => x + x
+        let double_idx = compiler.register_function();
+        assert_eq!(double_idx, 0);
+        compiler.compile_load_slot(0);
+        compiler.compile_load_slot(0);
+        compiler.compile_binary(BinaryOp::Add);
+        compiler.compile_op(crate::opcode::OpCode::Return);
+
+        // Function 1: quadruple(x) => double(double(x))
+        let quad_idx = compiler.register_function();
+        assert_eq!(quad_idx, 1);
+        compiler.compile_load_slot(0);
+        compiler.compile_call(double_idx, 1); // Call double with 1 arg
+        compiler.compile_call(double_idx, 1); // Call double again
+        compiler.compile_op(crate::opcode::OpCode::Return);
+
+        let chunk = compiler.finish();
+        let result = execute_chunk(chunk).unwrap();
+
+        // 5 * 2 * 2 = 20
+        assert_eq!(result, Some(Value::Int(20)));
+    }
+
+    #[test]
+    fn test_vm_if_statement() {
+        // Test: if true then 1 else 2 => 1
+        let mut compiler = Compiler::new();
+
+        compiler.compile_if(
+            |c| c.compile_const(Value::Bool(true)),
+            |c| c.compile_const(Value::Int(1)),
+            Some(|c: &mut Compiler| c.compile_const(Value::Int(2))),
+        );
+        compiler.compile_halt();
+
+        let chunk = compiler.finish();
+        let result = execute_chunk(chunk).unwrap();
+        assert_eq!(result, Some(Value::Int(1)));
+    }
+
+    #[test]
+    fn test_vm_if_else_statement() {
+        // Test: if false then 1 else 2 => 2
+        let mut compiler = Compiler::new();
+
+        compiler.compile_if(
+            |c| c.compile_const(Value::Bool(false)),
+            |c| c.compile_const(Value::Int(1)),
+            Some(|c: &mut Compiler| c.compile_const(Value::Int(2))),
+        );
+        compiler.compile_halt();
+
+        let chunk = compiler.finish();
+        let result = execute_chunk(chunk).unwrap();
+        assert_eq!(result, Some(Value::Int(2)));
+    }
+
+    #[test]
+    fn test_vm_while_loop_simple() {
+        // Simple test: i = 0; while i < 3 { i = i + 1 }; return i
+        let mut compiler = Compiler::new();
+
+        // i (slot 0) = 0
+        compiler.compile_const(Value::Int(0));
+        compiler.compile_store_slot(0);
+
+        // While loop: while i < 3
+        compiler.compile_while(
+            |c| {
+                c.compile_load_slot(0);
+                c.compile_const(Value::Int(3));
+                c.compile_binary(BinaryOp::Lt);
+            },
+            |c| {
+                // i = i + 1
+                c.compile_load_slot(0);
+                c.compile_const(Value::Int(1));
+                c.compile_binary(BinaryOp::Add);
+                c.compile_store_slot(0);
+            },
+        );
+
+        // Return i
+        compiler.compile_load_slot(0);
+        compiler.compile_op(crate::opcode::OpCode::Return);
+
+        let chunk = compiler.finish();
+        let result = execute_chunk(chunk).unwrap();
+        assert_eq!(result, Some(Value::Int(3)));
+    }
+
+    #[test]
+    fn test_vm_while_loop() {
+        // Test: sum = 0; i = 1; while i <= 5 { sum = sum + i; i = i + 1 } => sum = 15
+        let mut compiler = Compiler::new();
+
+        // Initialize sum (slot 0) = 0, i (slot 1) = 1
+        compiler.compile_const(Value::Int(0));
+        compiler.compile_store_slot(0);
+
+        compiler.compile_const(Value::Int(1));
+        compiler.compile_store_slot(1);
+
+        // While loop: while i <= 5
+        compiler.compile_while(
+            |c| {
+                c.compile_load_slot(1); // Load i
+                c.compile_const(Value::Int(5));
+                c.compile_binary(BinaryOp::Le);
+            },
+            |c| {
+                // sum = sum + i
+                c.compile_load_slot(0);
+                c.compile_load_slot(1);
+                c.compile_binary(BinaryOp::Add);
+                c.compile_store_slot(0);
+
+                // i = i + 1
+                c.compile_load_slot(1);
+                c.compile_const(Value::Int(1));
+                c.compile_binary(BinaryOp::Add);
+                c.compile_store_slot(1);
+            },
+        );
+
+        // Return sum
+        compiler.compile_load_slot(0);
+        compiler.compile_op(crate::opcode::OpCode::Return);
+
+        let chunk = compiler.finish();
+        let result = execute_chunk(chunk).unwrap();
+        assert_eq!(result, Some(Value::Int(15))); // 1+2+3+4+5 = 15
+    }
+
+    #[test]
+    fn test_vm_for_loop() {
+        // Test: sum = 0; for i = 1 to 5 { sum = sum + i } => sum = 15
+        let mut compiler = Compiler::new();
+
+        // Initialize sum (slot 0) = 0
+        compiler.compile_const(Value::Int(0));
+        compiler.compile_store_slot(0);
+
+        // For loop: for i = 1 to 5 (i uses slot 1)
+        compiler.compile_for(
+            1,                                  // loop var slot
+            |c| c.compile_const(Value::Int(1)), // start
+            |c| c.compile_const(Value::Int(5)), // end
+            None::<fn(&mut Compiler)>,          // step (default 1)
+            |c| {
+                // sum = sum + i
+                c.compile_load_slot(0);
+                c.compile_load_slot(1);
+                c.compile_binary(BinaryOp::Add);
+                c.compile_store_slot(0);
+            },
+        );
+
+        // Return sum
+        compiler.compile_load_slot(0);
+        compiler.compile_op(crate::opcode::OpCode::Return);
+
+        let chunk = compiler.finish();
+        let result = execute_chunk(chunk).unwrap();
+        assert_eq!(result, Some(Value::Int(15)));
+    }
+
+    #[test]
+    fn test_vm_nested_if() {
+        // Test nested if: if true then (if false then 1 else 2) else 3 => 2
+        let mut compiler = Compiler::new();
+
+        compiler.compile_if(
+            |c| c.compile_const(Value::Bool(true)),
+            |c| {
+                c.compile_if(
+                    |c| c.compile_const(Value::Bool(false)),
+                    |c| c.compile_const(Value::Int(1)),
+                    Some(|c: &mut Compiler| c.compile_const(Value::Int(2))),
+                );
+            },
+            Some(|c: &mut Compiler| c.compile_const(Value::Int(3))),
+        );
+        compiler.compile_halt();
+
+        let chunk = compiler.finish();
+        let result = execute_chunk(chunk).unwrap();
+        assert_eq!(result, Some(Value::Int(2)));
+    }
+
+    #[test]
+    fn test_vm_variable_scope() {
+        // Test: x = 5; y = x + 3; return y
+        let mut compiler = Compiler::new();
+
+        // x = 5
+        compiler.compile_const(Value::Int(5));
+        compiler.compile_var_decl("x");
+
+        // y = x + 3
+        compiler.compile_load_var("x");
+        compiler.compile_const(Value::Int(3));
+        compiler.compile_binary(BinaryOp::Add);
+        compiler.compile_var_decl("y");
+
+        // return y
+        compiler.compile_load_var("y");
+        compiler.compile_op(crate::opcode::OpCode::Return);
+
+        let chunk = compiler.finish();
+        let result = execute_chunk(chunk).unwrap();
+        assert_eq!(result, Some(Value::Int(8)));
+    }
+
+    #[test]
+    fn test_vm_variable_reassignment() {
+        // Test: x = 5; x = x + 3; return x
+        let mut compiler = Compiler::new();
+
+        // x = 5
+        compiler.compile_const(Value::Int(5));
+        compiler.compile_var_decl("x");
+
+        // x = x + 3
+        compiler.compile_load_var("x");
+        compiler.compile_const(Value::Int(3));
+        compiler.compile_binary(BinaryOp::Add);
+        compiler.compile_store_var("x");
+
+        // return x
+        compiler.compile_load_var("x");
+        compiler.compile_op(crate::opcode::OpCode::Return);
+
+        let chunk = compiler.finish();
+        let result = execute_chunk(chunk).unwrap();
+        assert_eq!(result, Some(Value::Int(8)));
     }
 }

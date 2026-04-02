@@ -1,1 +1,14 @@
-继续清理 Phase 3 剩余验证缺口，下一步优先补齐 lowest / highestbars / lowestbars 与 math.* 的黄金样例
+P3-T5: 修复复合 series 表达式支持 (hlc3, hl2, ohlc4)
+
+目标：
+- 修复 pine-eval 中复合 series 表达式 (hlc3, hl2, ohlc4) 的求值
+- 使依赖这些表达式的黄金测试通过 (atr_14, bbands, cci_20, macd)
+
+背景：
+- 当前 11 个 VM 黄金测试通过，5 个失败
+- 失败测试都依赖 hlc3, hl2 或 ohlc4 复合 series
+- 需要实现这些内置 series 的计算逻辑
+
+验收标准：
+- atr_14, bbands, cci_20, macd 测试通过
+- 不破坏已通过的 11 个测试

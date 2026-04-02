@@ -30,11 +30,11 @@
 
 | # | 主题 | 期望 | 当前 pine-rs 大致情况 |
 |---|------|------|------------------------|
-| 1 | **用户函数 UDF** | 定义、调用、（按需）闭包与调用点隔离 | **`eval_fn_def` 占位**；**`eval_fn_call` 偏内置路径**；**`call_fn` / 闭包体执行未接通** |
+| 1 | **用户函数 UDF** | 定义、调用、（按需）闭包与调用点隔离 | **`fn`/`export` UDF + `invoke_user_function` 已走 AST**；**调用点隔离**依赖源码 span（`lex_with_indentation` 全局 offset + `FnCall` span 含实参）；**闭包/`=>` 族语法与 TV 全语义仍有差距** |
 | 2 | `method` / UDT | 与 TV 对象与方法解析一致 | **`TypeDef` / `MethodDef` 在执行侧多跳过或依赖未接好的语义阶段** |
 | 3 | **`pine-sema`** | 类型、作用域、`var`/`varip`、导出规则等与执行一致 | Crate 存在；**eval 主线未由 analyze 驱动** |
 | 4 | `switch` 语义 | 与官方 **表达式 `switch`**、**`=>` 默认支**一致 | 即使 Parser 修改，**eval 仍以旧式 `case` 语义为主** |
-| 5 | 逐 bar runner | 稳定错误与可复现输出 | **返回值等 TODO**、错误 **`eprintln` + `break`** 等；**不利于严格验收** |
+| 5 | 逐 bar runner | 稳定错误与可复现输出 | Runner **按 bar 设置 `bar_index`**；系列 **`push_to_series` 按 bar 合并**，利于 `var` 历史下标；**错误与输出形态仍在收紧** |
 | 6 | **`pine-vm`** | 可选高性能后端 | **公开入口占位**；**未接 CLI / 黄金测试主线** |
 | 7 | `request.*` / 多周期 | 文档与真实脚本大量依赖 | [`AGENTS.md`](../AGENTS.md)：`request.security` **Phase 5 前可 `na` 占位**；**与 TV 不等价** |
 
