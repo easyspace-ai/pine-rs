@@ -85,6 +85,7 @@ fn int_lit(n: i64) -> Expr {
     Expr::Literal(Lit::Int(n), Span::default())
 }
 
+#[allow(dead_code)]
 fn float_lit(f: f64) -> Expr {
     use pine_lexer::Span;
     Expr::Literal(Lit::Float(f), Span::default())

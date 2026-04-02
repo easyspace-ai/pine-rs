@@ -23,6 +23,7 @@ fn workspace_root() -> std::path::PathBuf {
 }
 
 /// All golden test cases
+#[allow(dead_code)]
 const GOLDEN_TESTS: &[GoldenTestCase] = &[
     GoldenTestCase {
         name: "sma_14",
@@ -107,7 +108,9 @@ const GOLDEN_TESTS: &[GoldenTestCase] = &[
 ];
 
 /// Load input series data and expected outputs from golden CSV
-fn load_golden_csv(path: &Path) -> Result<(SeriesData, HashMap<String, Vec<Option<f64>>>), Box<dyn std::error::Error>> {
+fn load_golden_csv(
+    path: &Path,
+) -> Result<(SeriesData, HashMap<String, Vec<Option<f64>>>), Box<dyn std::error::Error>> {
     let content = fs::read_to_string(path)?;
     let mut lines = content.lines();
 
@@ -180,9 +183,10 @@ fn load_golden_csv(path: &Path) -> Result<(SeriesData, HashMap<String, Vec<Optio
         // Parse expected outputs
         for (col_idx, col_name) in columns.iter().enumerate() {
             if col_idx >= output_start {
-                let value = fields
-                    .get(col_idx)
-                    .and_then(|f| if f.is_empty() { None } else { f.parse().ok() });
+                let value =
+                    fields
+                        .get(col_idx)
+                        .and_then(|f| if f.is_empty() { None } else { f.parse().ok() });
                 expected
                     .entry(col_name.to_string())
                     .or_default()
@@ -191,7 +195,10 @@ fn load_golden_csv(path: &Path) -> Result<(SeriesData, HashMap<String, Vec<Optio
         }
     }
 
-    Ok((SeriesData::new(open, high, low, close, volume, time), expected))
+    Ok((
+        SeriesData::new(open, high, low, close, volume, time),
+        expected,
+    ))
 }
 
 /// Parse a Pine Script file
@@ -201,8 +208,7 @@ fn parse_script(path: &Path) -> Result<pine_parser::ast::Script, Box<dyn std::er
     let tokens = pine_lexer::Lexer::lex_with_indentation(&content)
         .map_err(|e| format!("Lex error: {:?}", e))?;
 
-    let ast = pine_parser::parser::parse(tokens)
-        .map_err(|e| format!("Parse error: {:?}", e))?;
+    let ast = pine_parser::parser::parse(tokens).map_err(|e| format!("Parse error: {:?}", e))?;
 
     Ok(ast)
 }
@@ -219,7 +225,9 @@ fn compare_outputs(
 
     for (plot_name, expected_values) in expected {
         if let Some(actual_values) = plot_outputs.get_plot(plot_name) {
-            for (i, (expected, actual)) in expected_values.iter().zip(actual_values.iter()).enumerate() {
+            for (i, (expected, actual)) in
+                expected_values.iter().zip(actual_values.iter()).enumerate()
+            {
                 match (expected, actual) {
                     (Some(exp), Some(act)) => {
                         let error = (exp - act).abs();

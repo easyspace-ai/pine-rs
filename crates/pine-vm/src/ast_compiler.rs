@@ -6,6 +6,7 @@ use pine_parser::ast::{self, BinOp, Expr, Lit, Stmt, UnaryOp};
 use pine_runtime::value::Value;
 
 use crate::compiler::{BinaryOp as VmBinOp, Compiler, UnaryOp as VmUnaryOp};
+use crate::debug::vm_debug;
 use crate::opcode::OpCode;
 
 /// Compile a Pine Script AST into VM bytecode
@@ -18,6 +19,7 @@ pub fn compile_script(script: &ast::Script) -> Result<Compiler, CompileError> {
     compiler.register_series("high");
     compiler.register_series("low");
     compiler.register_series("volume");
+    compiler.register_series("time");
 
     for stmt in &script.stmts {
         compile_stmt(&mut compiler, stmt)?;
@@ -31,9 +33,18 @@ pub fn compile_script(script: &ast::Script) -> Result<Compiler, CompileError> {
 fn compile_stmt(compiler: &mut Compiler, stmt: &Stmt) -> Result<(), CompileError> {
     match stmt {
         Stmt::VarDecl { name, init, .. } => {
-            let is_series_expr = init.as_ref().map(contains_series_reference).unwrap_or(false);
+            let is_series_expr = init
+                .as_ref()
+                .map(|expr| contains_series_reference(compiler, expr))
+                .unwrap_or(false);
+            if is_series_expr {
+                compiler.mark_series_var(&name.name);
+            }
             if let Some(init_expr) = init {
                 compile_expr(compiler, init_expr)?;
+                if is_series_expr {
+                    compiler.compile_dup();
+                }
             } else {
                 compiler.compile_const(Value::Na);
             }
@@ -41,21 +52,46 @@ fn compile_stmt(compiler: &mut Compiler, stmt: &Stmt) -> Result<(), CompileError
             // If the variable is assigned a series expression, update it in context
             // so that ta.* functions can access its history
             if is_series_expr {
-                compiler.compile_dup();
                 compiler.compile_update_user_series(&name.name);
             }
             Ok(())
         }
         Stmt::Assign { target, value, .. } => {
-            let is_series_expr = contains_series_reference(value);
+            let is_series_expr = contains_series_reference(compiler, value);
             compile_expr(compiler, value)?;
             match target {
                 ast::AssignTarget::Var(ident) => {
+                    if is_series_expr {
+                        compiler.mark_series_var(&ident.name);
+                        compiler.compile_dup();
+                    }
                     if !compiler.compile_store_var(&ident.name) {
                         return Err(CompileError::UndefinedVariable(ident.name.clone()));
                     }
                     // If the variable is assigned a series expression, update it in context
                     if is_series_expr {
+                        compiler.compile_update_user_series(&ident.name);
+                    }
+                    Ok(())
+                }
+                ast::AssignTarget::Tuple(idents) => {
+                    let tuple_slot = compiler
+                        .declare_var(format!("__tuple_tmp_{}", compiler.chunk().current_pos()));
+                    compiler.compile_store_slot(tuple_slot);
+
+                    for (idx, ident) in idents.iter().enumerate() {
+                        compiler.compile_load_slot(tuple_slot);
+                        compiler.compile_const(Value::Int(idx as i64));
+                        let func_idx = compiler.register_external_function("__tuple_get");
+                        compiler.compile_call(func_idx, 2);
+
+                        if compiler.lookup_var(&ident.name).is_some() {
+                            compiler.compile_store_var(&ident.name);
+                        } else {
+                            compiler.compile_var_decl(&ident.name);
+                        }
+
+                        compiler.mark_series_var(&ident.name);
                         compiler.compile_load_var(&ident.name);
                         compiler.compile_update_user_series(&ident.name);
                     }
@@ -124,13 +160,13 @@ fn compile_if_stmt(
     compiler.compile_if(
         |c| {
             if let Err(e) = compile_expr(c, cond) {
-                eprintln!("DEBUG compile_if_stmt: error compiling cond: {:?}", e);
+                vm_debug!("DEBUG compile_if_stmt: error compiling cond: {:?}", e);
             }
         },
         |c| {
             for stmt in &then_block.stmts {
                 if let Err(e) = compile_stmt(c, stmt) {
-                    eprintln!("DEBUG compile_if_stmt: error compiling then stmt: {:?}", e);
+                    vm_debug!("DEBUG compile_if_stmt: error compiling then stmt: {:?}", e);
                 }
             }
         },
@@ -178,7 +214,7 @@ fn compile_for_loop(
         |c| {
             for stmt in &body.stmts {
                 if let Err(e) = compile_stmt(c, stmt) {
-                    eprintln!("DEBUG compile_for_loop: error compiling stmt: {:?}", e);
+                    vm_debug!("DEBUG compile_for_loop: error compiling stmt: {:?}", e);
                 }
             }
         },
@@ -278,28 +314,18 @@ fn compile_expr(compiler: &mut Compiler, expr: &Expr) -> Result<(), CompileError
         Expr::Index { base, offset, .. } => {
             // Series index access: close[i] or close[1]
             // base should be an identifier (series name)
-            eprintln!("DEBUG Index: compiling index expression");
+            vm_debug!("DEBUG Index: compiling index expression");
             if let Expr::Ident(ident) = base.as_ref() {
-                eprintln!("DEBUG Index: base ident = {}", ident.name);
-                if is_builtin_series(&ident.name) {
-                    eprintln!("DEBUG Index: {} is builtin series", ident.name);
-                    // For built-in series (close, open, high, low, volume),
-                    // we need to use the runtime series access
-                    // Push series name as string, then offset, then call runtime helper
-                    compiler.compile_const(Value::String(ident.name.clone().into()));
-                    compile_expr(compiler, offset)?;
-                    // Call external function to access series at dynamic offset
-                    let func_idx = compiler.register_external_function("__series_at");
-                    compiler.compile_call(func_idx, 2);
-                    Ok(())
-                } else {
-                    // For user-defined series, use compile-time series index
+                vm_debug!("DEBUG Index: base ident = {}", ident.name);
+                if is_builtin_series(&ident.name) || compiler.is_series_var(&ident.name) {
                     let series_idx = compiler
                         .lookup_series(&ident.name)
                         .ok_or_else(|| CompileError::UndefinedVariable(ident.name.clone()))?;
                     compile_expr(compiler, offset)?;
                     compiler.compile_push_series_dynamic(series_idx);
                     Ok(())
+                } else {
+                    Err(CompileError::UndefinedVariable(ident.name.clone()))
                 }
             } else {
                 Err(CompileError::Unsupported("Non-identifier series base"))
@@ -337,14 +363,30 @@ fn compile_expr(compiler: &mut Compiler, expr: &Expr) -> Result<(), CompileError
                         match base_ident.name.as_str() {
                             "color" => {
                                 let color_value = match field.name.as_str() {
-                                    "blue" => Some(Value::Color(pine_runtime::value::Color::new(0, 120, 255))),
-                                    "red" => Some(Value::Color(pine_runtime::value::Color::new(255, 0, 0))),
-                                    "green" => Some(Value::Color(pine_runtime::value::Color::new(0, 128, 0))),
-                                    "yellow" => Some(Value::Color(pine_runtime::value::Color::new(255, 255, 0))),
-                                    "white" => Some(Value::Color(pine_runtime::value::Color::new(255, 255, 255))),
-                                    "black" => Some(Value::Color(pine_runtime::value::Color::new(0, 0, 0))),
-                                    "gray" => Some(Value::Color(pine_runtime::value::Color::new(128, 128, 128))),
-                                    "orange" => Some(Value::Color(pine_runtime::value::Color::new(255, 165, 0))),
+                                    "blue" => Some(Value::Color(pine_runtime::value::Color::new(
+                                        0, 120, 255,
+                                    ))),
+                                    "red" => Some(Value::Color(pine_runtime::value::Color::new(
+                                        255, 0, 0,
+                                    ))),
+                                    "green" => Some(Value::Color(pine_runtime::value::Color::new(
+                                        0, 128, 0,
+                                    ))),
+                                    "yellow" => Some(Value::Color(
+                                        pine_runtime::value::Color::new(255, 255, 0),
+                                    )),
+                                    "white" => Some(Value::Color(pine_runtime::value::Color::new(
+                                        255, 255, 255,
+                                    ))),
+                                    "black" => {
+                                        Some(Value::Color(pine_runtime::value::Color::new(0, 0, 0)))
+                                    }
+                                    "gray" => Some(Value::Color(pine_runtime::value::Color::new(
+                                        128, 128, 128,
+                                    ))),
+                                    "orange" => Some(Value::Color(
+                                        pine_runtime::value::Color::new(255, 165, 0),
+                                    )),
                                     _ => None,
                                 };
                                 if let Some(v) = color_value {
@@ -367,7 +409,8 @@ fn compile_expr(compiler: &mut Compiler, expr: &Expr) -> Result<(), CompileError
                             "plot" => {
                                 // plot.style_line, etc - for now just push string
                                 if field.name.starts_with("style_") {
-                                    compiler.compile_const(Value::String(field.name.clone().into()));
+                                    compiler
+                                        .compile_const(Value::String(field.name.clone().into()));
                                     return Ok(());
                                 }
                             }
@@ -382,7 +425,8 @@ fn compile_expr(compiler: &mut Compiler, expr: &Expr) -> Result<(), CompileError
                         compile_expr(compiler, base)?;
                         let field_name = &field.name;
                         // For now, treat as external function call
-                        let func_idx = compiler.register_external_function(&format!("__field_{}", field_name));
+                        let func_idx =
+                            compiler.register_external_function(format!("__field_{}", field_name));
                         compiler.compile_call(func_idx, 1);
                         Ok(())
                     }
@@ -391,15 +435,20 @@ fn compile_expr(compiler: &mut Compiler, expr: &Expr) -> Result<(), CompileError
                 Err(CompileError::Unsupported("Complex field access base"))
             }
         }
-        Expr::MethodCall { base, method, args, .. } => {
+        Expr::MethodCall {
+            base, method, args, ..
+        } => {
             // Method call: base.method(args)
             // For namespace.method(args), compile as external function "namespace.method"
             if let Expr::Ident(base_ident) = base.as_ref() {
-                if matches!(base_ident.name.as_str(), "ta" | "math" | "color" | "strategy" | "plot" | "input") {
+                if matches!(
+                    base_ident.name.as_str(),
+                    "ta" | "math" | "color" | "strategy" | "plot" | "input"
+                ) {
                     let full_name = format!("{}.{}", base_ident.name, method.name);
 
                     // Handle special TA functions that need implicit high/low/close
-                    let needs_ohlc = matches!(method.name.as_str(), "tr" | "atr" | "bb");
+                    let needs_ohlc = matches!(method.name.as_str(), "tr" | "atr");
 
                     // Inject implicit arguments for OHLC-dependent functions FIRST
                     // (they become the first 3 arguments)
@@ -410,32 +459,18 @@ fn compile_expr(compiler: &mut Compiler, expr: &Expr) -> Result<(), CompileError
                         compiler.compile_const(Value::SeriesRef("close".to_string()));
                     }
 
-                    // Special handling for ta.cci: first argument should be series data
-                    if method.name == "cci" && !args.is_empty() {
-                        // First argument to ta.cci should be loaded as series data
-                        if let Expr::Ident(var_ident) = &args[0].value {
-                            // Variable reference - load series data from context
-                            compiler.compile_const(Value::String(var_ident.name.clone().into()));
-                            let func_idx = compiler.register_external_function("__load_series_data");
-                            compiler.compile_call(func_idx, 1);
+                    for (idx, arg) in args.iter().enumerate() {
+                        let arg_index = idx + if needs_ohlc { 3 } else { 0 };
+                        if ta_method_needs_series_arg(&full_name, arg_index) {
+                            compile_series_function_arg(compiler, &arg.value)?;
                         } else {
-                            // Complex expression - compile normally (will get current value)
-                            compile_expr(compiler, &args[0].value)?;
-                        }
-                        // Compile remaining arguments
-                        for arg in args.iter().skip(1) {
-                            compile_expr(compiler, &arg.value)?;
-                        }
-                    } else {
-                        // Compile user-provided arguments normally
-                        for arg in args {
                             compile_expr(compiler, &arg.value)?;
                         }
                     }
 
                     // Call as external function
                     let func_idx = compiler.register_external_function(&full_name);
-                    let total_args = if method.name == "cci" && !args.is_empty() { args.len() } else { args.len() + if needs_ohlc { 3 } else { 0 } };
+                    let total_args = args.len() + if needs_ohlc { 3 } else { 0 };
                     compiler.compile_call(func_idx, total_args);
                     return Ok(());
                 }
@@ -462,14 +497,25 @@ fn compile_fn_call(
 ) -> Result<(), CompileError> {
     // For now, only support direct function name calls (not higher-order functions)
     if let Expr::Ident(ident) = func {
-        eprintln!("DEBUG compile_fn_call: func_name={}, args_count={}", ident.name, args.len());
+        let func_name = &ident.name;
+        vm_debug!(
+            "DEBUG compile_fn_call: func_name={}, args_count={}",
+            func_name,
+            args.len()
+        );
         // First, compile all arguments onto the stack
         for (i, arg) in args.iter().enumerate() {
-            eprintln!("DEBUG compile_fn_call: compiling arg {} for {}", i, ident.name);
-            compile_expr(compiler, &arg.value)?;
+            vm_debug!(
+                "DEBUG compile_fn_call: compiling arg {} for {}",
+                i,
+                func_name
+            );
+            if ta_method_needs_series_arg(func_name, i) {
+                compile_series_function_arg(compiler, &arg.value)?;
+            } else {
+                compile_expr(compiler, &arg.value)?;
+            }
         }
-
-        let func_name = &ident.name;
 
         // Check if it's a user-defined function
         if let Some(func_idx) = compiler.lookup_function(func_name) {
@@ -588,39 +634,92 @@ impl std::error::Error for CompileError {}
 
 /// Check if a name is a built-in series
 fn is_builtin_series(name: &str) -> bool {
-    matches!(name, "close" | "open" | "high" | "low" | "volume" | "time" | "hl2" | "hlc3" | "ohlc4")
+    matches!(
+        name,
+        "close" | "open" | "high" | "low" | "volume" | "time" | "hl2" | "hlc3" | "ohlc4"
+    )
+}
+
+fn compile_series_function_arg(compiler: &mut Compiler, expr: &Expr) -> Result<(), CompileError> {
+    if let Expr::Ident(ident) = expr {
+        if is_builtin_series(&ident.name) || compiler.is_series_var(&ident.name) {
+            compiler.compile_const(Value::SeriesRef(ident.name.clone()));
+            return Ok(());
+        }
+    }
+
+    if contains_series_reference(compiler, expr) {
+        let series_name = compiler.next_synthetic_series_name();
+        compile_expr(compiler, expr)?;
+        compiler.compile_dup();
+        compiler.compile_update_user_series(&series_name);
+        compiler.compile_pop();
+        compiler.compile_const(Value::SeriesRef(series_name));
+        return Ok(());
+    }
+
+    compile_expr(compiler, expr)
+}
+
+fn ta_method_needs_series_arg(func_name: &str, arg_index: usize) -> bool {
+    match func_name {
+        "ta.sma" | "ta.ema" | "ta.rsi" | "ta.mom" | "ta.cci" | "ta.bb" | "ta.highest"
+        | "ta.lowest" | "ta.highestbars" | "ta.lowestbars" => arg_index == 0,
+        "ta.macd" => arg_index == 0,
+        "ta.stoch" => arg_index <= 2,
+        "ta.crossover" | "ta.crossunder" => arg_index <= 1,
+        "ta.barssince" => arg_index == 0,
+        _ => false,
+    }
 }
 
 /// Check if an expression contains series references
-fn contains_series_reference(expr: &Expr) -> bool {
+fn contains_series_reference(compiler: &Compiler, expr: &Expr) -> bool {
     match expr {
-        Expr::Ident(ident) => is_builtin_series(&ident.name),
+        Expr::Ident(ident) => is_builtin_series(&ident.name) || compiler.is_series_var(&ident.name),
         Expr::BinOp { lhs, rhs, .. } => {
-            contains_series_reference(lhs) || contains_series_reference(rhs)
+            contains_series_reference(compiler, lhs) || contains_series_reference(compiler, rhs)
         }
-        Expr::UnaryOp { operand, .. } => contains_series_reference(operand),
+        Expr::UnaryOp { operand, .. } => contains_series_reference(compiler, operand),
         Expr::Index { base, .. } => {
             if let Expr::Ident(ident) = base.as_ref() {
-                is_builtin_series(&ident.name)
+                is_builtin_series(&ident.name) || compiler.is_series_var(&ident.name)
             } else {
-                contains_series_reference(base)
+                contains_series_reference(compiler, base)
             }
         }
-        Expr::FieldAccess { base, .. } => contains_series_reference(base),
-        Expr::MethodCall { base, args, .. } => {
-            contains_series_reference(base)
-                || args.iter().any(|arg| contains_series_reference(&arg.value))
+        Expr::FieldAccess { base, .. } => contains_series_reference(compiler, base),
+        Expr::MethodCall {
+            base, method, args, ..
+        } => {
+            let returns_series = matches!(base.as_ref(), Expr::Ident(base_ident) if base_ident.name == "ta")
+                || matches!(base.as_ref(), Expr::Ident(base_ident) if base_ident.name == "math" && matches!(method.name.as_str(), "max" | "min"));
+            returns_series
+                || contains_series_reference(compiler, base)
+                || args
+                    .iter()
+                    .any(|arg| contains_series_reference(compiler, &arg.value))
         }
-        Expr::FnCall { args, .. } => {
-            args.iter().any(|arg| contains_series_reference(&arg.value))
+        Expr::FnCall { func, args, .. } => {
+            let returns_series =
+                matches!(func.as_ref(), Expr::Ident(ident) if ident.name.starts_with("ta."));
+            returns_series
+                || args
+                    .iter()
+                    .any(|arg| contains_series_reference(compiler, &arg.value))
         }
-        Expr::Ternary { cond, then_branch, else_branch, .. } => {
-            contains_series_reference(cond)
-                || contains_series_reference(then_branch)
-                || contains_series_reference(else_branch)
+        Expr::Ternary {
+            cond,
+            then_branch,
+            else_branch,
+            ..
+        } => {
+            contains_series_reference(compiler, cond)
+                || contains_series_reference(compiler, then_branch)
+                || contains_series_reference(compiler, else_branch)
         }
         Expr::NaCoalesce { lhs, rhs, .. } => {
-            contains_series_reference(lhs) || contains_series_reference(rhs)
+            contains_series_reference(compiler, lhs) || contains_series_reference(compiler, rhs)
         }
         _ => false,
     }

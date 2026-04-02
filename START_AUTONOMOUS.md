@@ -1,6 +1,6 @@
 # pine-rs 自主开发启动提示
 
-使用本仓库时，统一先读取 [AGENTS.md](/Users/leven/space/llm/pine/pine-rs/AGENTS.md)。
+使用本仓库时，统一先读取 [AGENTS.md](./AGENTS.md)。
 
 建议启动顺序：
 

@@ -49,5 +49,13 @@
   "P4-T1: VM parity 基础 - 外部函数调用支持（通过 FunctionRegistry），AST 编译器支持函数调用编译",
   "P4-T2: VM 完整脚本执行 - executor.rs 模块（SeriesData, PlotOutputs, execute_script_with_vm），bar-by-bar 执行支持",
   "P4-T3: VM 黄金测试链路 - vm_golden_test.rs, vm_run_golden.sh，集成到 dev_verify.sh --full",
-  "Phase 3 基线达成：C1-C6 checklist 全部满足，dev_verify.sh --full 通过，正式进入 Phase 4"
+  "P4-T4（验收 2026-04-02）：pine-vm 复合 series / 变量状态与临时求值隔离；clippy 修复（ast_compiler needless borrow、vm offset map）；dev_verify.sh --full 全绿（run_golden 16/16、vm_run_golden、phase_acceptance）",
+  "P4-T5（验收 2026-04-02）：pine-vm DEBUG 输出改为默认静默并集中由 PINE_VM_DEBUG 控制；pine-tv DataLoader 改为延迟初始化 Binance client，修复 sample data 测试在本机环境下失败；dev_verify.sh --full 全绿",
+  "P4-T6（验收 2026-04-02）：新增 VM vs pine-eval 脚本级 parity 测试，覆盖 sma_manual 与 cross_events 两支真实脚本，逐 bar plot 输出一致；dev_verify.sh --full 全绿",
+  "Phase 3 基线达成：C1-C6 checklist 全部满足，dev_verify.sh --full 通过，正式进入 Phase 4",
+  "P4-T7（验收 2026-04-02）：扩展 VM parity 覆盖至 tuple 返回值场景，新增 macd_12_26_9 与 bbands_20_2 两支脚本的 parity 测试（共 4 支），验证 VM 对多输出 ta.* 函数的正确处理；dev_verify.sh --full 全绿",
+  "P4-T8（验收 2026-04-02）：扩展 VM parity 覆盖至更多单输出 ta.* 函数，新增 rsi_14、stoch_14_3_3、atr_14 三支脚本的 parity 测试（共 7 支），验证 VM 对复杂指标计算的正确性；dev_verify.sh --full 全绿",
+  "P4-T9（验收 2026-04-02）：完成 VM parity 全覆盖，新增剩余 9 支 ta.* 脚本的 parity 测试（sma_14、ema_12、highest_10、lowest_10、highestbars_10、lowestbars_10、mom_10、cci_20、tr_basic），共 16 支脚本全部通过 VM vs pine-eval parity 验证；dev_verify.sh --full 全绿",
+  "P4-T10（验收 2026-04-02）：清理 pine-vm 测试代码质量，为 GOLDEN_TESTS 和 float_lit 添加 #[allow(dead_code)] 属性，消除编译警告；dev_verify.sh --full 全绿且无警告",
+  "P4-T11（验收 2026-04-02）：仓库卫生工作，删除根目录 debug_ast.rs 临时脚本，为 three/ 目录创建 README.md 说明其为外部参考项目（非内核验收范围）；符合 AGENTS.md §3.2 和 §3.3 要求；dev_verify.sh --full 全绿"
 ]

@@ -6,6 +6,7 @@
 use crate::opcode::OpCode;
 use crate::VmError;
 use pine_runtime::value::Value;
+use std::collections::HashSet;
 
 /// A bytecode instruction
 #[derive(Debug, Clone)]
@@ -173,6 +174,10 @@ pub struct Compiler {
     current_line: usize,
     /// Variable scope stack
     scopes: Vec<Scope>,
+    /// User-defined variables that must also be maintained as runtime series
+    series_vars: HashSet<String>,
+    /// Counter for synthetic series names used by compound series expressions
+    synthetic_series_counter: usize,
 }
 
 impl Default for Compiler {
@@ -188,6 +193,8 @@ impl Compiler {
             chunk: BytecodeChunk::new(),
             current_line: 1,
             scopes: vec![Scope::new()],
+            series_vars: HashSet::new(),
+            synthetic_series_counter: 0,
         }
     }
 
@@ -364,6 +371,25 @@ impl Compiler {
         let name_idx = self.chunk.add_string_constant(name.to_string());
         self.chunk
             .emit_op1(OpCode::UpdateUserSeries, name_idx, self.current_line);
+    }
+
+    /// Mark a variable name as a runtime series and ensure it has a series slot.
+    pub fn mark_series_var(&mut self, name: &str) {
+        self.series_vars.insert(name.to_string());
+        self.register_series(name.to_string());
+    }
+
+    /// Check whether a name should be treated as a runtime series.
+    pub fn is_series_var(&self, name: &str) -> bool {
+        self.series_vars.contains(name)
+    }
+
+    /// Allocate a synthetic series name for compound expressions.
+    pub fn next_synthetic_series_name(&mut self) -> String {
+        let name = format!("__expr_series_{}", self.synthetic_series_counter);
+        self.synthetic_series_counter += 1;
+        self.mark_series_var(&name);
+        name
     }
 
     /// Compile a jump (placeholder, to be patched later)

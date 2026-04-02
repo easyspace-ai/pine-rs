@@ -398,11 +398,7 @@ impl ExecutionContext {
     }
 
     /// Get the full series history as a vector (newest first)
-    pub fn get_series_history(
-        &self,
-        name: &str,
-        call_site: CallSiteId,
-    ) -> Option<Vec<Value>> {
+    pub fn get_series_history(&self, name: &str, call_site: CallSiteId) -> Option<Vec<Value>> {
         self.get_series(name, call_site).map(|s| s.to_vec())
     }
 
@@ -412,7 +408,8 @@ impl ExecutionContext {
         name: &str,
         call_site: CallSiteId,
     ) -> Option<Vec<Value>> {
-        self.get_series(name, call_site).map(|s| s.iter_oldest_first().cloned().collect())
+        self.get_series(name, call_site)
+            .map(|s| s.iter_oldest_first().cloned().collect())
     }
 
     /// Clear all series

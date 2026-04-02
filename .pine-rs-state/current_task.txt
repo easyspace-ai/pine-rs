@@ -1,14 +1,28 @@
-P3-T5: 修复复合 series 表达式支持 (hlc3, hl2, ohlc4)
+P4 焦点：VM 纵深 + 门禁不退化
 
-目标：
-- 修复 pine-eval 中复合 series 表达式 (hlc3, hl2, ohlc4) 的求值
-- 使依赖这些表达式的黄金测试通过 (atr_14, bbands, cci_20, macd)
+门禁（须长期全绿）：
+- ./scripts/dev_verify.sh --full（fmt、clippy -D warnings、workspace test、run_golden、vm_run_golden、phase_acceptance）
 
-背景：
-- 当前 11 个 VM 黄金测试通过，5 个失败
-- 失败测试都依赖 hlc3, hl2 或 ohlc4 复合 series
-- 需要实现这些内置 series 的计算逻辑
+已稳定（见 completed_tasks.json 中 P4-T4 至 P4-T11；并经本地复验）：
+- pine-vm：复合 series 与执行器变量状态不被 bar 内临时求值串扰；vm_golden_test 16/16；DEBUG 由 `PINE_VM_DEBUG` 控制；测试代码无编译警告。
+- pine-vm vs pine-eval：已建立脚本级 parity 测试，当前覆盖 **16 支真实脚本**（所有 tests/scripts/stdlib/ta/ 下的脚本），逐 bar plot 输出一致，包含 tuple 返回值与复杂指标计算场景。**VM parity 已达成 100% 覆盖所有黄金 ta.* 脚本**。
+- pine-tv：`data::loader::tests::test_generate_sample_data` 与全量门禁一致通过。
+- 仓库卫生：根目录 debug_ast.rs 已删除；three/ 目录已文档化为外部参考项目（见 three/README.md）。
 
-验收标准：
-- atr_14, bbands, cci_20, macd 测试通过
-- 不破坏已通过的 11 个测试
+最近一次复验命令（均 exit 0，无警告）：
+- cargo build -p pine-vm --tests（无 dead_code 警告）
+- cargo test -p pine-vm --test vm_script_parity（16/16 通过）
+- ./scripts/dev_verify.sh --full
+
+里程碑达成：
+- **VM vs pine-eval parity 已完成所有 ta.* 黄金脚本的覆盖**，证明 pine-vm 在真实指标计算场景下与 pine-eval 输出完全一致。
+- **pine-vm 测试代码质量提升**，消除所有编译警告。
+- **仓库卫生完成**，符合 AGENTS.md §3 要求。
+
+下一步（主线，按 AGENTS.md 第 8 节第二层与第三层）：
+- 选项 1：探索更复杂的控制流与 series 操作场景（如嵌套 UDF、复杂 for 循环等）。
+- 选项 2：考虑 Phase 4 其他能力扩展（UDT、array.*、map.*、str.* 等），需独立验收。
+- 选项 3：优化性能或内存使用（如果有明显瓶颈）。
+
+次要（有空再做）：
+- 文档更新：在 docs/ 中记录 VM parity 测试框架与覆盖情况。

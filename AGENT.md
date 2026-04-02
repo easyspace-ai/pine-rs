@@ -1,6 +1,6 @@
 # AGENT.md
 
-本仓库的统一入口文件是 [AGENTS.md](/Users/leven/space/llm/pine/pine-rs/AGENTS.md)。
+本仓库的统一入口文件是 [AGENTS.md](./AGENTS.md)。
 
 使用规则：
 

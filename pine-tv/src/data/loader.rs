@@ -4,6 +4,7 @@
 use std::fs::File;
 use std::io::{self, BufRead, BufReader};
 use std::path::{Path, PathBuf};
+use std::sync::OnceLock;
 
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
@@ -66,8 +67,7 @@ pub enum DataLoadError {
 /// Data loader for OHLCV data
 pub struct DataLoader {
     data_dir: PathBuf,
-    #[allow(dead_code)]
-    binance_client: BinanceClient,
+    binance_client: OnceLock<BinanceClient>,
 }
 
 impl DataLoader {
@@ -75,7 +75,7 @@ impl DataLoader {
     pub fn new<P: AsRef<Path>>(data_dir: P) -> Self {
         Self {
             data_dir: data_dir.as_ref().to_path_buf(),
-            binance_client: BinanceClient::new(),
+            binance_client: OnceLock::new(),
         }
     }
 
@@ -114,6 +114,7 @@ impl DataLoader {
 
         let bars = self
             .binance_client
+            .get_or_init(BinanceClient::new)
             .fetch_klines(symbol, binance_interval, limit)
             .await?;
 

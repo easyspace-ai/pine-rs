@@ -7,6 +7,7 @@
 
 pub mod ast_compiler;
 pub mod compiler;
+pub(crate) mod debug;
 pub mod executor;
 pub mod opcode;
 pub mod vm;

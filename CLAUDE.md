@@ -1,6 +1,6 @@
 # CLAUDE.md
 
-本仓库对 Claude 的统一说明文件是 [AGENTS.md](/Users/leven/space/llm/pine/pine-rs/AGENTS.md)。
+本仓库对 Claude 的统一说明文件是 [AGENTS.md](./AGENTS.md)。
 
 使用规则：
 
