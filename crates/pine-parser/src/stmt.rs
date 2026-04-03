@@ -308,7 +308,12 @@ impl StmtParser {
             let body = if self.peek_token() == Some(Token::Indent) {
                 SwitchArmBody::Block(self.parse_block()?)
             } else {
-                SwitchArmBody::Expr(self.parse_expr()?)
+                let stmt = self.parse_stmt()?;
+                let span = stmt.span();
+                SwitchArmBody::Block(Block {
+                    stmts: vec![stmt],
+                    span,
+                })
             };
 
             let span = arm_start.merge(self.prev_span());
@@ -888,6 +893,7 @@ impl StmtParser {
         let mut pos = self.pos;
         let mut paren_depth = 0;
         let mut bracket_depth = 0;
+        let mut prev_token: Option<&Token> = None;
 
         while pos < self.tokens.len() {
             let token = &self.tokens[pos].token;
@@ -931,9 +937,20 @@ impl StmtParser {
                         break;
                     }
                 }
+                // Arrow ends expressions for switch arms, but not for lambdas
+                // (where it follows a closing paren).
+                Token::Arrow => {
+                    if paren_depth == 0
+                        && bracket_depth == 0
+                        && !matches!(prev_token, Some(Token::RParen))
+                    {
+                        break;
+                    }
+                }
                 _ => {}
             }
 
+            prev_token = Some(token);
             pos += 1;
         }
 
@@ -1231,5 +1248,17 @@ v2 = f(200)
             (s2.start, s2.end),
             "full-script offsets must differ for call-site interning"
         );
+    }
+
+    #[test]
+    fn test_parse_switch_simple() {
+        let input = r#"switch x % 3
+    0 => r := 10
+    1 => r := 20
+"#;
+        let tokens = pine_lexer::Lexer::lex_with_indentation(input).unwrap();
+        let mut parser = StmtParser::new(tokens);
+        let script = parser.parse_script().unwrap();
+        assert!(matches!(script.stmts[0], Stmt::Switch { .. }));
     }
 }

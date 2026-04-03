@@ -1,0 +1,12 @@
+//@version=6
+indicator("While Loop Test")
+
+var sum = 0.0
+var i = 0
+while i < 5
+    if not na(close[i])
+        sum := sum + close[i]
+    i := i + 1
+
+avg = i > 0 ? sum / 5 : na
+plot(avg, title="While Avg 5")

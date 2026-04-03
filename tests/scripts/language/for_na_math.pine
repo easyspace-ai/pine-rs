@@ -1,0 +1,16 @@
+//@version=6
+indicator("For NA Math Test")
+
+length = input.int(5, minval=1, title="Length")
+
+// Use for loop with math operations and na checks
+sum = 0.0
+count = 0
+for i = 0 to length - 1
+    val = close[i]
+    if not na(val)
+        sum := sum + math.abs(val - close[1])
+        count := count + 1
+
+result = count == length ? sum / count : na
+plot(result, title="For Math Result")

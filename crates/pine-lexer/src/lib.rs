@@ -207,4 +207,19 @@ mod tests {
 
         assert!(tokens.iter().any(|(t, _)| matches!(t, Token::Newline)));
     }
+
+    #[test]
+    fn test_switch_arrow() {
+        let tokens = Lexer::lex_line("0 => r = 10").unwrap();
+        let kinds: Vec<_> = tokens.into_iter().map(|(t, _)| t).collect();
+        assert!(matches!(kinds[0], Token::Int(0)));
+        assert!(
+            matches!(kinds[1], Token::Arrow),
+            "expected Arrow, got {:?}",
+            kinds[1]
+        );
+        assert!(matches!(kinds[2], Token::Ident(ref s) if s == "r"));
+        assert!(matches!(kinds[3], Token::Assign));
+        assert!(matches!(kinds[4], Token::Int(10)));
+    }
 }

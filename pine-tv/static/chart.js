@@ -142,7 +142,7 @@ function handleWebSocketMessage(msg) {
             handleNewBar(msg);
             break;
         case 'result':
-            handleResult(msg.result);
+            applyResult(msg.result);
             break;
         case 'error':
             console.error('[chart] WebSocket error:', msg.errors);

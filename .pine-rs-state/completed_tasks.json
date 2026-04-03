@@ -57,5 +57,7 @@
   "P4-T8（验收 2026-04-02）：扩展 VM parity 覆盖至更多单输出 ta.* 函数，新增 rsi_14、stoch_14_3_3、atr_14 三支脚本的 parity 测试（共 7 支），验证 VM 对复杂指标计算的正确性；dev_verify.sh --full 全绿",
   "P4-T9（验收 2026-04-02）：完成 VM parity 全覆盖，新增剩余 9 支 ta.* 脚本的 parity 测试（sma_14、ema_12、highest_10、lowest_10、highestbars_10、lowestbars_10、mom_10、cci_20、tr_basic），共 16 支脚本全部通过 VM vs pine-eval parity 验证；dev_verify.sh --full 全绿",
   "P4-T10（验收 2026-04-02）：清理 pine-vm 测试代码质量，为 GOLDEN_TESTS 和 float_lit 添加 #[allow(dead_code)] 属性，消除编译警告；dev_verify.sh --full 全绿且无警告",
-  "P4-T11（验收 2026-04-02）：仓库卫生工作，删除根目录 debug_ast.rs 临时脚本，为 three/ 目录创建 README.md 说明其为外部参考项目（非内核验收范围）；符合 AGENTS.md §3.2 和 §3.3 要求；dev_verify.sh --full 全绿"
+  "P4-T11（验收 2026-04-02）：仓库卫生工作，删除根目录 debug_ast.rs 临时脚本，为 three/ 目录创建 README.md 说明其为外部参考项目（非内核验收范围）；符合 AGENTS.md §3.2 和 §3.3 要求；dev_verify.sh --full 全绿",
+  "pine-tv Phase A（验收 2026-04-02）：验证 pine-tv 基础功能完整可用 - 浏览器访问 localhost:7070，Monaco 编辑器加载 Pine Script 语法高亮，lightweight-charts 图表渲染，内置 SMA/RSI/EMA 示例脚本，运行按钮调用 /api/run 端点（Axum + pine-eval），API 返回正确结构（ok: true, plots, bars）；cargo test -p pine-tv 通过（5 passed）",
+  "pine-tv 修复（2026-04-02）：修复 chart.js WebSocket 消息处理错误 - 将 handleResult 改为 applyResult，解决 K线图无法显示的问题；服务器正常运行在 localhost:7070"
 ]

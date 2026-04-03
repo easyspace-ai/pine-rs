@@ -12,6 +12,7 @@ path = "src/main.rs"
 # pine-rs dependencies
 pine-runtime = { path = "../crates/pine-runtime" }
 pine-eval = { path = "../crates/pine-eval" }
+pine-vm = { path = "../crates/pine-vm" }
 pine-parser = { path = "../crates/pine-parser" }
 pine-lexer = { path = "../crates/pine-lexer" }
 pine-sema = { path = "../crates/pine-sema" }
@@ -51,3 +52,4 @@ chrono = "0.4"
 
 [dev-dependencies]
 insta = "1"
+tower = { version = "0.4", features = ["util"] }

@@ -383,3 +383,14 @@ fn test_script_parity_tr_basic() {
     })
     .expect("tr_basic script parity failed");
 }
+
+#[test]
+fn test_script_parity_for_na_math() {
+    assert_script_parity(&ScriptParityCase {
+        name: "for_na_math",
+        script_path: "tests/scripts/language/for_na_math.pine",
+        golden_path: "tests/golden/for_na_math.csv",
+        plots: &["For Math Result"],
+    })
+    .expect("for_na_math script parity failed");
+}

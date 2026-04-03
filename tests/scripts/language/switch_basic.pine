@@ -1,0 +1,10 @@
+//@version=6
+indicator("Switch Basic Test")
+
+var r = 0.0
+switch close % 3
+    0 => r := 10.0
+    1 => r := 20.0
+    => r := 30.0
+
+plot(r, title="Switch Result")

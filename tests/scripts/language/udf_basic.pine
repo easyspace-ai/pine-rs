@@ -1,0 +1,15 @@
+//@version=6
+indicator("UDF Basic Test")
+
+// Simple scalar UDF: absolute difference between two values
+myDiff(a, b) => math.abs(a - b)
+
+// Also test a multi-line fn-style UDF with simple logic
+fn myScale(src, factor)
+    src * factor + 1.0
+
+result1 = myDiff(close, open)
+result2 = myScale(close, 2.0)
+
+plot(result1, title="UDF Diff")
+plot(result2, title="UDF Scale")

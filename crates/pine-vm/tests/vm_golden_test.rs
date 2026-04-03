@@ -490,3 +490,13 @@ fn test_vm_golden_sma_manual() {
     })
     .expect("sma_manual test failed");
 }
+
+#[test]
+fn test_vm_golden_for_na_math() {
+    run_golden_test(&GoldenTestCase {
+        name: "for_na_math",
+        golden_path: "tests/golden/for_na_math.csv",
+        script_path: "tests/scripts/language/for_na_math.pine",
+    })
+    .expect("for_na_math test failed");
+}

@@ -19,7 +19,7 @@ pub struct RealtimeDataManager {
 
 /// Update event sent to clients
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-#[serde(tag = "type")]
+#[serde(tag = "type", rename_all = "snake_case")]
 pub enum RealtimeUpdate {
     /// Full snapshot of all bars
     Snapshot { bars: Vec<OhlcvBar> },
@@ -137,5 +137,35 @@ impl RealtimeDataManager {
                 let _ = self.tx.send(RealtimeUpdate::FormingUpdate { bar });
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod realtime_serde_tests {
+    use super::RealtimeUpdate;
+    use crate::data::OhlcvBar;
+
+    #[test]
+    fn websocket_type_tags_are_snake_case() {
+        let bar = OhlcvBar::new(1, 1.0, 1.0, 1.0, 1.0, 0.0);
+        let snap = RealtimeUpdate::Snapshot {
+            bars: vec![bar.clone()],
+        };
+        assert!(serde_json::to_string(&snap)
+            .unwrap()
+            .contains("\"type\":\"snapshot\""));
+
+        let form = RealtimeUpdate::FormingUpdate { bar: bar.clone() };
+        assert!(serde_json::to_string(&form)
+            .unwrap()
+            .contains("\"type\":\"forming_update\""));
+
+        let nb = RealtimeUpdate::NewBar {
+            closed_bar: bar.clone(),
+            new_bar: bar,
+        };
+        assert!(serde_json::to_string(&nb)
+            .unwrap()
+            .contains("\"type\":\"new_bar\""));
     }
 }
