@@ -1,0 +1,12 @@
+//@version=6
+indicator("Bollinger Bands", overlay=true)
+
+// BBands with tuple destructuring
+[basis, upper, lower] = ta.bb(close, 20, 2)
+
+plot(basis, title="BB Basis", color=color.new(#FF9800, 0), linewidth=1)
+plot(upper, title="BB Upper", color=color.new(#2196F3, 0), linewidth=1)
+plot(lower, title="BB Lower", color=color.new(#2196F3, 0), linewidth=1)
+
+// Fill between bands
+fill(plot(upper), plot(lower), color=color.new(#2196F3, 90), title="BB Fill")

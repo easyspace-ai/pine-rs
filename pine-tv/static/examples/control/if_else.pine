@@ -1,0 +1,29 @@
+//@version=6
+indicator("Control - If/Else", overlay=true)
+
+// Simple if statement
+condition = close > open
+result = 0.0
+if condition
+    result := close
+else
+    result := open
+
+// If with else if
+momentum = 0.0
+if close > ta.sma(close, 20)
+    momentum := 1.0
+else if close < ta.sma(close, 20)
+    momentum := -1.0
+else
+    momentum := 0.0
+
+// Ternary operator
+isBullish = close > open ? 1.0 : 0.0
+
+// Complex condition
+isStrongBull = close > open and close > ta.sma(close, 10) ? high : low
+
+plot(result, title="If Result", color=#2196F3)
+plot(momentum, title="Momentum Signal", color=#FF9800)
+plotshape(isBullish == 1.0, title="Bullish", location=location.belowbar, color=#4CAF50, style=shape.triangleup, size=size.tiny)

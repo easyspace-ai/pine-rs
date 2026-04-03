@@ -335,17 +335,54 @@ fn execute_script(script: &str, data: Option<&[OHLCV]>) -> Result<ExecutionResul
         }
 
         // Generate strategy signals for strategy scripts
-        if is_strategy && bar_data.len() >= 2 {
-            // Mock strategy execution - in full implementation this would come from the script
-            let entries = Vec::new();
-            let exits = Vec::new();
+        if is_strategy {
+            // Collect strategy signals from execution context
+            let entries: Vec<Signal> = ctx
+                .strategy_signals
+                .get_entries()
+                .iter()
+                .map(|s| Signal {
+                    bar_index: s.bar_index,
+                    direction: s.direction.clone(),
+                    qty: s.qty,
+                    price: s.price,
+                    comment: s.comment.clone(),
+                })
+                .collect();
+
+            let exits: Vec<Signal> = ctx
+                .strategy_signals
+                .get_exits()
+                .iter()
+                .map(|s| Signal {
+                    bar_index: s.bar_index,
+                    direction: if s.signal_type == "close" {
+                        "close".to_string()
+                    } else {
+                        s.direction.clone()
+                    },
+                    qty: s.qty,
+                    price: s.price,
+                    comment: s.comment.clone(),
+                })
+                .collect();
+
+            // Determine final position
+            let final_position = entries.len() as f64 - exits.len() as f64;
+            let position_direction = if final_position > 0.0 {
+                "long"
+            } else if final_position < 0.0 {
+                "short"
+            } else {
+                "none"
+            };
 
             strategy_result = Some(StrategyResult {
                 name: "Pine Strategy".to_string(),
                 entries,
                 exits,
-                position_size: 0.0,
-                position_direction: "none".to_string(),
+                position_size: final_position.abs(),
+                position_direction: position_direction.to_string(),
             });
         }
     }

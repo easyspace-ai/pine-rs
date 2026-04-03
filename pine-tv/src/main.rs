@@ -18,7 +18,7 @@ mod engine;
 mod routes;
 
 use data::{BinanceClient, BinanceWsClient, DataLoader, RealtimeDataManager};
-use engine::PineEngine;
+use engine::{ExecutionMode, PineEngine};
 use routes::{CheckHandler, DataHandler, RunHandler, WsHandler};
 
 /// Server configuration
@@ -69,6 +69,14 @@ async fn main() {
 
     // Create shared state
     let engine = Arc::new(PineEngine::new());
+    let mode = engine.execution_mode();
+    tracing::info!(
+        "Pine execution backend: {}",
+        match mode {
+            ExecutionMode::Eval => "pine-eval (default; set PINE_TV_MODE=vm for VM)",
+            ExecutionMode::Vm => "pine-vm (PINE_TV_MODE=vm)",
+        }
+    );
     let data_loader = Arc::new(DataLoader::new(config.data_path));
     let binance_client = BinanceClient::new();
 
@@ -112,6 +120,8 @@ async fn main() {
             get(DataHandler::handle).with_state(data_handler),
         )
         .route("/api/ws", get(WsHandler::handle_ws).with_state(ws_handler))
+        // Example scripts routes
+        .merge(routes::examples::router())
         // Static files
         .fallback_service(ServeDir::new(static_path));
 

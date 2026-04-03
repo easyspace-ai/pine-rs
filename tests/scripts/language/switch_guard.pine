@@ -1,0 +1,10 @@
+//@version=6
+indicator("Switch Guard Test")
+
+var r = 0.0
+switch
+    close > open => r := 1.0
+    close < open => r := -1.0
+    => r := 0.0
+
+plot(r, title="Guard Result")

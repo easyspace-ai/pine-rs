@@ -13,6 +13,7 @@ pub mod map;
 pub mod math;
 pub mod registry;
 pub mod str;
+pub mod strategy;
 pub mod ta;
 
 use miette::Diagnostic;
@@ -38,6 +39,7 @@ pub fn init(registry: &mut registry::FunctionRegistry) {
     str::register_functions(registry);
     color::register_functions(registry);
     input::register_functions(registry);
+    strategy::register_functions(registry);
 }
 
 #[cfg(test)]

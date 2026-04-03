@@ -1,0 +1,48 @@
+//@version=6
+indicator("String Core Functions Test", overlay=true)
+
+// Test str.length
+len = str.length("hello")
+emptyLen = str.length("")
+
+// Test str.tostring and str.tonumber
+numStr = str.tostring(42)
+floatStr = str.tostring(3.14)
+numFromStr = str.tonumber("100")
+floatFromStr = str.tonumber("2.5")
+invalidNum = str.tonumber("not a number")
+
+// Test str.upper and str.lower
+upperStr = str.upper("hello")
+lowerStr = str.lower("WORLD")
+
+// Test str.substring
+sub1 = str.substring("hello", 0, 2)
+sub2 = str.substring("hello", 2)
+
+// Test str.replace
+replaced = str.replace("hello world", "world", "pine")
+
+// Test str.contains
+hasWorld = str.contains("hello world", "world")
+hasXYZ = str.contains("hello world", "xyz")
+
+// Test str.starts_with and str.ends_with
+startsWithHe = str.starts_with("hello", "he")
+endsWithLo = str.ends_with("hello", "lo")
+
+// Test str.trim
+trimmed = str.trim("  hello  ")
+
+// Test str.concat
+concatenated = str.concat("hello", " world")
+
+// Plot numeric results for verification
+plot(len, title="Len", display=display.none)
+plot(emptyLen, title="EmptyLen", display=display.none)
+plot(numFromStr, title="NumFromStr", display=display.none)
+plot(floatFromStr, title="FloatFromStr", display=display.none)
+plot(hasWorld ? 1.0 : 0.0, title="HasWorld", display=display.none)
+plot(hasXYZ ? 1.0 : 0.0, title="HasXYZ", display=display.none)
+plot(startsWithHe ? 1.0 : 0.0, title="StartsWithHe", display=display.none)
+plot(endsWithLo ? 1.0 : 0.0, title="EndsWithLo", display=display.none)

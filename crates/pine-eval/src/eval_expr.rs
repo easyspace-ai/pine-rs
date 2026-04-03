@@ -57,8 +57,15 @@ pub fn eval_expr(expr: &ast::Expr, ctx: &mut EvaluationContext) -> Result<Value>
             func, args, span, ..
         } => eval_fn_call(func, args, ctx, *span),
         ast::Expr::Index { base, offset, .. } => eval_index_access(base, offset, ctx),
+        ast::Expr::ArrayLit(elements, _span) => {
+            let mut values = Vec::with_capacity(elements.len());
+            for e in elements {
+                values.push(eval_expr(e, ctx)?);
+            }
+            Ok(Value::Array(values))
+        }
         _ => {
-            // TODO: Implement other expression types (ArrayLit, MapLit, Lambda, etc.)
+            // TODO: Implement other expression types (MapLit, Lambda, etc.)
             Ok(Value::Na)
         }
     }
@@ -422,6 +429,13 @@ fn eval_index_access(
     };
 
     if let ast::Expr::Ident(ident) = base {
+        // First check if the identifier is bound to an array
+        if let Some(Value::Array(arr)) = ctx.get_var(&ident.name) {
+            // Array indexing: arr[0], arr[1], etc.
+            return Ok(arr.get(off).cloned().unwrap_or(Value::Na));
+        }
+
+        // Then check scoped series (var/varip)
         let cs = ctx.current_call_site();
         if ctx.runtime().var_scoped_contains(&ident.name, cs) {
             return Ok(ctx
@@ -430,12 +444,15 @@ fn eval_index_access(
                 .cloned()
                 .unwrap_or(Value::Na));
         }
+
+        // Finally check built-in series (close, open, high, low, etc.)
         return match ctx.get_series_value(&ident.name, off) {
             Some(val) => Ok(Value::Float(val)),
             None => Ok(Value::Na),
         };
     }
 
+    // For non-identifier bases (e.g., function calls), evaluate and return
     let base_val = eval_expr(base, ctx)?;
     Ok(base_val)
 }

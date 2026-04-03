@@ -1,0 +1,27 @@
+//@version=6
+indicator("Map - Basic Operations", overlay=true)
+
+// Create a map for price statistics
+priceMap = map.new()
+
+// Put values into map
+map.put(priceMap, "current", close)
+map.put(priceMap, "previous", close[1])
+map.put(priceMap, "open", open)
+
+// Get values from map
+currentPrice = map.get(priceMap, "current")
+prevPrice = map.get(priceMap, "previous")
+openPrice = map.get(priceMap, "open")
+
+// Check if key exists
+hasCurrent = map.contains(priceMap, "current")
+hasInvalid = map.contains(priceMap, "invalid")
+
+// Map size
+mapSize = map.size(priceMap)
+
+// Calculate price change using map values
+priceChange = currentPrice - prevPrice
+
+plot(priceChange, title="Price Change from Map", color=#2196F3, linewidth=2)

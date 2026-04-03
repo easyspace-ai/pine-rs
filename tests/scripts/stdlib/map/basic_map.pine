@@ -4,12 +4,12 @@ indicator("Basic Map Test", overlay=true)
 // Create a map
 var config = map.new()
 
-// Initialize map on first bar
-if barstate.isfirst
-    map.put(config, "symbol", "BTCUSDT")
-    map.put(config, "timeframe", "1h")
-    map.put(config, "length", 14)
-    map.put(config, "enabled", true)
+// Initialize map on first bar (bar_index 0)
+if bar_index == 0
+    config := map.put(config, "symbol", "BTCUSDT")
+    config := map.put(config, "timeframe", "1h")
+    config := map.put(config, "length", 14)
+    config := map.put(config, "enabled", true)
 
 // Get values from map
 symbol = map.get(config, "symbol")
@@ -24,19 +24,23 @@ hasMissing = map.contains(config, "missing_key")
 // Get map size
 mapSize = map.size(config)
 
-// Update map on last bar
-if barstate.islast
-    map.put(config, "updated", true)
-    map.remove(config, "enabled")
+// Update map on bar_index 1
+if bar_index == 1
+    config := map.put(config, "updated", true)
+    config := map.remove(config, "enabled")
 
 // Test map.keys and map.values
 var keys = array.new_string(0)
 var values = array.new_int(0)
-if barstate.islast
+if bar_index == 1
     keys := map.keys(config)
     // values := map.values(config)
 
+// Test map.is_empty
+isEmpty = map.is_empty(config)
+
 // Plot some results
-plot(mapSize, "Map Size", color=color.blue, linewidth=2)
-plotchar(hasSymbol, "Has Symbol", location=location.top, color=color.green)
-plotchar(hasMissing, "Has Missing", location=location.top, color=color.red)
+plot(mapSize, title="Map Size", color=color.blue, display=display.none)
+plot(hasSymbol ? 1.0 : 0.0, title="Has Symbol", display=display.none)
+plot(hasMissing ? 1.0 : 0.0, title="Has Missing", display=display.none)
+plot(isEmpty ? 1.0 : 0.0, title="Is Empty", display=display.none)

@@ -100,12 +100,30 @@ fn extract_array(value: &Value) -> Option<&[Value]> {
     }
 }
 
-/// Extract length parameter from arguments
+/// Extract length parameter from arguments with a default value.
+///
+/// # Arguments
+/// * `args` - The argument slice
+/// * `idx` - The index of the length argument (after series arguments)
+/// * `default` - The default value if argument is not provided
+///
+/// # TV Compatibility Note
+/// Some ta.* functions in TV have default parameters (e.g., ta.macd, ta.bb, ta.atr),
+/// while others require explicit parameters (e.g., ta.sma, ta.ema).
+/// This function supports both cases via the `default` parameter.
 fn extract_length(args: &[Value], idx: usize, default: usize) -> usize {
     args.get(idx)
         .and_then(|v| v.as_int())
         .map(|n| n.max(1) as usize)
         .unwrap_or(default)
+}
+
+/// Extract required length parameter from arguments (no default).
+/// Returns None if the parameter is not provided, which should result in NA.
+fn extract_length_required(args: &[Value], idx: usize) -> Option<usize> {
+    args.get(idx)
+        .and_then(|v| v.as_int())
+        .map(|n| n.max(1) as usize)
 }
 
 /// Get float value from Value
@@ -197,17 +215,28 @@ fn calculate_ema_from_f64(values: &[f64], length: usize, wilder: bool) -> Option
 
 /// Weighted Moving Average calculation
 /// WMA = (1*oldest + 2*... + N*newest) / (1 + 2 + ... + N)
+/// Calculate Weighted Moving Average (WMA)
+///
+/// WMA gives more weight to recent data points.
+/// Formula: WMA = (P1×n + P2×(n-1) + ... + Pn×1) / (n + (n-1) + ... + 1)
+/// where P1 is the most recent (latest) price, Pn is the oldest.
 fn calculate_wma(values: &[Value], length: usize) -> Value {
     let valid_values: Vec<f64> = values.iter().filter_map(get_float).collect();
     if length == 0 || valid_values.len() < length {
         return Value::Na;
     }
 
+    // Get the trailing window of 'length' values
     let window = &valid_values[valid_values.len() - length..];
+
+    // Calculate weighted sum: most recent (last element) gets weight = length
+    // oldest (first element) gets weight = 1
     let mut weighted_sum = 0.0;
     let mut weight_sum = 0;
 
     for (idx, value) in window.iter().enumerate() {
+        // idx = 0 is oldest, idx = length-1 is most recent
+        // weight should be: oldest=1, ..., most recent=length
         let weight = idx + 1;
         weighted_sum += weight as f64 * value;
         weight_sum += weight;
@@ -270,6 +299,8 @@ fn calculate_smoothed_avg(values: &[f64], length: usize) -> f64 {
 // ============================================================================
 
 /// Register ta.sma - Simple Moving Average
+///
+/// TV Reference: `ta.sma(source, length)` - length has no default value
 fn register_sma(registry: &mut FunctionRegistry) {
     let meta = FunctionMeta::new("sma")
         .with_namespace("ta")
@@ -281,7 +312,11 @@ fn register_sma(registry: &mut FunctionRegistry) {
             Some(s) => s,
             None => return Value::Na,
         };
-        let length = extract_length(args, 1, 14);
+        // SMA requires explicit length parameter (no default in TV)
+        let length = match extract_length_required(args, 1) {
+            Some(len) => len,
+            None => return Value::Na,
+        };
         calculate_sma(series, length)
     });
 
@@ -289,6 +324,8 @@ fn register_sma(registry: &mut FunctionRegistry) {
 }
 
 /// Register ta.ema - Exponential Moving Average
+///
+/// TV Reference: `ta.ema(source, length)` - length has no default value
 fn register_ema(registry: &mut FunctionRegistry) {
     let meta = FunctionMeta::new("ema")
         .with_namespace("ta")
@@ -300,7 +337,11 @@ fn register_ema(registry: &mut FunctionRegistry) {
             Some(s) => s,
             None => return Value::Na,
         };
-        let length = extract_length(args, 1, 12);
+        // EMA requires explicit length parameter (no default in TV)
+        let length = match extract_length_required(args, 1) {
+            Some(len) => len,
+            None => return Value::Na,
+        };
         calculate_ema(series, length, false)
     });
 
@@ -308,6 +349,8 @@ fn register_ema(registry: &mut FunctionRegistry) {
 }
 
 /// Register ta.rma - Relative Moving Average (Wilder's smoothing)
+///
+/// TV Reference: `ta.rma(source, length)` - length has no default value
 fn register_rma(registry: &mut FunctionRegistry) {
     let meta = FunctionMeta::new("rma")
         .with_namespace("ta")
@@ -319,7 +362,11 @@ fn register_rma(registry: &mut FunctionRegistry) {
             Some(s) => s,
             None => return Value::Na,
         };
-        let length = extract_length(args, 1, 14);
+        // RMA requires explicit length parameter (no default in TV)
+        let length = match extract_length_required(args, 1) {
+            Some(len) => len,
+            None => return Value::Na,
+        };
         calculate_ema(series, length, true) // RMA uses Wilder smoothing (alpha = 1/N)
     });
 
@@ -327,6 +374,8 @@ fn register_rma(registry: &mut FunctionRegistry) {
 }
 
 /// Register ta.wma - Weighted Moving Average
+///
+/// TV Reference: `ta.wma(source, length)` - length has no default value
 fn register_wma(registry: &mut FunctionRegistry) {
     let meta = FunctionMeta::new("wma")
         .with_namespace("ta")
@@ -338,7 +387,11 @@ fn register_wma(registry: &mut FunctionRegistry) {
             Some(s) => s,
             None => return Value::Na,
         };
-        let length = extract_length(args, 1, 10);
+        // WMA requires explicit length parameter (no default in TV)
+        let length = match extract_length_required(args, 1) {
+            Some(len) => len,
+            None => return Value::Na,
+        };
         calculate_wma(series, length)
     });
 
@@ -474,11 +527,12 @@ fn register_macd(registry: &mut FunctionRegistry) {
 }
 
 /// Register ta.mom - Momentum
+///
+/// TV Reference: `ta.mom(source, length)` - length has no default value
 fn register_mom(registry: &mut FunctionRegistry) {
     let meta = FunctionMeta::new("mom")
         .with_namespace("ta")
-        .with_required_args(1)
-        .with_optional_args(1)
+        .with_required_args(2)
         .with_series_return();
 
     let func: crate::registry::BuiltinFn = Arc::new(|args| {
@@ -487,7 +541,11 @@ fn register_mom(registry: &mut FunctionRegistry) {
             None => return Value::Na,
         };
 
-        let length = extract_length(args, 1, 10);
+        // Momentum requires explicit length parameter (no default in TV)
+        let length = match extract_length_required(args, 1) {
+            Some(len) => len,
+            None => return Value::Na,
+        };
 
         let current = match series.last().and_then(get_float) {
             Some(f) => f,
@@ -1223,5 +1281,109 @@ mod tests {
         let result = registry.dispatch("ta.tr", &[high, low, close]);
 
         assert_eq!(result, Some(Value::Float(3.0)));
+    }
+
+    #[test]
+    fn test_wma_weights_recent_data_more() {
+        let registry = test_registry();
+
+        // WMA with length 3: [10, 20, 30]
+        // Weights: 10*1 + 20*2 + 30*3 = 10 + 40 + 90 = 140
+        // Weight sum: 1 + 2 + 3 = 6
+        // WMA = 140 / 6 = 23.333...
+        let data = series(vec![10.0, 20.0, 30.0]);
+        let result = registry.dispatch("ta.wma", &[data, Value::Int(3)]);
+
+        assert!(matches!(result, Some(Value::Float(v)) if (v - 23.333333333333332).abs() < 1e-10));
+    }
+
+    #[test]
+    fn test_wma_returns_na_when_insufficient_data() {
+        let registry = test_registry();
+
+        // Only 2 values but requesting WMA of length 3
+        let data = series(vec![10.0, 20.0]);
+        let result = registry.dispatch("ta.wma", &[data, Value::Int(3)]);
+
+        assert_eq!(result, Some(Value::Na));
+    }
+
+    #[test]
+    fn test_wma_single_value() {
+        let registry = test_registry();
+
+        // WMA of single value is that value itself
+        let data = series(vec![42.0]);
+        let result = registry.dispatch("ta.wma", &[data, Value::Int(1)]);
+
+        assert_eq!(result, Some(Value::Float(42.0)));
+    }
+
+    #[test]
+    fn test_rma_uses_wilder_smoothing() {
+        let registry = test_registry();
+
+        // RMA with Wilder smoothing: alpha = 1/length
+        // For length=3, alpha = 1/3 = 0.333...
+        // Seed = (10+20+30)/3 = 20
+        // EMA = 0.333*40 + 0.667*20 = 13.33 + 13.33 = 26.67
+        let data = series(vec![10.0, 20.0, 30.0, 40.0]);
+        let result = registry.dispatch("ta.rma", &[data, Value::Int(3)]);
+
+        // RMA should be different from standard EMA
+        // Standard EMA with alpha=2/(3+1)=0.5: 0.5*40 + 0.5*20 = 30
+        // RMA with alpha=1/3=0.333: 0.333*40 + 0.667*20 = 26.67
+        assert!(matches!(result, Some(Value::Float(v)) if (v - 26.666666666666668).abs() < 1e-10));
+    }
+
+    #[test]
+    fn test_rma_returns_na_when_insufficient_data() {
+        let registry = test_registry();
+
+        // Only 2 values but requesting RMA of length 3
+        let data = series(vec![10.0, 20.0]);
+        let result = registry.dispatch("ta.rma", &[data, Value::Int(3)]);
+
+        assert_eq!(result, Some(Value::Na));
+    }
+
+    #[test]
+    fn test_rma_single_value() {
+        let registry = test_registry();
+
+        // RMA of single value is that value itself
+        let data = series(vec![42.0]);
+        let result = registry.dispatch("ta.rma", &[data, Value::Int(1)]);
+
+        assert_eq!(result, Some(Value::Float(42.0)));
+    }
+
+    #[test]
+    fn test_rma_produces_different_values_than_ema() {
+        let registry = test_registry();
+
+        // Same data, same length - RMA and EMA should produce different results
+        let data = series(vec![10.0, 20.0, 30.0, 40.0, 50.0]);
+
+        let rma_result = registry.dispatch("ta.rma", &[data.clone(), Value::Int(3)]);
+        let ema_result = registry.dispatch("ta.ema", &[data, Value::Int(3)]);
+
+        // Both should return valid floats
+        let rma_val = match rma_result {
+            Some(Value::Float(v)) => v,
+            _ => panic!("RMA should return a float"),
+        };
+        let ema_val = match ema_result {
+            Some(Value::Float(v)) => v,
+            _ => panic!("EMA should return a float"),
+        };
+
+        // RMA and EMA should produce different values due to different alpha
+        assert!(
+            (rma_val - ema_val).abs() > 1e-10,
+            "RMA ({}) should differ from EMA ({})",
+            rma_val,
+            ema_val
+        );
     }
 }

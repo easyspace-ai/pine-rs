@@ -3,4 +3,4 @@
 pub mod output;
 pub mod runner;
 
-pub use runner::PineEngine;
+pub use runner::{ExecutionMode, PineEngine};

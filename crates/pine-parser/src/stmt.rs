@@ -77,14 +77,14 @@ impl StmtParser {
             Token::Break => self.parse_break(),
             Token::Continue => self.parse_continue(),
             Token::Return => self.parse_return(),
-            _ => {
-                if matches!(self.peek_token(), Some(Token::Ident(_))) {
-                    if let Some(stmt) = self.try_parse_tv_arrow_function_stmt()? {
-                        return Ok(stmt);
-                    }
+            Token::Ident(_) => {
+                // TV official UDF syntax is the primary path: name(params) => expr/body
+                if let Some(stmt) = self.try_parse_tv_arrow_function_stmt()? {
+                    return Ok(stmt);
                 }
                 self.parse_assign_or_expr()
             }
+            _ => self.parse_assign_or_expr(),
         }
     }
 
@@ -357,7 +357,7 @@ impl StmtParser {
         })
     }
 
-    /// After `)`: `=> expr` or indented / single-line block.
+    /// After `)`: `=> expr`, `=>` + indented block, or indented / single-line block.
     fn parse_fn_sig_body_after_params(
         &mut self,
         ret_type: Option<TypeAnn>,
@@ -367,6 +367,13 @@ impl StmtParser {
         }
         if self.peek_token() == Some(Token::Arrow) {
             self.advance();
+            // After =>, could be an expression or a block body
+            while self.peek_token() == Some(Token::Newline) {
+                self.advance();
+            }
+            if self.peek_token() == Some(Token::Indent) {
+                return Ok((ret_type, FnBody::Block(self.parse_block()?)));
+            }
             let e = self.parse_expr()?;
             return Ok((ret_type, FnBody::Expr(e)));
         }
@@ -975,7 +982,7 @@ impl StmtParser {
         }
     }
 
-    /// `name(params) => expr` at statement level (TV style, no `fn` keyword)
+    /// `name(params) => expr` or `name(params) => block` at statement level (TV style, no `fn` keyword)
     fn try_parse_tv_arrow_function_stmt(&mut self) -> Result<Option<Stmt>, ParseError> {
         let start_pos = self.pos;
         let start_span = match self.peek_span() {
@@ -999,7 +1006,7 @@ impl StmtParser {
             return Ok(None);
         }
         self.advance(); // past '('
-                        // TV `name(params) => expr` only: parameter lists start with `)` or an identifier.
+                        // TV `name(params) => ...` only: parameter lists start with `)` or an identifier.
                         // Reject call-shaped opens like `indicator("title", ...)` or `plot(na)`.
         match self.peek_token() {
             Some(Token::RParen) | Some(Token::Ident(_)) => {}
@@ -1013,24 +1020,22 @@ impl StmtParser {
             self.pos = start_pos;
             return Ok(None);
         }
-        while self.peek_token() == Some(Token::Newline) {
-            self.advance();
+        // Must see `=>` to commit as a TV arrow function; otherwise backtrack.
+        let mut lookahead = self.pos;
+        while self.tokens.get(lookahead).map(|t| t.token.clone()) == Some(Token::Newline) {
+            lookahead += 1;
         }
-        if self.peek_token() != Some(Token::Arrow) {
+        if self.tokens.get(lookahead).map(|t| t.token.clone()) != Some(Token::Arrow) {
             self.pos = start_pos;
             return Ok(None);
         }
-        self.advance();
-        let body_expr = self.parse_expr()?;
-        if self.peek_token() == Some(Token::Newline) {
-            self.advance();
-        }
+        let (ret_type, body) = self.parse_fn_sig_body_after_params(None)?;
         let span = start_span.merge(self.prev_span());
         Ok(Some(Stmt::FnDef {
             name,
             params,
-            ret_type: None,
-            body: FnBody::Expr(body_expr),
+            ret_type,
+            body,
             span,
         }))
     }
@@ -1174,6 +1179,33 @@ mod tests {
     }
 
     #[test]
+    fn test_else_if_without_elif() {
+        // Test else if chain without using elif keyword
+        let input = r#"if x < 3
+    a := 1
+else if x < 7
+    a := 2
+else
+    a := 3"#;
+        let tokens = pine_lexer::Lexer::lex_with_indentation(input).unwrap();
+        let mut parser = StmtParser::new(tokens);
+        let script = parser.parse_script().unwrap();
+        assert_eq!(script.stmts.len(), 1);
+        if let Stmt::If {
+            cond,
+            elifs,
+            else_block,
+            ..
+        } = &script.stmts[0]
+        {
+            assert!(!elifs.is_empty(), "should have elifs");
+            assert!(else_block.is_some(), "should have else block");
+        } else {
+            panic!("expected If statement");
+        }
+    }
+
+    #[test]
     fn test_for_loop() {
         // For loop with indented body
         let input = "for i = 0 to 10\n    plot(i)";
@@ -1191,6 +1223,42 @@ mod tests {
         let script = parse(input).unwrap();
         assert_eq!(script.stmts.len(), 1);
         assert!(matches!(script.stmts[0], Stmt::FnDef { .. }));
+    }
+
+    #[test]
+    fn test_tv_arrow_fn_expr() {
+        // TV official syntax: expression body
+        let input = "myDiff(a, b) => math.abs(a - b)";
+        let script = parse(input).unwrap();
+        assert_eq!(script.stmts.len(), 1);
+        assert!(matches!(
+            &script.stmts[0],
+            Stmt::FnDef {
+                name,
+                params,
+                body: FnBody::Expr(_),
+                ..
+            } if name.name == "myDiff" && params.len() == 2
+        ));
+    }
+
+    #[test]
+    fn test_tv_arrow_fn_block() {
+        // TV official syntax: indented block body after =>
+        let input = "myScale(src, factor) =>\n    src * factor + 1.0\n";
+        let tokens = pine_lexer::Lexer::lex_with_indentation(input).unwrap();
+        let mut parser = StmtParser::new(tokens);
+        let script = parser.parse_script().unwrap();
+        assert_eq!(script.stmts.len(), 1);
+        assert!(matches!(
+            &script.stmts[0],
+            Stmt::FnDef {
+                name,
+                params,
+                body: FnBody::Block(_),
+                ..
+            } if name.name == "myScale" && params.len() == 2
+        ));
     }
 
     #[test]

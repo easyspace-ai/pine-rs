@@ -1,0 +1,13 @@
+//@version=6
+indicator("Else If Test")
+
+x = 5
+result = 0
+if x < 3
+    result := 1
+else if x < 7
+    result := 2
+else
+    result := 3
+
+plot(result, title="Result")

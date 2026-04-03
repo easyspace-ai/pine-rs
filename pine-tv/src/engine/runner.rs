@@ -4,10 +4,57 @@
 use std::time::Instant;
 
 use crate::data::OhlcvBar;
-use crate::engine::output::{ApiError, ApiResponse, Plot, PlotData};
+use crate::engine::output::{ApiError, ApiResponse, Plot, PlotData, StrategyOutput, TradeSignal};
 
 use pine_lexer::Lexer;
+use pine_parser::ast::{Arg, Expr, Lit, Script, Stmt};
+use pine_runtime::value::Value;
 use pine_stdlib::registry::FunctionRegistry;
+
+/// Read `indicator(..., overlay=...)` / `strategy(..., overlay=...)` from the script AST.
+///
+/// Returns `None` when no `indicator` / `strategy` call is found at the top level; the caller
+/// defaults that to overlay-style (main pane only) for backward compatibility.
+fn extract_declaration_overlay(script: &Script) -> Option<bool> {
+    for stmt in &script.stmts {
+        let Stmt::Expr(expr) = stmt else {
+            continue;
+        };
+        let Expr::FnCall { func, args, .. } = expr else {
+            continue;
+        };
+        let Expr::Ident(callee) = func.as_ref() else {
+            continue;
+        };
+        match callee.name.as_str() {
+            "indicator" | "strategy" => {
+                return Some(overlay_from_decl_args(callee.name.as_str(), args));
+            }
+            _ => {}
+        }
+    }
+    None
+}
+
+fn overlay_from_decl_args(callee: &str, args: &[Arg]) -> bool {
+    for arg in args {
+        if arg.name.as_ref().is_some_and(|n| n.name == "overlay") {
+            if let Expr::Literal(Lit::Bool(b), _) = &arg.value {
+                return *b;
+            }
+        }
+    }
+    if args.len() > 2 && args[2].name.is_none() {
+        if let Expr::Literal(Lit::Bool(b), _) = &args[2].value {
+            return *b;
+        }
+    }
+    match callee {
+        "indicator" => false,
+        "strategy" => true,
+        _ => true,
+    }
+}
 
 /// Execution mode for PineEngine
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -19,12 +66,15 @@ pub enum ExecutionMode {
 }
 
 impl ExecutionMode {
-    /// Get execution mode from environment variable PINE_TV_MODE
-    /// Defaults to VM if not set or invalid
+    /// Get execution mode from environment variable `PINE_TV_MODE`.
+    ///
+    /// - Default **`eval`**: pine-tv `/api/run` uses `pine-eval` + `run_bar_by_bar` so JSON
+    ///   `plots` match interpreter semantics.
+    /// - Set `PINE_TV_MODE=vm` to use the bytecode VM instead.
     pub fn from_env() -> Self {
         match std::env::var("PINE_TV_MODE").as_deref() {
-            Ok("eval") => Self::Eval,
-            _ => Self::Vm, // Default to VM since parity is achieved
+            Ok("vm") => Self::Vm,
+            _ => Self::Eval,
         }
     }
 }
@@ -46,6 +96,11 @@ impl PineEngine {
             registry,
             mode: ExecutionMode::from_env(),
         }
+    }
+
+    /// Active backend (`eval` or `vm`).
+    pub fn execution_mode(&self) -> ExecutionMode {
+        self.mode
     }
 
     /// Create a new PineEngine with explicit mode
@@ -106,15 +161,29 @@ impl PineEngine {
             })
             .collect();
 
+        // Overlay from declaration: TV default indicator overlay=false (separate pane), strategy default true.
+        let overlay = extract_declaration_overlay(&ast).unwrap_or(true);
         // 4. Execute based on mode
-        let plots = match self.mode {
-            ExecutionMode::Vm => self.run_with_vm(&ast, &bar_data, bars)?,
-            ExecutionMode::Eval => self.run_with_eval(&ast, &bar_data, bars)?,
+        let (plots, strategy) = match self.mode {
+            ExecutionMode::Vm => {
+                let plots = self.run_with_vm(&ast, &bar_data, bars, overlay)?;
+                (plots, None) // VM mode doesn't support strategy signals yet
+            }
+            ExecutionMode::Eval => self.run_with_eval(&ast, &bar_data, bars, overlay)?,
         };
 
         let exec_ms = start.elapsed().as_millis() as u64;
 
-        Ok(ApiResponse::success(exec_ms, plots))
+        // Return response with or without strategy signals
+        if let Some(strategy_output) = strategy {
+            Ok(ApiResponse::success_with_strategy(
+                exec_ms,
+                plots,
+                strategy_output,
+            ))
+        } else {
+            Ok(ApiResponse::success(exec_ms, plots))
+        }
     }
 
     /// Execute using pine-vm
@@ -123,6 +192,7 @@ impl PineEngine {
         ast: &pine_parser::ast::Script,
         bar_data: &[pine_eval::runner::BarData],
         bars: &[OhlcvBar],
+        overlay: bool,
     ) -> Result<Vec<Plot>, Vec<ApiError>> {
         use pine_vm::executor::{execute_script_with_vm, SeriesData as VmSeriesData};
 
@@ -140,7 +210,7 @@ impl PineEngine {
             .map_err(|e| vec![ApiError::simple(format!("VM execution error: {:?}", e))])?;
 
         // Convert to API format
-        self.convert_plots_to_api(result.plot_outputs.get_plots(), bars)
+        self.convert_plots_to_api(result.plot_outputs.get_plots(), bars, overlay)
     }
 
     /// Execute using pine-eval
@@ -149,7 +219,8 @@ impl PineEngine {
         ast: &pine_parser::ast::Script,
         bar_data: &[pine_eval::runner::BarData],
         bars: &[OhlcvBar],
-    ) -> Result<Vec<Plot>, Vec<ApiError>> {
+        overlay: bool,
+    ) -> Result<(Vec<Plot>, Option<StrategyOutput>), Vec<ApiError>> {
         // Create evaluation context
         let mut ctx = pine_eval::EvaluationContext::new();
 
@@ -157,8 +228,13 @@ impl PineEngine {
         pine_eval::runner::run_bar_by_bar(ast, bar_data, &mut ctx)
             .map_err(|e| vec![ApiError::simple(format!("Eval execution error: {:?}", e))])?;
 
-        // Convert to API format
-        self.convert_plots_to_api(ctx.plot_outputs.get_plots(), bars)
+        // Convert plots to API format
+        let plots = self.convert_plots_to_api(ctx.plot_outputs.get_plots(), bars, overlay)?;
+
+        // Convert strategy signals to API format
+        let strategy_output = self.convert_strategy_signals(&ctx, bars);
+
+        Ok((plots, strategy_output))
     }
 
     /// Convert PlotOutputs to API Plot format
@@ -166,9 +242,11 @@ impl PineEngine {
         &self,
         plots_map: &std::collections::HashMap<String, Vec<Option<f64>>>,
         bars: &[OhlcvBar],
+        overlay: bool,
     ) -> Result<Vec<Plot>, Vec<ApiError>> {
         let times: Vec<i64> = bars.iter().map(|b| b.time).collect();
         let mut plots = Vec::new();
+        let pane = if overlay { 0 } else { 1 };
 
         for (title, values) in plots_map {
             let plot_data: Vec<PlotData> = times
@@ -184,12 +262,97 @@ impl PineEngine {
                 plot_type: "line".to_string(),
                 color: generate_color(&title),
                 linewidth: Some(2.0),
-                pane: 0,
+                pane,
                 data: plot_data,
             });
         }
 
         Ok(plots)
+    }
+
+    /// Convert strategy signals to API format
+    fn convert_strategy_signals(
+        &self,
+        ctx: &pine_eval::EvaluationContext,
+        bars: &[OhlcvBar],
+    ) -> Option<StrategyOutput> {
+        let signals = ctx.strategy_signals.get_signals();
+        if signals.is_empty() {
+            return None;
+        }
+
+        // Try to extract strategy name from the script
+        let strategy_name = self.extract_strategy_name(ctx);
+
+        let mut entries = Vec::new();
+        let mut exits = Vec::new();
+
+        for signal in signals {
+            let bar_idx = signal.bar_index;
+            let time = bars.get(bar_idx).map(|b| b.time).unwrap_or(0);
+
+            let trade_signal = TradeSignal {
+                bar_index: bar_idx,
+                time,
+                signal_type: signal.signal_type.clone(),
+                id: signal.id.clone(),
+                direction: signal.direction.clone(),
+                qty: signal.qty,
+                price: signal.price,
+                comment: signal.comment.clone(),
+            };
+
+            match signal.signal_type.as_str() {
+                "entry" => entries.push(trade_signal),
+                "exit" | "close" => exits.push(trade_signal),
+                _ => {}
+            }
+        }
+
+        // Determine position direction
+        let position_direction = if ctx.get_var("strategy.position_size").is_some() {
+            // Try to get actual position size from runtime
+            match ctx.get_var("strategy.position_size") {
+                Some(Value::Float(size)) if *size > 0.0 => "long",
+                Some(Value::Float(size)) if *size < 0.0 => "short",
+                Some(Value::Int(size)) if *size > 0 => "long",
+                Some(Value::Int(size)) if *size < 0 => "short",
+                _ => "none",
+            }
+        } else {
+            // Infer from signals
+            let entry_count = entries.len();
+            let exit_count = exits.len();
+            if entry_count > exit_count {
+                "long"
+            } else {
+                "none"
+            }
+        };
+
+        // Calculate position size (simplified)
+        let position_size = entries.len().saturating_sub(exits.len()) as f64;
+
+        Some(StrategyOutput {
+            name: strategy_name,
+            entries,
+            exits,
+            position_size,
+            position_direction: position_direction.to_string(),
+        })
+    }
+
+    /// Extract strategy name from context
+    fn extract_strategy_name(&self, ctx: &pine_eval::EvaluationContext) -> String {
+        // Look for strategy variable
+        if let Some(Value::Array(arr)) = ctx.get_var("strategy") {
+            if arr.len() >= 2 {
+                if let Some(Value::String(name)) = arr.get(1) {
+                    return name.to_string();
+                }
+            }
+        }
+        "Strategy".to_string()
     }
 }
 
@@ -234,16 +397,67 @@ mod tests {
 
     #[test]
     fn test_engine_creation() {
-        let _engine = PineEngine::new();
+        let engine = PineEngine::new();
+        let _ = engine.execution_mode();
     }
 
     #[test]
     fn test_engine_with_mode() {
         let engine_vm = PineEngine::with_mode(ExecutionMode::Vm);
-        assert_eq!(engine_vm.mode, ExecutionMode::Vm);
+        assert_eq!(engine_vm.execution_mode(), ExecutionMode::Vm);
 
         let engine_eval = PineEngine::with_mode(ExecutionMode::Eval);
-        assert_eq!(engine_eval.mode, ExecutionMode::Eval);
+        assert_eq!(engine_eval.execution_mode(), ExecutionMode::Eval);
+    }
+
+    #[test]
+    fn test_eval_run_produces_sma_plot_series() {
+        let engine = PineEngine::with_mode(ExecutionMode::Eval);
+        let bars: Vec<OhlcvBar> = (0_i64..40)
+            .map(|i| {
+                let c = 100.0 + i as f64 * 0.1;
+                OhlcvBar::new(i, c, c + 0.5, c - 0.5, c, 1000.0)
+            })
+            .collect();
+        let code = r#"//@version=6
+indicator("SMA test")
+plot(ta.sma(close, 5), title="SMA 5", color=#2196F3)
+"#;
+        let res = engine.run(code, &bars).expect("run");
+        assert!(res.ok, "{:?}", res.errors);
+        let plots = res.plots.expect("plots");
+        assert_eq!(plots.len(), 1);
+        assert_eq!(plots[0].title, "SMA 5");
+        let non_na = plots[0].data.iter().filter(|p| p.value.is_some()).count();
+        assert!(
+            non_na >= 35,
+            "expected most bars to have SMA, got {} non-na points",
+            non_na
+        );
+        assert_eq!(
+            plots[0].pane, 1,
+            "default indicator() uses overlay=false → separate pane"
+        );
+    }
+
+    #[test]
+    fn test_indicator_overlay_true_is_main_pane() {
+        let engine = PineEngine::with_mode(ExecutionMode::Eval);
+        let bars: Vec<OhlcvBar> = (0_i64..30)
+            .map(|i| {
+                let c = 100.0 + i as f64 * 0.1;
+                OhlcvBar::new(i, c, c + 0.5, c - 0.5, c, 1000.0)
+            })
+            .collect();
+        let code = r#"//@version=6
+indicator("SMA overlay", overlay=true)
+plot(ta.sma(close, 5), title="SMA 5", color=#2196F3)
+"#;
+        let res = engine.run(code, &bars).expect("run");
+        assert!(res.ok);
+        let plots = res.plots.expect("plots");
+        assert_eq!(plots.len(), 1);
+        assert_eq!(plots[0].pane, 0);
     }
 
     #[test]
@@ -270,5 +484,75 @@ mod tests {
         let color = generate_color("custom_indicator");
         assert!(color.starts_with('#'));
         assert_eq!(color.len(), 7);
+    }
+
+    #[test]
+    fn test_strategy_signals_output() {
+        let engine = PineEngine::with_mode(ExecutionMode::Eval);
+        let bars: Vec<OhlcvBar> = (0_i64..50)
+            .map(|i| {
+                let c = 100.0 + (i as f64 * 0.5).sin() * 10.0;
+                OhlcvBar::new(i * 3600, c, c + 1.0, c - 1.0, c, 1000.0)
+            })
+            .collect();
+
+        let code = r#"//@version=6
+strategy("Test Strategy", overlay=true)
+sma = ta.sma(close, 14)
+longCondition = ta.crossover(close, sma)
+if longCondition
+    strategy.entry("Long", strategy.long)
+shortCondition = ta.crossunder(close, sma)
+if shortCondition
+    strategy.close("Long")
+plot(sma, title="SMA", color=color.blue)
+"#;
+
+        let res = engine.run(code, &bars).expect("run");
+        assert!(res.ok, "{:?}", res.errors);
+
+        // Check that strategy output is present
+        let strategy = res.strategy.expect("strategy output should be present");
+        // Strategy name defaults to "Strategy" since the namespace variable
+        // overwrites the strategy() call result
+        assert!(
+            !strategy.name.is_empty(),
+            "Strategy name should not be empty"
+        );
+
+        // Verify that we have some signals (the exact count depends on the data pattern)
+        let total_signals = strategy.entries.len() + strategy.exits.len();
+        assert!(
+            total_signals > 0,
+            "Expected some strategy signals, got {} entries and {} exits",
+            strategy.entries.len(),
+            strategy.exits.len()
+        );
+    }
+
+    #[test]
+    fn test_strategy_no_signals_for_indicator() {
+        let engine = PineEngine::with_mode(ExecutionMode::Eval);
+        let bars: Vec<OhlcvBar> = (0_i64..20)
+            .map(|i| {
+                let c = 100.0 + i as f64 * 0.1;
+                OhlcvBar::new(i, c, c + 0.5, c - 0.5, c, 1000.0)
+            })
+            .collect();
+
+        // This is an indicator script (not a strategy), so no strategy signals
+        let code = r#"//@version=6
+indicator("SMA Indicator")
+plot(ta.sma(close, 5), title="SMA")
+"#;
+
+        let res = engine.run(code, &bars).expect("run");
+        assert!(res.ok, "{:?}", res.errors);
+
+        // No strategy output for indicator scripts
+        assert!(
+            res.strategy.is_none(),
+            "Indicator scripts should not have strategy output"
+        );
     }
 }

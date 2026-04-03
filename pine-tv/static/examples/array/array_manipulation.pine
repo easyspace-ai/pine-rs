@@ -1,0 +1,25 @@
+//@version=6
+indicator("Array - Manipulation", overlay=true)
+
+// Create array from values
+values = array.from(close, open, high, low, close[1], open[1])
+
+// Reverse the array
+reversed = array.copy(values)
+array.reverse(reversed)
+
+// Get first and last
+firstVal = array.first(values)
+lastVal = array.last(values)
+
+// Pop an element
+popped = array.copy(values)
+if array.size(popped) > 0
+    array.pop(popped)
+
+// Calculate size after operations
+originalSize = array.size(values)
+afterPopSize = array.size(popped)
+
+plot(firstVal, title="First", color=#2196F3)
+plot(lastVal, title="Last", color=#FF9800)

@@ -1,0 +1,29 @@
+//@version=6
+indicator("Simple Map Test", overlay=true)
+
+// Create a map
+var m = map.new()
+
+// Add one key per bar for first 3 bars
+if bar_index == 0
+    m := map.put(m, "a", 1.0)
+
+if bar_index == 1
+    m := map.put(m, "b", 2.0)
+
+if bar_index == 2
+    m := map.put(m, "c", 3.0)
+
+// Get map size
+size = map.size(m)
+
+// Get values
+valA = map.get(m, "a")
+valB = map.get(m, "b")
+valC = map.get(m, "c")
+
+// Plot
+plot(size, title="Size", display=display.none)
+plot(valA, title="ValA", display=display.none)
+plot(valB, title="ValB", display=display.none)
+plot(valC, title="ValC", display=display.none)

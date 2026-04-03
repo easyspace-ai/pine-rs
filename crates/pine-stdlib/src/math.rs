@@ -140,57 +140,89 @@ fn register_min(registry: &mut FunctionRegistry) {
     registry.register(meta, func);
 }
 
-/// Register math.sum - Sum of all values
+/// Register math.sum - Rolling sum of series values
+///
+/// Pine Script: `math.sum(source, length)`
+/// Returns the rolling sum of `source` over `length` bars.
+/// First (length-1) bars return na.
 fn register_sum(registry: &mut FunctionRegistry) {
     let meta = FunctionMeta::new("sum")
         .with_namespace("math")
-        .with_required_args(1)
-        .with_variadic();
+        .with_required_args(2);
 
     let func: crate::registry::BuiltinFn = Arc::new(|args| {
-        let mut sum = 0.0;
-        let mut found = false;
+        // Extract series
+        let series = match args.first() {
+            Some(Value::Array(arr)) => arr.as_slice(),
+            _ => return Value::Na,
+        };
 
-        for arg in args {
-            if let Some(v) = get_float(arg) {
-                sum += v;
-                found = true;
-            }
+        // Extract length parameter
+        let length = match args.get(1) {
+            Some(Value::Int(n)) => (*n).max(1) as usize,
+            Some(Value::Float(f)) => (*f as i64).max(1) as usize,
+            _ => return Value::Na,
+        };
+
+        // Need at least `length` values to compute sum
+        if series.len() < length {
+            return Value::Na;
         }
 
-        if found {
-            Value::Float(sum)
-        } else {
-            Value::Na
+        // Sum the trailing window
+        let window = &series[series.len() - length..];
+        let sum: f64 = window.iter().filter_map(get_float).sum();
+
+        // If no valid values found, return Na
+        if window.iter().filter_map(get_float).count() == 0 {
+            return Value::Na;
         }
+
+        Value::Float(sum)
     });
 
     registry.register(meta, func);
 }
 
-/// Register math.avg - Average of all values
+/// Register math.avg - Rolling average of series values
+///
+/// Pine Script: `math.avg(source, length)`
+/// Returns the rolling average of `source` over `length` bars.
+/// First (length-1) bars return na.
 fn register_avg(registry: &mut FunctionRegistry) {
     let meta = FunctionMeta::new("avg")
         .with_namespace("math")
-        .with_required_args(1)
-        .with_variadic();
+        .with_required_args(2);
 
     let func: crate::registry::BuiltinFn = Arc::new(|args| {
-        let mut sum = 0.0;
-        let mut count = 0;
+        // Extract series
+        let series = match args.first() {
+            Some(Value::Array(arr)) => arr.as_slice(),
+            _ => return Value::Na,
+        };
 
-        for arg in args {
-            if let Some(v) = get_float(arg) {
-                sum += v;
-                count += 1;
-            }
+        // Extract length parameter
+        let length = match args.get(1) {
+            Some(Value::Int(n)) => (*n).max(1) as usize,
+            Some(Value::Float(f)) => (*f as i64).max(1) as usize,
+            _ => return Value::Na,
+        };
+
+        // Need at least `length` values to compute average
+        if series.len() < length {
+            return Value::Na;
         }
 
-        if count > 0 {
-            Value::Float(sum / count as f64)
-        } else {
-            Value::Na
+        // Average the trailing window
+        let window = &series[series.len() - length..];
+        let valid_values: Vec<f64> = window.iter().filter_map(get_float).collect();
+
+        if valid_values.is_empty() {
+            return Value::Na;
         }
+
+        let sum: f64 = valid_values.iter().sum();
+        Value::Float(sum / valid_values.len() as f64)
     });
 
     registry.register(meta, func);
@@ -529,8 +561,43 @@ mod tests {
     fn test_pow() {
         let registry = test_registry();
 
+        // Basic cases
         assert_eq!(
             registry.dispatch("math.pow", &[Value::Float(2.0), Value::Float(3.0)]),
+            Some(Value::Float(8.0))
+        );
+
+        // pow(10, 0) = 1
+        assert_eq!(
+            registry.dispatch("math.pow", &[Value::Float(10.0), Value::Float(0.0)]),
+            Some(Value::Float(1.0))
+        );
+
+        // pow(4, 0.5) = 2 (square root)
+        assert_eq!(
+            registry.dispatch("math.pow", &[Value::Float(4.0), Value::Float(0.5)]),
+            Some(Value::Float(2.0))
+        );
+
+        // pow(2, -1) = 0.5
+        assert_eq!(
+            registry.dispatch("math.pow", &[Value::Float(2.0), Value::Float(-1.0)]),
+            Some(Value::Float(0.5))
+        );
+
+        // pow with NA returns NA
+        assert_eq!(
+            registry.dispatch("math.pow", &[Value::Na, Value::Float(2.0)]),
+            Some(Value::Na)
+        );
+        assert_eq!(
+            registry.dispatch("math.pow", &[Value::Float(2.0), Value::Na]),
+            Some(Value::Na)
+        );
+
+        // pow with integers (should be converted to float)
+        assert_eq!(
+            registry.dispatch("math.pow", &[Value::Int(2), Value::Int(3)]),
             Some(Value::Float(8.0))
         );
     }
@@ -567,17 +634,318 @@ mod tests {
     fn test_nz() {
         let registry = test_registry();
 
+        // nz(na) returns 0 (default replacement)
         assert_eq!(
             registry.dispatch("math.nz", &[Value::Na]),
             Some(Value::Int(0))
         );
+
+        // nz(na, replacement) returns replacement
         assert_eq!(
             registry.dispatch("math.nz", &[Value::Na, Value::Float(-1.0)]),
             Some(Value::Float(-1.0))
         );
+
+        // nz(value) returns value when not na
         assert_eq!(
             registry.dispatch("math.nz", &[Value::Float(5.0)]),
             Some(Value::Float(5.0))
+        );
+
+        // nz with integer
+        assert_eq!(
+            registry.dispatch("math.nz", &[Value::Int(42)]),
+            Some(Value::Int(42))
+        );
+
+        // nz with zero (zero is not na)
+        assert_eq!(
+            registry.dispatch("math.nz", &[Value::Float(0.0)]),
+            Some(Value::Float(0.0))
+        );
+
+        // nz with boolean
+        assert_eq!(
+            registry.dispatch("math.nz", &[Value::Bool(true)]),
+            Some(Value::Bool(true))
+        );
+
+        // nz with string
+        assert_eq!(
+            registry.dispatch("math.nz", &[Value::String("hello".into())]),
+            Some(Value::String("hello".into()))
+        );
+
+        // nz(na, 0) explicitly
+        assert_eq!(
+            registry.dispatch("math.nz", &[Value::Na, Value::Int(0)]),
+            Some(Value::Int(0))
+        );
+    }
+
+    #[test]
+    fn test_sum_rolling() {
+        let registry = test_registry();
+
+        // math.sum(series, length) - rolling sum
+        let series = Value::Array(vec![
+            Value::Float(10.0),
+            Value::Float(20.0),
+            Value::Float(30.0),
+            Value::Float(40.0),
+        ]);
+
+        // Sum of last 3 values: 20 + 30 + 40 = 90
+        let result = registry.dispatch("math.sum", &[series, Value::Int(3)]);
+        assert_eq!(result, Some(Value::Float(90.0)));
+    }
+
+    #[test]
+    fn test_sum_returns_na_when_insufficient_data() {
+        let registry = test_registry();
+
+        // Only 2 values but requesting sum of 3
+        let series = Value::Array(vec![Value::Float(10.0), Value::Float(20.0)]);
+        let result = registry.dispatch("math.sum", &[series, Value::Int(3)]);
+        assert_eq!(result, Some(Value::Na));
+    }
+
+    #[test]
+    fn test_sum_single_value() {
+        let registry = test_registry();
+
+        let series = Value::Array(vec![Value::Float(42.0)]);
+        let result = registry.dispatch("math.sum", &[series, Value::Int(1)]);
+        assert_eq!(result, Some(Value::Float(42.0)));
+    }
+
+    #[test]
+    fn test_sum_with_na_values() {
+        let registry = test_registry();
+
+        // math.sum should skip NA values
+        let series = Value::Array(vec![
+            Value::Na,
+            Value::Float(20.0),
+            Value::Float(30.0),
+            Value::Float(40.0),
+        ]);
+
+        // Sum of last 3: 20 + 30 + 40 = 90 (NA is skipped)
+        let result = registry.dispatch("math.sum", &[series, Value::Int(3)]);
+        assert_eq!(result, Some(Value::Float(90.0)));
+    }
+
+    #[test]
+    fn test_avg_rolling() {
+        let registry = test_registry();
+
+        // math.avg(series, length) - rolling average
+        let series = Value::Array(vec![
+            Value::Float(10.0),
+            Value::Float(20.0),
+            Value::Float(30.0),
+            Value::Float(40.0),
+        ]);
+
+        // Average of last 3 values: (20 + 30 + 40) / 3 = 30
+        let result = registry.dispatch("math.avg", &[series, Value::Int(3)]);
+        assert_eq!(result, Some(Value::Float(30.0)));
+    }
+
+    #[test]
+    fn test_avg_returns_na_when_insufficient_data() {
+        let registry = test_registry();
+
+        // Only 2 values but requesting average of 3
+        let series = Value::Array(vec![Value::Float(10.0), Value::Float(20.0)]);
+        let result = registry.dispatch("math.avg", &[series, Value::Int(3)]);
+        assert_eq!(result, Some(Value::Na));
+    }
+
+    #[test]
+    fn test_avg_single_value() {
+        let registry = test_registry();
+
+        let series = Value::Array(vec![Value::Float(42.0)]);
+        let result = registry.dispatch("math.avg", &[series, Value::Int(1)]);
+        assert_eq!(result, Some(Value::Float(42.0)));
+    }
+
+    #[test]
+    fn test_avg_with_na_values() {
+        let registry = test_registry();
+
+        // math.avg should skip NA values
+        let series = Value::Array(vec![
+            Value::Na,
+            Value::Float(20.0),
+            Value::Float(30.0),
+            Value::Float(40.0),
+        ]);
+
+        // Average of last 3: (20 + 30 + 40) / 3 = 30 (NA is skipped)
+        let result = registry.dispatch("math.avg", &[series, Value::Int(3)]);
+        assert_eq!(result, Some(Value::Float(30.0)));
+    }
+
+    #[test]
+    fn test_avg_relation_to_sum() {
+        let registry = test_registry();
+
+        // math.avg(series, length) = math.sum(series, length) / length (when no NA values)
+        let series = Value::Array(vec![
+            Value::Float(10.0),
+            Value::Float(20.0),
+            Value::Float(30.0),
+            Value::Float(40.0),
+        ]);
+
+        let sum_result = registry.dispatch("math.sum", &[series.clone(), Value::Int(4)]);
+        let avg_result = registry.dispatch("math.avg", &[series, Value::Int(4)]);
+
+        // avg = sum / 4
+        let sum_val = match sum_result {
+            Some(Value::Float(v)) => v,
+            _ => panic!("sum should return a float"),
+        };
+        let avg_val = match avg_result {
+            Some(Value::Float(v)) => v,
+            _ => panic!("avg should return a float"),
+        };
+
+        assert!((avg_val - sum_val / 4.0).abs() < 1e-10);
+    }
+
+    #[test]
+    fn test_copysign_basic() {
+        let registry = test_registry();
+
+        // copysign(value, positive_sign) returns positive value
+        assert_eq!(
+            registry.dispatch("math.copysign", &[Value::Float(-5.0), Value::Float(1.0)]),
+            Some(Value::Float(5.0))
+        );
+
+        // copysign(value, negative_sign) returns negative value
+        assert_eq!(
+            registry.dispatch("math.copysign", &[Value::Float(5.0), Value::Float(-1.0)]),
+            Some(Value::Float(-5.0))
+        );
+
+        // copysign with zero sign (zero is non-negative)
+        assert_eq!(
+            registry.dispatch("math.copysign", &[Value::Float(-5.0), Value::Float(0.0)]),
+            Some(Value::Float(5.0))
+        );
+    }
+
+    #[test]
+    fn test_copysign_with_na() {
+        let registry = test_registry();
+
+        // copysign with NA returns NA
+        assert_eq!(
+            registry.dispatch("math.copysign", &[Value::Na, Value::Float(1.0)]),
+            Some(Value::Na)
+        );
+        assert_eq!(
+            registry.dispatch("math.copysign", &[Value::Float(5.0), Value::Na]),
+            Some(Value::Na)
+        );
+    }
+
+    #[test]
+    fn test_copysign_with_integers() {
+        let registry = test_registry();
+
+        // copysign with integers
+        assert_eq!(
+            registry.dispatch("math.copysign", &[Value::Int(-10), Value::Int(1)]),
+            Some(Value::Float(10.0))
+        );
+        assert_eq!(
+            registry.dispatch("math.copysign", &[Value::Int(10), Value::Int(-1)]),
+            Some(Value::Float(-10.0))
+        );
+    }
+
+    #[test]
+    fn test_round_to_nearest_basic() {
+        let registry = test_registry();
+
+        // Round to nearest 0.5
+        assert_eq!(
+            registry.dispatch(
+                "math.round_to_nearest",
+                &[Value::Float(1.3), Value::Float(0.5)]
+            ),
+            Some(Value::Float(1.5))
+        );
+
+        // Round to nearest 10
+        assert_eq!(
+            registry.dispatch(
+                "math.round_to_nearest",
+                &[Value::Float(23.0), Value::Float(10.0)]
+            ),
+            Some(Value::Float(20.0))
+        );
+        assert_eq!(
+            registry.dispatch(
+                "math.round_to_nearest",
+                &[Value::Float(27.0), Value::Float(10.0)]
+            ),
+            Some(Value::Float(30.0))
+        );
+
+        // Round to nearest 0.1
+        assert_eq!(
+            registry.dispatch(
+                "math.round_to_nearest",
+                &[Value::Float(3.14159), Value::Float(0.1)]
+            ),
+            Some(Value::Float(3.1))
+        );
+    }
+
+    #[test]
+    fn test_round_to_nearest_with_na() {
+        let registry = test_registry();
+
+        // round_to_nearest with NA returns NA
+        assert_eq!(
+            registry.dispatch("math.round_to_nearest", &[Value::Na, Value::Float(0.5)]),
+            Some(Value::Na)
+        );
+        assert_eq!(
+            registry.dispatch("math.round_to_nearest", &[Value::Float(5.0), Value::Na]),
+            Some(Value::Na)
+        );
+    }
+
+    #[test]
+    fn test_round_to_nearest_zero_precision() {
+        let registry = test_registry();
+
+        // round_to_nearest with zero precision returns NA
+        assert_eq!(
+            registry.dispatch(
+                "math.round_to_nearest",
+                &[Value::Float(5.0), Value::Float(0.0)]
+            ),
+            Some(Value::Na)
+        );
+    }
+
+    #[test]
+    fn test_round_to_nearest_with_integers() {
+        let registry = test_registry();
+
+        // round_to_nearest with integers
+        assert_eq!(
+            registry.dispatch("math.round_to_nearest", &[Value::Int(23), Value::Int(10)]),
+            Some(Value::Float(20.0))
         );
     }
 }

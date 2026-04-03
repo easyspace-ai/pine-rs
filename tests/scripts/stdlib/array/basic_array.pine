@@ -2,20 +2,20 @@
 indicator("Basic Array Test", overlay=true)
 
 // Test array creation
-var arr = array.new_int(5, 0)
+var arr = array.new_float(5, 0.0)
 
-// Test array.set and array.get
-if barstate.isfirst
-    array.set(arr, 0, 10)
-    array.set(arr, 1, 20)
-    array.set(arr, 2, 30)
+// Test array.set at bar_index 0
+if bar_index == 0
+    arr := array.set(arr, 0, 10.0)
+    arr := array.set(arr, 1, 20.0)
+    arr := array.set(arr, 2, 30.0)
 
 // Test array.size
 size = array.size(arr)
 
-// Test array.push
-if barstate.islast
-    array.push(arr, 42)
+// Test array.push at bar_index 1
+if bar_index == 1
+    arr := array.push(arr, 42.0)
 
 // Test array.sum
 sum = array.sum(arr)
@@ -23,7 +23,13 @@ sum = array.sum(arr)
 // Test array.avg
 avg = array.avg(arr)
 
+// Test array.first and array.last
+first = array.first(arr)
+last = array.last(arr)
+
 // Plot results
-plot(size, "Array Size", color=color.blue)
-plot(sum, "Array Sum", color=color.red)
-plot(avg, "Array Avg", color=color.green)
+plot(size, title="Size", display=display.none)
+plot(sum, title="Sum", display=display.none)
+plot(avg, title="Avg", display=display.none)
+plot(first, title="First", display=display.none)
+plot(last, title="Last", display=display.none)

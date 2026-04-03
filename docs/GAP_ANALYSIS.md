@@ -2,6 +2,7 @@
 
 本文档整理 **pine-rs** 与 **TradingView Pine Script v6**（以仓库内 [`docs/pinescriptv6`](./pinescriptv6) 官方文档镜像为口径）之间**尚未对齐**的项，并粗估若追求**全面对齐**的整体难度。
 
+- **执行层 checklist（按条目标记进度）**请以 **[`V6_ALIGNMENT.md`](./V6_ALIGNMENT.md)** 为准；本文件保留 **背景叙述与难度分析**。
 - 产品与阶段目标以 [`AGENTS.md`](../AGENTS.md) 为准；此处**不**等同于当前 Phase 的必做列表。
 - 「全对齐」指：**语法可接受典型 TV 脚本、静态规则与运行时行为与文档一致、可验证**；不承诺未公开的 TV 实现细节。
 

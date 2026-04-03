@@ -1,0 +1,22 @@
+//@version=6
+indicator("Control - While Loop", overlay=true)
+
+// Simple while loop
+sum = 0.0
+i = 0
+while i < 5
+    sum := sum + close[i]
+    i := i + 1
+avg5 = sum / 5
+
+// While with break condition
+j = 0
+cumSum = 0.0
+while j < 20
+    if na(close[j])
+        break
+    cumSum := cumSum + close[j]
+    j := j + 1
+
+plot(avg5, title="While Avg 5", color=#2196F3, linewidth=2)
+plot(cumSum, title="While CumSum", color=#FF9800)

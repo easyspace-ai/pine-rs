@@ -1,0 +1,13 @@
+{
+  "Ticker Functions": {
+    "ticker.heikinashi()": false,
+    "ticker.inherit()": false,
+    "ticker.kagi()": false,
+    "ticker.linebreak()": false,
+    "ticker.modify()": false,
+    "ticker.new()": false,
+    "ticker.pointfigure()": false,
+    "ticker.renko()": false,
+    "ticker.standard()": false
+  }
+}

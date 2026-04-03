@@ -1,0 +1,21 @@
+//@version=6
+indicator("Inputs Demo", overlay=true)
+
+// Various input types
+length = input.int(20, title="Length", minval=1, maxval=200)
+smooth = input.float(1.5, title="Smooth Factor", minval=0.1, maxval=5.0)
+showMA = input.bool(true, title="Show Moving Average")
+maColor = input.color(#2196F3, title="MA Color")
+maSource = input.source(close, title="MA Source")
+maType = input.string("SMA", title="MA Type", options=["SMA", "EMA", "WMA"])
+
+// Calculate MA based on selection
+maValue = switch maType
+    "SMA" => ta.sma(maSource, length)
+    "EMA" => ta.ema(maSource, length)
+    "WMA" => ta.wma(maSource, length)
+    => ta.sma(maSource, length)
+
+// Plot
+if showMA
+    plot(maValue, title="MA", color=maColor, linewidth=2)

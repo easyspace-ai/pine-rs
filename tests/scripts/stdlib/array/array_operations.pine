@@ -51,7 +51,7 @@ firstInt = array.first(intArr)
 lastInt = array.last(intArr)
 
 // Plot results
-plot(poppedInt, "Popped Int", color=color.red)
-plot(poppedFloat, "Popped Float", color=color.blue)
-plot(firstInt, "First Element", color=color.green)
-plot(lastInt, "Last Element", color=color.orange)
+plot(poppedInt, title="Popped Int", color=color.red)
+plot(poppedFloat, title="Popped Float", color=color.blue)
+plot(firstInt, title="First Element", color=color.green)
+plot(lastInt, title="Last Element", color=color.orange)

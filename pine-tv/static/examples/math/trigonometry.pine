@@ -1,0 +1,11 @@
+//@version=6
+indicator("Math - Trigonometry", overlay=false)
+
+// Trigonometric functions (scaled for display)
+scaled = close / ta.sma(close, 50) * math.pi
+sinValue = math.sin(scaled)
+cosValue = math.cos(scaled)
+
+plot(sinValue, title="Sine", color=#2196F3, linewidth=1)
+plot(cosValue, title="Cosine", color=#FF9800, linewidth=1)
+hline(0, "Zero", color=color.new(#9E9E9E, 50))

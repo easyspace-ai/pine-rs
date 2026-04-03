@@ -1,0 +1,9 @@
+//@version=6
+indicator("Math - Log & Exp", overlay=false)
+
+// Natural log and exponential
+logClose = math.log(close)
+log10Close = math.log10(close)
+expValue = math.exp(close / ta.sma(close, 50))
+
+plot(logClose, title="ln(Close)", color=#4CAF50, linewidth=2)

@@ -1,0 +1,10 @@
+//@version=6
+indicator("UDF Block Simple Test")
+
+// TV official UDF syntax with multi-statement block body
+myAdd(a, b) =>
+    c = a + b
+    c
+
+x = myAdd(close, open)
+plot(x, title="Add")

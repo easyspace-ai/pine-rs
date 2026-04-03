@@ -1,0 +1,9 @@
+//@version=6
+indicator("MACD", overlay=false)
+
+// MACD with tuple destructuring
+[macdLine, signalLine, histLine] = ta.macd(close, 12, 26, 9)
+
+plot(macdLine, title="MACD", color=#2196F3, linewidth=2)
+plot(signalLine, title="Signal", color=#FF9800, linewidth=1)
+plot(histLine, title="Histogram", color=#26A69A, linewidth=1, style=plot.style_histogram)

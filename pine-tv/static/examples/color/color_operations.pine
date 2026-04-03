@@ -1,0 +1,27 @@
+//@version=6
+indicator("Color - Operations", overlay=true)
+
+// Create colors
+blue = color.new(#2196F3, 0)
+green = color.new(#4CAF50, 0)
+red = color.new(#F44336, 0)
+
+// Lighten and darken
+lightBlue = color.lighten(blue, 20)
+darkBlue = color.darken(blue, 20)
+
+// Mix colors
+mixed = color.mix(green, red, 50)
+
+// RGB operations
+r = color.r(blue)
+g = color.g(blue)
+b = color.b(blue)
+alpha = color.a(blue)
+
+// Transparency
+semiTransparent = color.new_transparency(blue, 50)
+
+// Plot with different colors
+plot(close, title="Blue", color=blue, linewidth=2)
+plot(open, title="Mixed", color=mixed, linewidth=1)

@@ -1,0 +1,56 @@
+//@version=6
+indicator("Map Core Functions Test", overlay=true)
+
+// Create a map
+var m = map.new()
+
+// Test map.new_from_pair
+var pairMap = map.new_from_pair("initial", 100)
+
+// Initialize map on first bar
+if bar_index == 0
+    m := map.put(m, "a", 1.0)
+    m := map.put(m, "b", 2.0)
+    m := map.put(m, "c", 3.0)
+
+// Get values
+valA = map.get(m, "a")
+valB = map.get(m, "b")
+valC = map.get(m, "c")
+
+// Check contains
+hasA = map.contains(m, "a")
+hasZ = map.contains(m, "z")
+
+// Get size and is_empty
+size = map.size(m)
+isEmpty = map.is_empty(m)
+
+// Modify map on bar_index 1
+if bar_index == 1
+    m := map.put(m, "d", 4.0)  // Add new key
+    m := map.put(m, "a", 10.0) // Update existing key
+    m := map.remove(m, "b")    // Remove key
+
+// Get modified values
+valA2 = map.get(m, "a")  // Should be 10.0 after bar 1
+valD = map.get(m, "d")   // Should be 4.0 after bar 1
+size2 = map.size(m)      // Should be 3 (removed "b", added "d")
+
+// Test map.clear on bar_index 2
+if bar_index == 2
+    m := map.clear(m)
+
+size3 = map.size(m)      // Should be 0 after bar 2
+isEmpty2 = map.is_empty(m)
+
+// Plot results
+plot(size, title="Size", display=display.none)
+plot(size2, title="Size2", display=display.none)
+plot(size3, title="Size3", display=display.none)
+plot(valA, title="ValA", display=display.none)
+plot(valA2, title="ValA2", display=display.none)
+plot(hasA ? 1.0 : 0.0, title="HasA", display=display.none)
+plot(hasZ ? 1.0 : 0.0, title="HasZ", display=display.none)
+plot(isEmpty ? 1.0 : 0.0, title="IsEmpty", display=display.none)
+plot(isEmpty2 ? 1.0 : 0.0, title="IsEmpty2", display=display.none)

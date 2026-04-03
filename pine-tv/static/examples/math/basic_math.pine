@@ -1,0 +1,15 @@
+//@version=6
+indicator("Math - Basic Operations", overlay=true)
+
+// Absolute value
+absDiff = math.abs(close - open)
+
+// Power and square root
+squared = math.pow(close, 2)
+sqrtClose = math.sqrt(close)
+
+// Min/Max
+highestPrice = math.max(open, high, close)
+lowestPrice = math.min(open, low, close)
+
+plot(absDiff, title="|Close - Open|", color=#FF9800)

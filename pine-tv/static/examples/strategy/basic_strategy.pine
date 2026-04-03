@@ -1,0 +1,22 @@
+//@version=6
+strategy("Basic Strategy", overlay=true, initial_capital=10000)
+
+// Simple moving average crossover strategy
+fastMA = ta.sma(close, 10)
+slowMA = ta.sma(close, 30)
+
+// Entry conditions
+longCondition = ta.crossover(fastMA, slowMA)
+shortCondition = ta.crossunder(fastMA, slowMA)
+
+// Execute trades
+if longCondition
+    strategy.entry("Long", strategy.long, qty=1)
+
+if shortCondition
+    strategy.close("Long")
+    strategy.entry("Short", strategy.short, qty=1)
+
+// Plot
+plot(fastMA, title="Fast MA", color=color.new(#4CAF50, 0), linewidth=2)
+plot(slowMA, title="Slow MA", color=color.new(#F44336, 0), linewidth=2)

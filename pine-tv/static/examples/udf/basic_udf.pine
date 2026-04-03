@@ -1,0 +1,32 @@
+//@version=6
+indicator("UDF - Basic", overlay=true)
+
+// UDF with expression body (arrow function) - TV official syntax
+myDiff(a, b) => math.abs(a - b)
+
+// UDF with block body - TV official syntax (no 'fn' keyword)
+myAverage(a, b, c) =>
+    sum = a + b + c
+    sum / 3.0
+
+// UDF with multiple statements and tuple return
+calculateRange(high, low, close) =>
+    range = high - low
+    body = math.abs(close - open)
+    [range, body]
+
+// UDF calling other UDFs
+enhancedSignal(src, length) =>
+    ma = ta.sma(src, length)
+    diff = myDiff(src, ma)
+    diff
+
+// Using UDFs
+result1 = myDiff(close, open)
+result2 = myAverage(close, open, high)
+[rangeVal, bodyVal] = calculateRange(high, low, close)
+signal = enhancedSignal(close, 14)
+
+plot(result1, title="Diff", color=#2196F3)
+plot(result2, title="Avg", color=#FF9800)
+plot(signal, title="Enhanced Signal", color=#4CAF50, linewidth=2)

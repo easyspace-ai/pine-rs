@@ -1931,12 +1931,14 @@ name = "pine-tv"
 version = "0.1.0"
 dependencies = [
  "axum",
+ "base64 0.21.7",
  "chrono",
  "config",
  "dirs",
  "futures-util",
  "insta",
  "miette",
+ "native-tls",
  "pine-eval",
  "pine-lexer",
  "pine-output",
@@ -1950,6 +1952,7 @@ dependencies = [
  "serde_json",
  "thiserror",
  "tokio",
+ "tokio-native-tls",
  "tokio-tungstenite 0.21.0",
  "tower 0.4.13",
  "tower-http",
@@ -2871,7 +2874,9 @@ checksum = "c83b561d025642014097b66e6c1bb422783339e0909e4429cde4749d1990bc38"
 dependencies = [
  "futures-util",
  "log",
+ "native-tls",
  "tokio",
+ "tokio-native-tls",
  "tungstenite 0.21.0",
 ]
 
@@ -3091,6 +3096,7 @@ dependencies = [
  "http 1.4.0",
  "httparse",
  "log",
+ "native-tls",
  "rand 0.8.5",
  "sha1",
  "thiserror",

@@ -1,0 +1,25 @@
+//@version=6
+indicator("Control - Switch", overlay=true)
+
+// Switch with scrutinee
+value = switch close % 4
+    0 => 10.0
+    1 => 20.0
+    2 => 30.0
+    => 40.0
+
+// Switch for trend classification
+trendClass = 0
+sma20 = ta.sma(close, 20)
+if close > sma20
+    trendClass := 1
+else if close < sma20
+    trendClass := -1
+
+trendValue = switch trendClass
+    1 => high
+    -1 => low
+    => close
+
+plot(value, title="Switch Value", color=#2196F3)
+plot(trendValue, title="Trend Value", color=#FF9800, linewidth=2)

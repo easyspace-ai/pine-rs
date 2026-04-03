@@ -18,7 +18,6 @@
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
         }
 
-        /* Toolbar */
         #toolbar {
             height: 48px;
             background: #1e1e1e;
@@ -67,17 +66,17 @@
             cursor: not-allowed;
         }
 
-        /* Main container with three panels */
+        /* Chart | Editor | Output */
         #main-container {
             display: flex;
             height: calc(100% - 48px);
         }
 
-        /* Panels */
         .panel {
             height: 100%;
             overflow: hidden;
             position: relative;
+            flex-shrink: 0;
         }
 
         #chart-panel {
@@ -88,7 +87,14 @@
             background: #1e1e1e;
         }
 
-        /* Resizer handles */
+        #side-panel {
+            background: #161616;
+            min-width: 160px;
+            display: flex;
+            flex-direction: column;
+            flex-shrink: 0;
+        }
+
         .resizer {
             width: 4px;
             background: #333;
@@ -101,7 +107,6 @@
             background: #0066cc;
         }
 
-        /* Panel headers */
         .panel-header {
             height: 32px;
             background: #2d2d2d;
@@ -118,13 +123,11 @@
             letter-spacing: 0.5px;
         }
 
-        /* Chart container */
         #chart-container {
             height: calc(100% - 32px);
             width: 100%;
         }
 
-        /* Editor container */
         #editor-container {
             height: calc(100% - 72px);
             width: 100%;
@@ -140,7 +143,18 @@
             overflow: auto;
         }
 
-        /* Loading spinner */
+        #side-content {
+            flex: 1;
+            overflow: auto;
+            padding: 10px 12px;
+            font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, monospace;
+            font-size: 11px;
+            line-height: 1.45;
+            color: #b0b0b0;
+            white-space: pre-wrap;
+            word-break: break-word;
+        }
+
         .spinner {
             display: inline-block;
             width: 14px;
@@ -157,14 +171,12 @@
             to { transform: rotate(360deg); }
         }
 
-        /* Hidden */
         .hidden {
             display: none !important;
         }
     </style>
 </head>
 <body>
-    <!-- Toolbar -->
     <div id="toolbar">
         <span id="toolbar-title">pine-tv</span>
         <select id="symbol-select" class="toolbar-select">
@@ -181,37 +193,39 @@
             <option value="1w">1w</option>
         </select>
         <select id="example-select" class="toolbar-select">
-            <option value="">Examples...</option>
-            <option value="sma">SMA Indicator</option>
-            <option value="rsi">RSI Indicator</option>
-            <option value="ema_triple">EMA Triple (30/60/120)</option>
+            <option value="">Loading examples...</option>
         </select>
         <button id="run-btn" class="toolbar-btn">Run</button>
     </div>
 
-    <!-- Main container with two panels -->
     <div id="main-container">
-        <!-- Chart Panel -->
-        <div id="chart-panel" class="panel" style="width: 55%;">
+        <div id="chart-panel" class="panel">
             <div class="panel-header">
                 <span class="panel-title">Chart</span>
             </div>
             <div id="chart-container"></div>
         </div>
 
-        <div class="resizer" id="resizer-1"></div>
+        <div class="resizer" id="resizer-1" title="Drag to resize"></div>
 
-        <!-- Editor Panel -->
-        <div id="editor-panel" class="panel" style="width: 45%;">
+        <div id="editor-panel" class="panel">
             <div class="panel-header">
                 <span class="panel-title">Pine Script</span>
             </div>
             <div id="editor-container"></div>
             <div id="editor-status">Ready</div>
         </div>
+
+        <div class="resizer" id="resizer-2" title="Drag to resize"></div>
+
+        <div id="side-panel" class="panel">
+            <div class="panel-header">
+                <span class="panel-title">Run output</span>
+            </div>
+            <div id="side-content">Run a script to see JSON here. Chart overlays come from <code>plots</code>.</div>
+        </div>
     </div>
 
-    <!-- Scripts -->
     <script type="module" src="app.js"></script>
 </body>
 </html>

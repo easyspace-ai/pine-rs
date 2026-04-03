@@ -1,0 +1,32 @@
+//@version=6
+indicator("UDF - Series Handling", overlay=true)
+
+// UDF that accepts series and returns series - TV official syntax
+customEMA(src, length) =>
+    alpha = 2.0 / (length + 1)
+    var result = src
+    result := alpha * src + (1 - alpha) * result[1]
+    result
+
+// UDF with series operations
+normalizedPrice(src, length) =>
+    highest = ta.highest(src, length)
+    lowest = ta.lowest(src, length)
+    (src - lowest) / (highest - lowest) * 100
+
+// UDF with recursion-like behavior using var
+cumulativeAverage(src) =>
+    var sum = 0.0
+    var count = 0
+    sum := sum + src
+    count := count + 1
+    sum / count
+
+// Apply UDFs
+emaResult = customEMA(close, 20)
+normResult = normalizedPrice(close, 20)
+cumAvg = cumulativeAverage(close)
+
+plot(emaResult, title="Custom EMA", color=#2196F3, linewidth=2)
+plot(normResult, title="Normalized", color=#FF9800)
+plot(cumAvg, title="Cumulative Avg", color=#9C27B0, linewidth=2)

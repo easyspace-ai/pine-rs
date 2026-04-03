@@ -1,0 +1,8 @@
+//@version=6
+indicator("Momentum", overlay=false)
+
+// Rate of change momentum
+mom10 = ta.mom(close, 10)
+
+plot(mom10, title="Momentum 10", color=#FF9800, linewidth=2)
+hline(0, "Zero Line", color=color.new(#9E9E9E, 50))

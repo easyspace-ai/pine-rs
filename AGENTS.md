@@ -14,16 +14,19 @@
 
 当前阶段的唯一主目标是：
 
-**把 `pine-rs` 做成稳定、可验证、可持续扩展的本地 Pine Script 内核。**
+**把 `pine-rs` 做成稳定、可验证、语法与官方 Pine Script v6 一致的本地 Pine Script 内核。**
+
+**长期对齐目标（North Star）**：在 **不虚构「已完成」** 的前提下，逐步支持 **TradingView Pine Script v6 官方语法与内置 API** 写就的指标与策略，使社区脚本 **尽量少改写** 即可落地（详见 [`docs/V6_ALIGNMENT.md`](docs/V6_ALIGNMENT.md)）。**解析层以官方为准**：禁止把 **TV 不存在的语法**（如当前主路径上的 `fn` UDF）当作「正宗 Pine」对外宣传；兼容层可短期保留，但须规划收敛到 **`name(params) =>`** 等官方形态。**已完成的指标基建必须和官方一致**。
 
 当前阶段**不是**要把 `pine-tv` 做成完整产品。
 
 ### 1.1 当前优先级（价值排序）
 
-1. 内核正确性  
-2. 测试与验收可信度（含黄金测试全链路）  
-3. 内核缺陷修复与语义补齐  
-4. `pine-tv` 仅做验证壳，不单独扩展产品需求  
+1. **语法解析与官方 v6 完全一致**（UDF、`switch`、`for...in`、import/export 形态）
+2. 内核正确性（已完成的指标语义必须与官方一致）
+3. 测试与验收可信度（含黄金测试全链路）
+4. 内核缺陷修复与语义补齐
+5. `pine-tv` 仅做验证壳，不单独扩展产品需求
 
 ### 1.2 关于 `pine-tv`
 
@@ -43,7 +46,7 @@ Workspace 已具备完整内核骨架：`crates/` 下 lexer、parser、sema、ev
 
 **Phase 3 关闭条件**见本文**第 12.3 节**：以 **`./scripts/dev_verify.sh --full` 全绿**为准（含 `tests/run_golden.sh`、`tests/vm_run_golden.sh`、`phase_acceptance` 等脚本所跑内容）。**该门禁须在每次合并/发布意图前保持通过**；一旦失败，应优先修复再继续扩张功能。
 
-**当前阶段（Phase 4）**：在**不削弱**上述门禁的前提下，按**第 12.4 节**推进 `pine-vm` 与 `pine-eval` 的 parity 与能力扩展；可并行推进文档与仓库卫生（见第 3 节）。「代码能跑」仍须以**黄金与全量门禁**证明数值与行为可对齐本仓库基线。
+**当前阶段（Phase 4）**：在**不削弱**上述门禁的前提下，推进 **Syntax-native 指标基建对齐**（详见第 6 节、第 8 节第一层、第 13 节）。核心任务是将解析层收敛到 **官方 Pine Script v6 口径**（UDF、`switch`、`for…in`、import/export 等），并确保已完成的指标语义与官方一致。VM parity 维持现有 16 支脚本覆盖，本阶段**不再扩张**新指令集。「代码能跑」仍须以**黄金与全量门禁**证明数值与行为可对齐本仓库基线。
 
 ---
 
@@ -115,7 +118,9 @@ pine-rs/
 
 ### 5.2 文档原则
 
-- 长期维护的**项目入口**只有本文件；产品与架构细节以 `docs/GUIDE.md` 为权威。  
+- **门禁与阶段优先级**：本文件（`AGENTS.md`）。  
+- **与 TradingView v6 的差距与路线图（Pinets 式总表 + 状态图例）**：[`docs/V6_ALIGNMENT.md`](docs/V6_ALIGNMENT.md)。  
+- **架构与工程细节**：`docs/GUIDE.md`。三者冲突时：**验收与阶段**以本文件为准；**「官方对齐范围」** 以 `V6_ALIGNMENT.md` 为准；**实现细节**以 `GUIDE.md` 为准，并在偏差处注明日期与原因。  
 - `docs/GUIDE.md` 与代码冲突时，优先修代码或在该文档中**明确**偏差与原因。
 
 ### 5.3 状态文件原则
@@ -132,8 +137,8 @@ pine-rs/
 
 当前以**内核主线**计（与 `.pine-rs-state/current_phase.txt` 对齐）：
 
-- **当前 Phase：`4`**  
-- **当前目标**：保持 **`./scripts/dev_verify.sh --full` 全绿**（第 12.3 节 C1）；在此基础上按**第 12.4 节**推进 `pine-vm` 纵深与 eval 的 parity，不降低黄金与门禁标准。
+- **当前 Phase：`4`**
+- **当前目标**：**Syntax-native 指标基建对齐**——在保持 **`./scripts/dev_verify.sh --full` 全绿**的前提下，将解析层与执行层收敛到 **官方 Pine Script v6 口径**（UDF、`switch`、`for...in`、import/export 等）。已实现的指标语义（`ta.*`、series、plot 等）必须与官方行为一致。**VM parity 维持现有覆盖，不再扩张新指令集**，确保已有 16 支脚本的 parity 回归不退化。
 
 ### Phase 1
 
@@ -150,9 +155,17 @@ pine-rs/
 目标：标准库与 CLI 输出进入**可验证**状态。  
 验收：本文**第 12.3 节** checklist（C1–C6）及 **`dev_verify.sh --full`**；黄金脚本与 CSV、`compare_golden.py`、`pine-cli` JSON `outputs` 键对齐；`ta.*` 极值族与 `for` 等有回归锁定。
 
-### Phase 4–6
+### Phase 4
 
-**Phase 4 为当前工作重心**（VM parity、语言子集扩展等）；Phase 5–6 仍为后续计划。仓库内试验代码**不自动视为** Phase 4「已完成」，须带独立验收与门禁。
+目标：**Syntax-native 指标基建对齐**。解析层与执行层收敛到官方 Pine Script v6 口径（UDF、`switch`、`for...in`、import/export 形态）。`fn` 语法降级为兼容或移除；已有 16 支脚本的 VM parity 保持回归，但**不再扩张**新指令集。验收以 `dev_verify.sh --full` + 新增语法/语义单测与黄金脚本为准。
+
+### Phase 5
+
+目标：**stdlib API sweep**。在语法已对齐的基础上，按 namespace 补齐内置函数矩阵（`array.*`、`map.*`、`str.*`、`color.*`、`input.*` 等），建立函数级 coverage 表。以 V6_ALIGNMENT §3 与黄金/单测为验收。
+
+### Phase 6
+
+目标：**策略子集**。`strategy()` 与信号级输出在 GUIDE 非目标（撮合）边界内分阶段实现；`request.*` 按 GUIDE 与 V6_ALIGNMENT 的 🔜 归档，避免 silent 与 TV 等价误读。
 
 ---
 
@@ -184,27 +197,35 @@ pine-rs/
 
 下列三层：**默认先保高层**；任何工作不得削弱 **`./scripts/dev_verify.sh --full`**（含 `run_golden` 与 VM 黄金）。
 
-### 第一层：门禁不退化（持续）
+### 第一层：语法解析层与官方 v6 完全一致（Phase 4 当前主投入）
 
-1. **全量门禁绿**：`./scripts/dev_verify.sh` 与 **`--full`** 在主干上保持通过；新增黄金或改 CLI 输出格式时同步脚本与文档。  
-2. **入口与状态一致**：`AGENT.md` / `CLAUDE.md` / `START_AUTONOMOUS.md` 等以相对路径指向 `./AGENTS.md`；`.pine-rs-state/` 与本文、与真实验收一致，禁止虚假完成。  
-3. **Phase 3 已达成项的维护**：黄金配对、列名与 `compare_golden.py` 约定、`for` 与极值族回归等（见第 12.3 节）**不得回退**；回归失败优先修实现而非放宽阈值。
+以 [`docs/V6_ALIGNMENT.md`](docs/V6_ALIGNMENT.md) §1 为 backlog，**解析层是指标基建的根**，必须先行钉死：
 
-### 第二层：Phase 4 内核纵深（当前主投入）
+1. **UDF 官方语法为主路径**：`name(params) => expr` 与块体必须成为**首要解析路径**；`fn` 语法降级为兼容或规划移除。修正当前 `try_parse_tv_arrow_function_stmt` 的脆弱启发式（它把官方语法当 fallback，且只支持表达式体），确保 UDF 声明与调用在解析层就和 TV 一致。
+2. **`switch` TV 形态**：表达式 + 缩进臂 `pattern => body`；默认支 `=>`；运行时彻底收敛到 TV 语义，禁止 case/default 旧语义的残留。
+3. **`for … in` 执行层闭环**：目前已解析，但执行层对 series/bar 循环的交互仍待验证；补齐单测与黄金脚本。
+4. **`import`/`export` 形态对齐**：路径语法（如 `user/lib/1 as m`）、export 修饰整段声明的 AST 与执行层语义。
+5. **`else if` 无 `elif` 依赖**：Lexer 可保留 `elif`，但 parser 必须正确支持 `else` + `if` 组合，不因 lexer 关键字差异导致与 TV 脚本不兼容。
 
-1. **VM 与 eval 脚本级一致性**（第 12.4 节）：在**同一批真实 `.pine` 脚本**上对齐 VM 与 `pine-eval` 输出（数值与 plot/系列键），优先扩展黄金已覆盖脚本的双路径 parity；再审慎扩展 VM 指令集与可编译子集。  
-2. **`pine-vm` 工程质量**：调试输出仅走显式开关；保持 `cargo clippy --workspace -- -D warnings`；按需收敛测试里的告警噪声。  
-3. **仓库卫生**（穿插）：根目录 `debug_ast.rs`、`three/` 的定性或迁出（第 3 节）——不替代第 1 条主线。
+**验收**：每落一项须配套**解析快照测试**或**黄金脚本**，且 `dev_verify.sh --full` 不退化。
 
-### 第三层：`pine-tv` 与长期能力（与 Phase 4 可并行，不降门禁）
+### 第二层：指标语义正确性与验收（持续）
 
-- **Phase 4（内核）**：例如 UDT（`type` / method）、`array.*`、`map.*`、`str.*` 等扩展——支撑更复杂社区脚本；仍以本仓库测试与文档为验收，不以壳层观感为准。  
-- **`pine-tv` 产品化 Phase A**：在**内核输出已稳定可消费**的前提下，可将验证壳升级为更完整的三栏 Playground、打通 `/api/run` 端到端等——与 Phase 4 **可并行**，因壳消费的是已稳定契约；**不得**用壳需求倒逼降低黄金门禁。
+1. **全量门禁绿**：`./scripts/dev_verify.sh` 与 **`--full`** 在主干上保持通过；新增黄金或改 CLI 输出格式时同步脚本与文档。
+2. **Phase 3 已达成项的维护**：黄金配对、列名与 `compare_golden.py` 约定、`for` 与极值族回归等（见第 12.3 节）**不得回退**；回归失败优先修实现而非放宽阈值。
+3. **已完成的指标语义必须与官方一致**：`ta.*`、series 访问、`var`/`varip`、plot 输出等，若发现与 TV 行为不符，优先修复。
+4. **对齐总表维护**：[`docs/V6_ALIGNMENT.md`](docs/V6_ALIGNMENT.md) 在合并「语法/API 语义」相关 PR 时**应同步更新**相应行；避免文档与主分支能力长期脱节。
 
-**显式不优先**（与原文一致，避免 scope 漂移）：
+### 第三层：stdlib 扩展与 `pine-tv`（与 Phase 4 可并行，不降门禁）
 
-- 不把 `pine-tv` 界面当成 Phase 3 完成标准。  
-- **暂不优先**：`library()` 导出表与 `import` 真文件加载闭环；嵌套 UDF / 高阶可调用值；把未验收 VM/并行/Web 演示直接记为「项目完成」。
+- **按 namespace 补内置函数**（`array.*`、`map.*`、`color.*` 等）：以 V6_ALIGNMENT §3 与黄金/单测为验收，不以壳层观感为准。
+- **`pine-tv` 验证壳**：在**内核输出已稳定可消费**的前提下，可做 Playground 体验改进；**不得**用壳需求倒逼降低黄金门禁。
+- **VM parity 维持**：已有 16 支脚本的 parity **保持回归**；本阶段**不扩张** VM 新指令集或新语言子集，避免在语法尚未对齐时把 VM 推为主执行引擎。
+
+**显式不优先**（避免 scope 漂移）：
+
+- 不把 `pine-tv` 界面当成阶段完成标准。
+- **暂不优先**：`library()` 导出表与 `import` 真文件加载闭环（可先对齐 AST 形态）；嵌套 UDF / 高阶可调用值（closure 语义）；策略（strategy）完整撮合引擎；未验收的 VM/并行/Web demo。
 
 ---
 
@@ -300,10 +321,9 @@ bash tests/run_golden.sh
 
 ### 12.4 VM（`pine-vm`）推进门槛
 
-- **前提**：第 12.2 节四条 DoD 已满足，且 **`tests/run_golden.sh` 可作为回归基线**。  
-- **首轮目标（建议）**：VM 路径与现有 **`pine-eval` 路径对同一批黄金脚本输出一致**（parity），再扩展指令集与语言子集。  
-- **禁止**：未与黄金对齐时，将 VM 标为「主执行引擎」或替代 eval 的**唯一**验收路径而不设 parity。  
-- **文档**：Phase 4–6 在第 6 节仍为后续计划；VM 的阶段性完成须独立验收（parity + 本仓库强制命令 green），**不继承** Phase 3 的完成声明。
+- **现状**：已有 16 支脚本的 VM↔eval parity 通过，并纳入 `dev_verify.sh --full` 回归。
+- **本轮 Phase 4 口径**：VM **保持现有 parity 覆盖，不再扩张新指令集或新语言子集**。语法层尚未完全对齐官方 v6 前，先把 eval 路径的语法与语义钉死；VM 后续追赶待 Phase 5 后评估。
+- **禁止**：未与黄金对齐时，将 VM 标为「主执行引擎」或替代 eval 的**唯一**验收路径而不设 parity。
 
 ### 12.5 执行顺序
 
@@ -313,3 +333,51 @@ bash tests/run_golden.sh
 4. 再按 **12.4** 启动 VM 的 parity 驱动开发。
 
 若规则与 `docs/GUIDE.md` 冲突，**先改实现或改 GUIDE 并在此引用**，避免多套标准。
+
+---
+
+## 13. 下一步计划（Syntax-native 指标基建对齐）
+
+以 **`./scripts/dev_verify.sh --full` 不退化为前提**，按以下顺序推进。核心原则是：**解析层先钉死，已完成的指标语义必须和官方一致，VM 与策略暂时冻结扩张**。
+
+### 13.1 语法层 P0：UDF 官方形态（最高优先级）
+
+**问题**：当前 parser 以 `fn name(params) => expr` 为主路径，而 TV 官方为 `name(params) => expr` 或块体；`try_parse_tv_arrow_function_stmt` 把官方语法当脆弱 fallback，且只支持表达式体。
+
+**行动**：
+1. 让 `name(params) => expr/body` 成为 parser 的**首要 UDF 路径**。
+2. `fn` 关键字降级为兼容层（或规划移除），所有内部示例、测试、文档中的 UDF 样例统一改为 TV 形态。
+3. 补齐 UDF 返回类型注解、默认参数、命名参数调用等在解析层的支持。
+4. 配套解析快照测试 + 至少 3 支黄金脚本（简单 UDF、带块体 UDF、带 series 的 UDF）。
+
+### 13.2 语法层 P0：`switch` TV 形态
+
+**问题**：parser 已支持 `pattern => body` 缩进臂，但 eval 层仍有旧 case 语义残留。
+
+**行动**：
+1. 彻底清理 eval 中 case/default 的旧分支语义。
+2. 支持无 scrutinee 的 `switch`（纯模式守卫）与默认臂 `=>`。
+3. 配套单测与黄金脚本。
+
+### 13.3 语法层 P1：`for … in`、`else if`、import/export 形态
+
+**行动**：
+1. `for … in`：已解析，重点补齐执行层在 bar 循环 + series 场景下的行为验证。
+2. `else if`：确保 parser 不依赖 `elif` keyword，正确消费 `else` + `if` 组合。
+3. `import`/`export`：对齐路径语法与修饰声明的 AST 形态，执行层可先 stub，但 AST 必须和官方一致。
+
+### 13.4 指标语义一致性检查（穿插）
+
+在补语法的同时，持续审查已完成的指标语义：
+- `ta.*` 函数行为与 TV 官方手册是否一致（参数默认值、na 处理、边界条件）。
+- `var`/`varip`、`plot`、series 访问（`close[1]`）等是否在细节上仍与 TV 有偏差。
+
+发现偏差即创建修复任务，优先于新功能扩张。
+
+### 13.5 明确延后（本轮不投入）
+
+- **VM 不扩张**：16 支 parity 保持回归，不新增指令集或编译子集。
+- **策略不扩张**：`strategy()`、`request.*` 维持现有占位或延后状态。
+- **高阶 UDF / 真闭包**：嵌套函数、first-class callable 延后到语法层完全收敛后。
+
+**文档纪律**：凡合并「语法或内置 API 语义」相关改动，**同步更新** `docs/V6_ALIGNMENT.md` 对应行；叙述性背景仍可写在 `docs/GAP_ANALYSIS.md`。**当前焦点**须写入 `.pine-rs-state/current_task.txt`（与 `completed_tasks.json` 规则无关）。

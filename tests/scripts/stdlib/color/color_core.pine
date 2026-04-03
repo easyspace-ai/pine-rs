@@ -1,0 +1,53 @@
+//@version=6
+indicator("Color Core Functions Test", overlay=true)
+
+// Test color.rgb and color.rgba
+red = color.rgb(255, 0, 0)
+green = color.rgb(0, 255, 0)
+blue = color.rgb(0, 0, 255)
+semiRed = color.rgba(255, 0, 0, 128)
+
+// Test color.from_hex
+hexRed = color.from_hex("#FF0000")
+hexGreen = color.from_hex("#00FF00")
+hexBlueShort = color.from_hex("#00F")
+hexWithAlpha = color.from_hex("#FF000080")
+
+// Test color.r, color.g, color.b, color.a
+redR = color.r(red)
+redG = color.g(red)
+redB = color.b(red)
+semiRedA = color.a(semiRed)
+
+// Test color.transparency and color.new_transparency
+transparency = color.transparency(semiRed)
+newTrans = color.new_transparency(red, 50)
+newTransA = color.a(newTrans)
+
+// Test color.new (alias for color.new_transparency)
+newColor = color.new(green, 25)
+newColorA = color.a(newColor)
+
+// Test color.mix
+mixed = color.mix(red, blue, 0.5)
+mixedR = color.r(mixed)
+mixedB = color.b(mixed)
+
+// Test color.lighten and color.darken
+lightened = color.lighten(red, 50)
+darkened = color.darken(red, 50)
+lightenedR = color.r(lightened)
+darkenedR = color.r(darkened)
+
+// Plot component values for verification
+plot(redR, title="RedR", display=display.none)
+plot(redG, title="RedG", display=display.none)
+plot(redB, title="RedB", display=display.none)
+plot(semiRedA, title="SemiRedA", display=display.none)
+plot(transparency, title="Transparency", display=display.none)
+plot(newTransA, title="NewTransA", display=display.none)
+plot(newColorA, title="NewColorA", display=display.none)
+plot(mixedR, title="MixedR", display=display.none)
+plot(mixedB, title="MixedB", display=display.none)
+plot(lightenedR, title="LightenedR", display=display.none)
+plot(darkenedR, title="DarkenedR", display=display.none)

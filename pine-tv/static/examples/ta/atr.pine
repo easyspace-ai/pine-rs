@@ -1,0 +1,6 @@
+//@version=6
+indicator("ATR - Average True Range", overlay=false)
+
+atr14 = ta.atr(14)
+
+plot(atr14, title="ATR 14", color=#9C27B0, linewidth=2)

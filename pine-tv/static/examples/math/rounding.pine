@@ -1,0 +1,13 @@
+//@version=6
+indicator("Math - Rounding", overlay=true)
+
+// Various rounding methods
+rounded = math.round(close)
+ceiled = math.ceil(close)
+floored = math.floor(close)
+truncated = math.trunc(close)
+
+// Round to nearest precision
+roundedTo10 = math.round_to_nearest(close, 10)
+
+plot(roundedTo10, title="Round to 10", color=#2196F3, linewidth=2)

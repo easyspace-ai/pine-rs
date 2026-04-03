@@ -14,6 +14,9 @@ pub struct ApiResponse {
     /// Plot data (only for /api/run)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub plots: Option<Vec<Plot>>,
+    /// Strategy signals (only for /api/run when using strategy())
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub strategy: Option<StrategyOutput>,
     /// Error information (only when ok = false)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub errors: Option<Vec<ApiError>>,
@@ -26,6 +29,18 @@ impl ApiResponse {
             ok: true,
             exec_ms: Some(exec_ms),
             plots: Some(plots),
+            strategy: None,
+            errors: None,
+        }
+    }
+
+    /// Create a successful response with plots and strategy signals
+    pub fn success_with_strategy(exec_ms: u64, plots: Vec<Plot>, strategy: StrategyOutput) -> Self {
+        Self {
+            ok: true,
+            exec_ms: Some(exec_ms),
+            plots: Some(plots),
+            strategy: Some(strategy),
             errors: None,
         }
     }
@@ -36,6 +51,7 @@ impl ApiResponse {
             ok: false,
             exec_ms: None,
             plots: None,
+            strategy: None,
             errors: Some(errors),
         }
     }
@@ -133,4 +149,42 @@ fn default_bars() -> usize {
 pub struct CheckRequest {
     /// Pine Script code
     pub code: String,
+}
+
+/// Strategy output for trading signals
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct StrategyOutput {
+    /// Strategy name/title
+    pub name: String,
+    /// Entry signals (buy/long)
+    pub entries: Vec<TradeSignal>,
+    /// Exit signals (sell/close)
+    pub exits: Vec<TradeSignal>,
+    /// Current position size (positive = long, negative = short)
+    pub position_size: f64,
+    /// Current position direction
+    pub position_direction: String,
+}
+
+/// Individual trade signal
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TradeSignal {
+    /// Bar index where signal occurred
+    pub bar_index: usize,
+    /// Unix timestamp in seconds
+    pub time: i64,
+    /// Signal type: "entry" or "exit"
+    pub signal_type: String,
+    /// Signal ID (e.g., "Long", "Short")
+    pub id: String,
+    /// Direction: "long", "short", or "close"
+    pub direction: String,
+    /// Quantity (contracts/shares)
+    pub qty: f64,
+    /// Price (optional, None for market orders)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub price: Option<f64>,
+    /// Comment (optional)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub comment: Option<String>,
 }

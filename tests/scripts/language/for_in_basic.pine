@@ -1,0 +1,16 @@
+//@version=6
+indicator("For In Basic Test")
+
+// Test 1: Basic array iteration with single variable
+arr = [1.0, 2.0, 3.0, 4.0, 5.0]
+sum1 = 0.0
+for v in arr
+    sum1 := sum1 + v
+
+// Test 2: Array iteration with tuple destructuring [index, value]
+sum2 = 0.0
+for [i, v] in arr
+    sum2 := sum2 + v + i
+
+plot(sum1, title="Sum1")
+plot(sum2, title="Sum2")

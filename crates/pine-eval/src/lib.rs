@@ -141,6 +141,111 @@ pub struct PlotOutputs {
     current_bar: usize,
 }
 
+/// Strategy signal entry
+#[derive(Debug, Clone)]
+pub struct StrategySignal {
+    /// Bar index where signal occurred
+    pub bar_index: usize,
+    /// Signal type: "entry", "close", or "exit"
+    pub signal_type: String,
+    /// Signal id (e.g., "Long", "Short")
+    pub id: String,
+    /// Direction: "long", "short", or empty for close
+    pub direction: String,
+    /// Quantity
+    pub qty: f64,
+    /// Price (optional, None for market orders)
+    pub price: Option<f64>,
+    /// Comment
+    pub comment: Option<String>,
+}
+
+/// Strategy signals collector
+#[derive(Debug, Clone, Default)]
+pub struct StrategySignals {
+    /// List of all signals
+    signals: Vec<StrategySignal>,
+    /// Current bar index
+    current_bar: usize,
+}
+
+impl StrategySignals {
+    /// Create a new strategy signals collector
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Record an entry signal
+    pub fn record_entry(&mut self, id: impl Into<String>, direction: impl Into<String>, qty: f64) {
+        self.signals.push(StrategySignal {
+            bar_index: self.current_bar,
+            signal_type: "entry".to_string(),
+            id: id.into(),
+            direction: direction.into(),
+            qty,
+            price: None,
+            comment: None,
+        });
+    }
+
+    /// Record a close signal
+    pub fn record_close(&mut self, id: impl Into<String>, comment: Option<String>) {
+        self.signals.push(StrategySignal {
+            bar_index: self.current_bar,
+            signal_type: "close".to_string(),
+            id: id.into(),
+            direction: String::new(),
+            qty: 0.0,
+            price: None,
+            comment,
+        });
+    }
+
+    /// Record an exit signal
+    pub fn record_exit(
+        &mut self,
+        id: impl Into<String>,
+        from_entry: impl Into<String>,
+        qty: Option<f64>,
+    ) {
+        self.signals.push(StrategySignal {
+            bar_index: self.current_bar,
+            signal_type: "exit".to_string(),
+            id: id.into(),
+            direction: String::new(),
+            qty: qty.unwrap_or(0.0),
+            price: None,
+            comment: Some(from_entry.into()),
+        });
+    }
+
+    /// Advance to the next bar
+    pub fn next_bar(&mut self) {
+        self.current_bar += 1;
+    }
+
+    /// Get all signals
+    pub fn get_signals(&self) -> &[StrategySignal] {
+        &self.signals
+    }
+
+    /// Get entry signals
+    pub fn get_entries(&self) -> Vec<&StrategySignal> {
+        self.signals
+            .iter()
+            .filter(|s| s.signal_type == "entry")
+            .collect()
+    }
+
+    /// Get exit/close signals
+    pub fn get_exits(&self) -> Vec<&StrategySignal> {
+        self.signals
+            .iter()
+            .filter(|s| s.signal_type == "exit" || s.signal_type == "close")
+            .collect()
+    }
+}
+
 impl PlotOutputs {
     /// Create a new plot outputs collector
     pub fn new() -> Self {
@@ -200,6 +305,8 @@ pub struct EvaluationContext {
     pub series_data: Option<SeriesData>,
     /// Plot outputs collector
     pub plot_outputs: PlotOutputs,
+    /// Strategy signals collector
+    pub strategy_signals: StrategySignals,
     /// Runtime: call-site IDs, per-site `var`, series ring buffers.
     runtime: ExecutionContext,
     /// Nested UDF call sites.
@@ -245,6 +352,7 @@ impl Default for EvaluationContext {
             current_module: None,
             series_data: None,
             plot_outputs: PlotOutputs::new(),
+            strategy_signals: StrategySignals::new(),
             runtime: ExecutionContext::new(Arc::new(RuntimeConfig::default())),
             call_site_stack: Vec::new(),
             call_site_intern: IndexMap::new(),

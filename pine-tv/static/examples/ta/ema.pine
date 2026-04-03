@@ -1,0 +1,9 @@
+//@version=6
+indicator("EMA - Exponential Moving Average", overlay=true)
+
+// EMA with different lengths
+ema12 = ta.ema(close, 12)
+ema26 = ta.ema(close, 26)
+
+plot(ema12, title="EMA 12", color=color.new(#4CAF50, 0), linewidth=2)
+plot(ema26, title="EMA 26", color=color.new(#F44336, 0), linewidth=2)

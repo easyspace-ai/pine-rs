@@ -1,0 +1,9 @@
+//@version=6
+indicator("RSI - Relative Strength Index")
+
+rsiValue = ta.rsi(close, 14)
+
+plot(rsiValue, title="RSI", color=#2196F3, linewidth=2)
+hline(70, "Overbought", color=color.new(#F44336, 50))
+hline(50, "Midline", color=color.new(#9E9E9E, 50))
+hline(30, "Oversold", color=color.new(#4CAF50, 50))

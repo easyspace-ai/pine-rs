@@ -1,0 +1,23 @@
+//@version=6
+strategy("RSI Strategy", overlay=true, initial_capital=10000)
+
+// RSI parameters
+rsiLength = input.int(14, title="RSI Length")
+overbought = input.int(70, title="Overbought")
+oversold = input.int(30, title="Oversold")
+
+// Calculate RSI
+rsiValue = ta.rsi(close, rsiLength)
+
+// Trading logic - mean reversion
+if rsiValue < oversold
+    strategy.entry("Long", strategy.long, qty=1)
+
+if rsiValue > overbought
+    strategy.close("Long")
+
+// Alternative: exit on opposite signal
+if rsiValue > overbought and strategy.position_size > 0
+    strategy.exit("Exit Long", from_entry="Long", qty=1)
+
+plot(rsiValue, title="RSI", color=#FF9800)

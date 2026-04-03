@@ -1,0 +1,17 @@
+// Test: ta.* functions should return NA when required parameters are missing
+// TV Reference: Most ta.* functions have no default parameters for length
+
+indicator("TA Default Params Test")
+
+// These should work (explicit parameters)
+sma_val = ta.sma(close, 14)
+ema_val = ta.ema(close, 12)
+rma_val = ta.rma(close, 14)
+wma_val = ta.wma(close, 10)
+rsi_val = ta.rsi(close, 14)  // RSI has default 14 in TV
+mom_val = ta.mom(close, 10)
+
+plot(sma_val, title="SMA")
+plot(ema_val, title="EMA")
+plot(rsi_val, title="RSI")
+plot(mom_val, title="MOM")

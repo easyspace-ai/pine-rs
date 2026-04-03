@@ -1,4 +1,4 @@
-//! GET /api/data/{symbol}/{tf} endpoint
+//! GET /api/data/:symbol/:tf endpoint
 //! Returns OHLCV data for a symbol and timeframe.
 
 use axum::{

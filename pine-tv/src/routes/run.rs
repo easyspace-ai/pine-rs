@@ -1,5 +1,8 @@
 //! POST /api/run endpoint
-//! Execute Pine Script code and return results.
+//!
+//! Runs the script via [`crate::engine::runner::PineEngine`] (default **pine-eval** bar-by-bar;
+//! set `PINE_TV_MODE=vm` for the bytecode VM). Response `plots` are built from interpreter plot
+//! outputs aligned to request bars.
 
 use axum::{extract::State, http::StatusCode, response::IntoResponse, Json};
 use std::sync::Arc;

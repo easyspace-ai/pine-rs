@@ -1,0 +1,12 @@
+//@version=6
+indicator("UDF Series Test")
+
+// TV official UDF syntax with series inputs and historical access
+smaLen(src, len) =>
+    sum = 0.0
+    for i = 0 to len - 1
+        sum := sum + src[i]
+    sum / len
+
+mySma = smaLen(close, 14)
+plot(mySma, title="UDF SMA")

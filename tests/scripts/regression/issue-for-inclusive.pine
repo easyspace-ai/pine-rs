@@ -1,0 +1,11 @@
+//@version=6
+indicator("Regression: for i = 0 to N inclusive upper bound")
+
+// N+1 iterations: i = 0,1,…,N (inclusive both ends when step is +1)
+N = 4
+steps = 0
+for i = 0 to N
+    steps := steps + 1
+
+// Expected steps == N + 1 on every bar (5 when N = 4)
+plot(steps, title="Steps")

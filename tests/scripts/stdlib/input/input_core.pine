@@ -1,0 +1,44 @@
+//@version=6
+indicator("Input Core Functions Test", overlay=true)
+
+// Test input.int
+intVal = input.int(14, minval=1, maxval=100, title="Integer Input")
+intClamped = input.int(5, minval=10, maxval=20)  // Should be clamped to 10
+
+// Test input.float
+floatVal = input.float(1.5, minval=0.1, maxval=10.0, title="Float Input")
+floatClamped = input.float(100.0, minval=0.0, maxval=50.0)  // Should be clamped to 50.0
+
+// Test input.bool
+boolVal = input.bool(true, title="Boolean Input")
+boolFalse = input.bool(false)
+
+// Test input.string
+stringVal = input.string("SMA", title="String Input")
+stringEmpty = input.string("")
+
+// Test input.source
+sourceVal = input.source(close, title="Source Input")
+sourceHigh = input.source(high)
+
+// Test input.timeframe
+tfVal = input.timeframe("D", title="Timeframe Input")
+tfDefault = input.timeframe()  // Should default to "D"
+
+// Test input.symbol
+symVal = input.symbol("BTCUSDT", title="Symbol Input")
+symEmpty = input.symbol()
+
+// Test input.color
+colVal = input.color(color.blue, title="Color Input")
+colRed = input.color(color.red)
+
+// Plot values for verification
+plot(intVal, title="IntVal", display=display.none)
+plot(intClamped, title="IntClamped", display=display.none)
+plot(floatVal, title="FloatVal", display=display.none)
+plot(floatClamped, title="FloatClamped", display=display.none)
+plot(boolVal ? 1.0 : 0.0, title="BoolVal", display=display.none)
+plot(boolFalse ? 1.0 : 0.0, title="BoolFalse", display=display.none)
+plot(sourceVal, title="SourceVal", display=display.none)
+plot(sourceHigh, title="SourceHigh", display=display.none)

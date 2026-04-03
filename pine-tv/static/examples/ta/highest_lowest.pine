@@ -1,0 +1,9 @@
+//@version=6
+indicator("Highest/Lowest", overlay=true)
+
+// Highest and lowest over period
+highest20 = ta.highest(high, 20)
+lowest20 = ta.lowest(low, 20)
+
+plot(highest20, title="Highest 20", color=color.new(#F44336, 50), linewidth=1)
+plot(lowest20, title="Lowest 20", color=color.new(#4CAF50, 50), linewidth=1)

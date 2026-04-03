@@ -1,0 +1,17 @@
+//@version=6
+indicator("Crossover Signals", overlay=true)
+
+// Fast and slow SMAs
+fastMA = ta.sma(close, 10)
+slowMA = ta.sma(close, 30)
+
+// Crossover detection
+bullishCross = ta.crossover(fastMA, slowMA)
+bearishCross = ta.crossunder(fastMA, slowMA)
+
+plot(fastMA, title="Fast MA", color=color.new(#4CAF50, 0), linewidth=2)
+plot(slowMA, title="Slow MA", color=color.new(#F44336, 0), linewidth=2)
+
+// Plot cross signals
+plotshape(bullishCross, title="Bullish Cross", location=location.belowbar, color=#4CAF50, style=shape.triangleup, size=size.small)
+plotshape(bearishCross, title="Bearish Cross", location=location.abovebar, color=#F44336, style=shape.triangledown, size=size.small)

@@ -1,0 +1,24 @@
+//@version=6
+indicator("Array - Basic Operations", overlay=true)
+
+// Create arrays
+prices = array.new_float(0)
+array.push(prices, close)
+array.push(prices, open)
+array.push(prices, high)
+array.push(prices, low)
+
+// Array operations
+arrSize = array.size(prices)
+firstPrice = array.size(prices) > 0 ? array.get(prices, 0) : na
+lastPrice = array.size(prices) > 0 ? array.get(prices, array.size(prices) - 1) : na
+
+// Calculate average
+avgPrice = array.avg(prices)
+sumPrice = array.sum(prices)
+minPrice = array.min(prices)
+maxPrice = array.max(prices)
+
+plot(avgPrice, title="Array Avg", color=#2196F3)
+plot(minPrice, title="Array Min", color=#4CAF50)
+plot(maxPrice, title="Array Max", color=#F44336)

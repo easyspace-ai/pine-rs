@@ -1,0 +1,11 @@
+//@version=6
+indicator("Math - Sign & NZ", overlay=false)
+
+// Sign of price change
+priceChange = close - open
+signChange = math.sign(priceChange)
+
+// NZ (not zero) - replace NA with zero or default
+nzValue = math.nz(ta.sma(close, 200), 0)
+
+plot(signChange, title="Sign of Change", color=#9C27B0, linewidth=2, style=plot.style_histogram)

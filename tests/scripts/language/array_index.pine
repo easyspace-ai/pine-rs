@@ -1,0 +1,8 @@
+indicator("Test")
+arr = [10.0, 20.0, 30.0]
+first = arr[0]
+second = arr[1]
+third = arr[2]
+plot(first, title="First")
+plot(second, title="Second")
+plot(third, title="Third")

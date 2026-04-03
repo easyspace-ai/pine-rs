@@ -11,8 +11,8 @@ fastSMA = ta.sma(close, fastLength)
 slowSMA = ta.sma(close, slowLength)
 
 // Plot SMAs
-plot(fastSMA, "Fast SMA", color=color.new(color.blue, 0))
-plot(slowSMA, "Slow SMA", color=color.new(color.orange, 0))
+plot(fastSMA, title="Fast SMA", color=color.blue)
+plot(slowSMA, title="Slow SMA", color=color.orange)
 
 // Strategy logic
 longCondition = ta.crossover(fastSMA, slowSMA)
@@ -24,8 +24,3 @@ if longCondition
 
 if shortCondition
     strategy.close("Long")
-    strategy.entry("Short", strategy.short)
-
-// Plot buy/sell signals
-plotshape(longCondition, "Buy Signal", shape.triangleup, location.belowbar, color.green, size=size.small)
-plotshape(shortCondition, "Sell Signal", shape.triangledown, location.abovebar, color.red, size=size.small)

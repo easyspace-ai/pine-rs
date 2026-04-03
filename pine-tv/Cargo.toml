@@ -25,7 +25,10 @@ tokio = { version = "1", features = ["full"] }
 tower-http = { version = "0.5", features = ["fs", "cors", "compression-gzip"] }
 
 # WebSocket
-tokio-tungstenite = "0.21"
+tokio-tungstenite = { version = "0.21", features = ["native-tls"] }
+tokio-native-tls = "0.3"
+native-tls = "0.2"
+base64 = "0.21"
 
 # SSE streaming
 futures-util = "0.3"

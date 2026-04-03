@@ -1,0 +1,9 @@
+//@version=6
+indicator("Math - Rolling Operations", overlay=false)
+
+// Rolling sum and average over window
+rollingSum5 = math.sum(close, 5)
+rollingAvg10 = math.avg(close, 10)
+
+plot(rollingSum5, title="Sum 5 bars", color=#2196F3, linewidth=1)
+plot(rollingAvg10, title="Avg 10 bars", color=#FF9800, linewidth=1)

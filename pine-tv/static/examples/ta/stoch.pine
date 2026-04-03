@@ -1,0 +1,9 @@
+//@version=6
+indicator("Stochastic")
+
+// Stochastic oscillator
+stochK = ta.stoch(close, high, low, 14)
+
+plot(stochK, title="%K", color=#2196F3, linewidth=2)
+hline(80, "Overbought", color=#F44336)
+hline(20, "Oversold", color=#4CAF50)

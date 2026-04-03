@@ -2,6 +2,7 @@
 
 pub mod check;
 pub mod data;
+pub mod examples;
 pub mod run;
 pub mod ws;
 

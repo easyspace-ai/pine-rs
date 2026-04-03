@@ -1,0 +1,20 @@
+// Strategy signals test - verifies entry/exit signal capture
+//@version=6
+strategy("Signal Test Strategy", overlay=true, initial_capital=10000, default_qty_type=strategy.fixed, default_qty_value=1)
+
+// Simple moving average
+sma = ta.sma(close, 14)
+
+// Entry condition: price crosses above SMA
+longCondition = ta.crossover(close, sma)
+if longCondition
+    strategy.entry("Long", strategy.long)
+
+// Exit condition: price crosses below SMA
+shortCondition = ta.crossunder(close, sma)
+if shortCondition
+    strategy.close("Long")
+
+// Plot signals
+plotshape(longCondition, title="Buy", location=location.belowbar, color=color.green, style=shape.triangleup, size=size.small)
+plotshape(shortCondition, title="Sell", location=location.abovebar, color=color.red, style=shape.triangledown, size=size.small)

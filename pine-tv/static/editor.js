@@ -5,8 +5,9 @@ let editor = null;
 let checkDebounceTimer = null;
 
 const DEFAULT_CODE = `//@version=6
-indicator("Hello pine-tv", overlay=true)
-plot(close, title="Close", color=#2196F3, linewidth=2)
+indicator("SMA 20", overlay=true)
+s = ta.sma(close, 20)
+plot(s, title="SMA", color=#2196F3, linewidth=2)
 `;
 
 // Initialize

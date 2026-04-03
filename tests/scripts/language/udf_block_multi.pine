@@ -1,0 +1,12 @@
+//@version=6
+indicator("UDF Block Multi Test")
+
+// TV official UDF syntax with multi-statement block body
+rangeAndMid(highSrc, lowSrc) =>
+    rng = highSrc - lowSrc
+    mid = (highSrc + lowSrc) / 2.0
+    [rng, mid]
+
+[r, m] = rangeAndMid(high, low)
+plot(r, title="Range")
+plot(m, title="Mid")

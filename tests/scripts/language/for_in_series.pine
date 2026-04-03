@@ -1,0 +1,15 @@
+//@version=6
+indicator("For In Series Test")
+
+// Test: Iterating over a series (close prices) and calculating sum
+// Note: In Pine Script, for...in on series iterates over historical values up to current bar
+sum_close = 0.0
+count = 0
+for [i, price] in close
+    sum_close := sum_close + price
+    count := count + 1
+
+avg_close = count > 0 ? sum_close / count : na
+
+plot(avg_close, title="Avg Close")
+plot(count, title="Count")

@@ -1,0 +1,35 @@
+//@version=6
+indicator("Array Core Functions Test", overlay=true)
+
+// Test array.new_float and array.size
+var arr = array.new_float(0)
+
+// Push values at first 5 bars (bar_index 0-4 are the oldest bars)
+// Note: array.push returns the modified array, need to reassign
+if bar_index < 5
+    arr := array.push(arr, close)
+
+// Test array.get with bounds checking
+size = array.size(arr)
+val0 = size > 0 ? array.get(arr, 0) : na
+
+// Test array.sum and array.avg
+sum = array.sum(arr)
+avg = array.avg(arr)
+
+// Test array.first and array.last
+first = array.first(arr)
+last = array.last(arr)
+
+// Test array.min and array.max
+minVal = array.min(arr)
+maxVal = array.max(arr)
+
+// Plot results - use display.none to avoid chart clutter
+plot(size, title="Size", display=display.none)
+plot(sum, title="Sum", display=display.none)
+plot(avg, title="Avg", display=display.none)
+plot(first, title="First", display=display.none)
+plot(last, title="Last", display=display.none)
+plot(minVal, title="Min", display=display.none)
+plot(maxVal, title="Max", display=display.none)

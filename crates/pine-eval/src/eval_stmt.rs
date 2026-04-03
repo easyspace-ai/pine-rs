@@ -149,14 +149,40 @@ fn eval_for_in(
     body: &ast::Block,
     ctx: &mut EvaluationContext,
 ) -> Result<()> {
-    let iter_val = eval_expr(iterable, ctx)?;
-    let items: Vec<Value> = match iter_val {
-        Value::Array(values) => values,
-        other => {
-            return Err(EvalError::TypeError {
-                message: format!("for...in expects array, got {:?}", other),
-                span: body.span,
-            });
+    // First try to get series array if iterable is an identifier (e.g., close, open, mySeries)
+    let items: Vec<Value> = if let ast::Expr::Ident(ident) = iterable {
+        // Check if the identifier is currently bound to an array value
+        // This handles cases like `arr = [1, 2, 3]; for v in arr`
+        if let Some(Value::Array(values)) = ctx.get_var(&ident.name) {
+            values.clone()
+        } else if let Some(values) = get_series_array(&ident.name, ctx) {
+            // Built-in series (open, high, low, close, volume, time)
+            values
+        } else if let Some(history) = ctx.get_var_history(&ident.name) {
+            // User-defined series (var/varip variables with history)
+            history.to_vec()
+        } else {
+            // Fall back to regular expression evaluation
+            match eval_expr(iterable, ctx)? {
+                Value::Array(values) => values,
+                other => {
+                    return Err(EvalError::TypeError {
+                        message: format!("for...in expects array or series, got {:?}", other),
+                        span: body.span,
+                    });
+                }
+            }
+        }
+    } else {
+        // Non-identifier expressions are evaluated normally
+        match eval_expr(iterable, ctx)? {
+            Value::Array(values) => values,
+            other => {
+                return Err(EvalError::TypeError {
+                    message: format!("for...in expects array or series, got {:?}", other),
+                    span: body.span,
+                });
+            }
         }
     };
 
@@ -176,6 +202,70 @@ fn eval_for_in(
         }
     }
     Ok(())
+}
+
+/// Get series array for built-in price sources up to the current bar.
+fn get_series_array(name: &str, ctx: &EvaluationContext) -> Option<Vec<Value>> {
+    let series_data = ctx.series_data.as_ref()?;
+    let end = series_data.current_bar + 1;
+
+    match name {
+        "open" => Some(
+            series_data
+                .open
+                .get(..end)?
+                .iter()
+                .copied()
+                .map(Value::Float)
+                .collect(),
+        ),
+        "high" => Some(
+            series_data
+                .high
+                .get(..end)?
+                .iter()
+                .copied()
+                .map(Value::Float)
+                .collect(),
+        ),
+        "low" => Some(
+            series_data
+                .low
+                .get(..end)?
+                .iter()
+                .copied()
+                .map(Value::Float)
+                .collect(),
+        ),
+        "close" => Some(
+            series_data
+                .close
+                .get(..end)?
+                .iter()
+                .copied()
+                .map(Value::Float)
+                .collect(),
+        ),
+        "volume" => Some(
+            series_data
+                .volume
+                .get(..end)?
+                .iter()
+                .copied()
+                .map(Value::Float)
+                .collect(),
+        ),
+        "time" => Some(
+            series_data
+                .time
+                .get(..end)?
+                .iter()
+                .copied()
+                .map(Value::Int)
+                .collect(),
+        ),
+        _ => None,
+    }
 }
 
 fn read_assign_target_value(
@@ -253,7 +343,9 @@ pub fn eval_stmt(stmt: &ast::Stmt, ctx: &mut EvaluationContext) -> Result<()> {
             }
         }
         ast::Stmt::Expr(expr) => {
-            eval_expr(expr, ctx)?;
+            let value = eval_expr(expr, ctx)?;
+            // Capture strategy signals from expression results
+            capture_strategy_signal(&value, ctx);
             Ok(())
         }
         ast::Stmt::Switch {
@@ -376,6 +468,10 @@ fn eval_if_stmt(
 }
 
 /// Evaluate a for loop
+///
+/// Pine Script v6: `for i = a to b` is **inclusive** on both bounds when `step` is positive
+/// (`i` takes `a, a+step, …` while `i <= b`). When `step` is negative, the condition is `i >= b`
+/// (`i` takes `a, a+step, …` while `i >= b`).
 fn eval_for_loop(
     var: &ast::Ident,
     from: &ast::Expr,
@@ -386,17 +482,32 @@ fn eval_for_loop(
 ) -> Result<()> {
     let from_val = eval_expr(from, ctx)?;
     let to_val = eval_expr(to, ctx)?;
-    let by_val = by.and_then(|e| eval_expr(e, ctx).ok());
+    let by_val = by.map_or(Ok(None), |e| eval_expr(e, ctx).map(Some))?;
 
     let start = from_val.as_int().unwrap_or(0);
-    let fixed_end = to_val.as_int().unwrap_or(0);
+    let end = to_val.as_int().unwrap_or(0);
     let step = by_val.and_then(|v| v.as_int()).unwrap_or(1);
 
+    if step == 0 {
+        return Err(EvalError::TypeError {
+            message: "for loop step cannot be 0".into(),
+            span: var.span,
+        });
+    }
+
     let mut i = start;
-    while i <= fixed_end {
-        ctx.set_var(&var.name, Value::Int(i));
-        eval_block(body, ctx)?;
-        i += step;
+    if step > 0 {
+        while i <= end {
+            ctx.set_var(&var.name, Value::Int(i));
+            eval_block(body, ctx)?;
+            i = i.saturating_add(step);
+        }
+    } else {
+        while i >= end {
+            ctx.set_var(&var.name, Value::Int(i));
+            eval_block(body, ctx)?;
+            i = i.saturating_add(step);
+        }
     }
 
     Ok(())
@@ -454,6 +565,63 @@ fn eval_fn_def(
         },
     );
     Ok(())
+}
+
+/// Capture strategy signals from expression evaluation results
+///
+/// When strategy.entry(), strategy.close(), or strategy.exit() are called,
+/// they return special marker arrays that we capture here.
+fn capture_strategy_signal(value: &Value, ctx: &mut EvaluationContext) {
+    if let Value::Array(arr) = value {
+        if arr.is_empty() {
+            return;
+        }
+
+        // Check for strategy signal markers
+        if let Some(Value::String(marker)) = arr.first() {
+            match marker.as_str() {
+                "__entry__" => {
+                    // strategy.entry() returns: ["__entry__", id, direction, qty]
+                    if arr.len() >= 4 {
+                        if let (
+                            Some(Value::String(id)),
+                            Some(Value::String(direction)),
+                            Some(qty_val),
+                        ) = (arr.get(1), arr.get(2), arr.get(3))
+                        {
+                            let qty = match qty_val {
+                                Value::Float(f) => *f,
+                                Value::Int(i) => *i as f64,
+                                _ => 1.0,
+                            };
+                            ctx.strategy_signals
+                                .record_entry(id.clone(), direction.clone(), qty);
+                        }
+                    }
+                }
+                "__close__" => {
+                    // strategy.close() returns: ["__close__", id]
+                    if arr.len() >= 2 {
+                        if let Some(Value::String(id)) = arr.get(1) {
+                            ctx.strategy_signals.record_close(id.clone(), None);
+                        }
+                    }
+                }
+                "__exit__" => {
+                    // strategy.exit() returns: ["__exit__", id, from_entry]
+                    if arr.len() >= 3 {
+                        if let (Some(Value::String(id)), Some(Value::String(from_entry))) =
+                            (arr.get(1), arr.get(2))
+                        {
+                            ctx.strategy_signals
+                                .record_exit(id.clone(), from_entry.clone(), None);
+                        }
+                    }
+                }
+                _ => {} // Not a strategy signal
+            }
+        }
+    }
 }
 
 /// Check if two values are equal for switch case matching
@@ -709,6 +877,67 @@ mod tests {
     }
 
     #[test]
+    fn test_switch_guard_stmt() {
+        let mut ctx = EvaluationContext::new();
+
+        // Guard switch without scrutinee: first truthy pattern wins
+        let arm1 = SwitchArm {
+            pattern: Some(ast::Expr::Literal(Lit::Bool(false), Span::default())),
+            body: SwitchArmBody::Block(Block {
+                stmts: vec![Stmt::VarDecl {
+                    name: Ident::new("result", Span::default()),
+                    kind: ast::VarKind::Var,
+                    type_ann: None,
+                    init: Some(ast::Expr::Literal(Lit::Int(10), Span::default())),
+                    span: Span::default(),
+                }],
+                span: Span::default(),
+            }),
+            span: Span::default(),
+        };
+
+        let arm2 = SwitchArm {
+            pattern: Some(ast::Expr::Literal(Lit::Bool(true), Span::default())),
+            body: SwitchArmBody::Block(Block {
+                stmts: vec![Stmt::VarDecl {
+                    name: Ident::new("result", Span::default()),
+                    kind: ast::VarKind::Var,
+                    type_ann: None,
+                    init: Some(ast::Expr::Literal(Lit::Int(20), Span::default())),
+                    span: Span::default(),
+                }],
+                span: Span::default(),
+            }),
+            span: Span::default(),
+        };
+
+        let arm_default = SwitchArm {
+            pattern: None,
+            body: SwitchArmBody::Block(Block {
+                stmts: vec![Stmt::VarDecl {
+                    name: Ident::new("result", Span::default()),
+                    kind: ast::VarKind::Var,
+                    type_ann: None,
+                    init: Some(ast::Expr::Literal(Lit::Int(99), Span::default())),
+                    span: Span::default(),
+                }],
+                span: Span::default(),
+            }),
+            span: Span::default(),
+        };
+
+        let switch_stmt = Stmt::Switch {
+            scrutinee: None,
+            arms: vec![arm1, arm2, arm_default],
+            span: Span::default(),
+        };
+
+        eval_stmt(&switch_stmt, &mut ctx).unwrap();
+
+        assert_eq!(ctx.get_var("result"), Some(&Value::Int(20)));
+    }
+
+    #[test]
     fn test_import_stmt_basic() {
         let mut ctx = EvaluationContext::new();
 
@@ -864,6 +1093,43 @@ out = f()
     fn test_for_loop_inclusive_accumulator() {
         let src = r#"sum = 0
 for i = 1 to 3
+    sum := sum + i
+out = sum
+"#;
+        let tokens = pine_lexer::Lexer::lex_with_indentation(src).unwrap();
+        let mut parser = pine_parser::stmt::StmtParser::new(tokens);
+        let script = parser.parse_script().unwrap();
+
+        let mut ctx = EvaluationContext::new();
+        for stmt in &script.stmts {
+            eval_stmt(stmt, &mut ctx).unwrap();
+        }
+        assert_eq!(ctx.get_var("out"), Some(&Value::Int(6)));
+    }
+
+    /// `for i = 0 to N` must include both 0 and N (N+1 iterations when step is 1).
+    #[test]
+    fn test_for_zero_to_n_inclusive_upper_bound() {
+        let src = r#"steps = 0
+for i = 0 to 4
+    steps := steps + 1
+out = steps
+"#;
+        let tokens = pine_lexer::Lexer::lex_with_indentation(src).unwrap();
+        let mut parser = pine_parser::stmt::StmtParser::new(tokens);
+        let script = parser.parse_script().unwrap();
+
+        let mut ctx = EvaluationContext::new();
+        for stmt in &script.stmts {
+            eval_stmt(stmt, &mut ctx).unwrap();
+        }
+        assert_eq!(ctx.get_var("out"), Some(&Value::Int(5)));
+    }
+
+    #[test]
+    fn test_for_loop_negative_step_inclusive_low_bound() {
+        let src = r#"sum = 0
+for i = 3 to 1 by -1
     sum := sum + i
 out = sum
 "#;

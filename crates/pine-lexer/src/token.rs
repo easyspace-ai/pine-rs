@@ -123,14 +123,6 @@ pub enum Token {
     #[token("switch", priority = 20)]
     Switch,
 
-    /// Case in switch (v6)
-    #[token("case", priority = 20)]
-    Case,
-
-    /// Default in switch (v6)
-    #[token("default", priority = 20)]
-    Default,
-
     /// Function definition
     #[token("fn", priority = 20)]
     Fn,
@@ -446,8 +438,6 @@ impl Token {
             Token::Break => "'break'",
             Token::Continue => "'continue'",
             Token::Switch => "'switch'",
-            Token::Case => "'case'",
-            Token::Default => "'default'",
             Token::Fn => "'fn'",
             Token::Return => "'return'",
             Token::True => "'true'",

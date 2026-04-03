@@ -29,6 +29,7 @@ impl CheckHandler {
                     ok: true,
                     exec_ms: None,
                     plots: None,
+                    strategy: None,
                     errors: None,
                 };
                 (StatusCode::OK, Json(response))

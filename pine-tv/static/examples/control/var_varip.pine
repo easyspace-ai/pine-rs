@@ -1,0 +1,22 @@
+//@version=6
+indicator("Control - var/varip", overlay=true)
+
+// var - persists value across bars
+var float highestHigh = high
+if high > highestHigh
+    highestHigh := high
+
+// var with initializer
+var count = 0
+count := count + 1
+
+// var array - persists array across bars
+var prices = array.new_float(0)
+if bar_index % 5 == 0
+    array.push(prices, close)
+
+// Calculate moving average from array
+arrAvg = array.size(prices) > 0 ? array.avg(prices) : na
+
+plot(highestHigh, title="Highest High (var)", color=#F44336, linewidth=1)
+plot(arrAvg, title="Array Avg (var)", color=#4CAF50, linewidth=2)

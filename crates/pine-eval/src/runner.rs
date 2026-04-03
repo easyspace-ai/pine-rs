@@ -172,8 +172,9 @@ pub fn run_bar_by_bar(
             eval_stmt(stmt, ctx)?;
         }
 
-        // Advance plot outputs to next bar
+        // Advance plot outputs and strategy signals to next bar
         ctx.plot_outputs.next_bar();
+        ctx.strategy_signals.next_bar();
 
         // TODO: Capture the actual result from statement evaluation
         results.push(Value::Na);
@@ -303,6 +304,9 @@ fn setup_builtin_vars(
         ctx.set_var("ohlc4", Value::Na);
     }
 
+    // Set bar_index - this is the index of the current bar (0 = oldest)
+    ctx.set_var("bar_index", Value::Int(bar_idx as i64));
+
     // Set up builtin namespace objects for function calls like input.int(), ta.sma(), etc.
     ctx.set_var("input", Value::Namespace("input".to_string()));
     ctx.set_var("ta", Value::Namespace("ta".to_string()));
@@ -311,6 +315,7 @@ fn setup_builtin_vars(
     ctx.set_var("color", Value::Namespace("color".to_string()));
     ctx.set_var("array", Value::Namespace("array".to_string()));
     ctx.set_var("map", Value::Namespace("map".to_string()));
+    ctx.set_var("strategy", Value::Namespace("strategy".to_string()));
 
     Ok(())
 }

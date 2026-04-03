@@ -1,10 +1,8 @@
-// pine-tv main app module
-// Handles layout, panel resizing, and cross-panel communication
+// pine-tv main app module — three-column layout: chart | editor | run output
 
 import './chart.js';
 import './editor.js';
 
-// State
 const state = {
     symbol: 'BTCUSDT',
     timeframe: '1h',
@@ -12,9 +10,11 @@ const state = {
     isRunning: false,
     lastResult: null,
     lastErrors: [],
+    chartW: 0,
+    editorW: 0,
+    examples: null,
 };
 
-// DOM elements
 const $ = (id) => document.getElementById(id);
 
 const toolbar = {
@@ -27,140 +27,218 @@ const toolbar = {
 const panels = {
     chart: $('chart-panel'),
     editor: $('editor-panel'),
+    side: $('side-panel'),
 };
 
-const resizer = $('resizer-1');
+const resizer1 = $('resizer-1');
+const resizer2 = $('resizer-2');
 const statusEl = $('editor-status');
+const sideContentEl = $('side-content');
 
-// Initialize
 export function init() {
-    initResizer();
+    initLayoutSizes();
+    initResizers();
     initToolbar();
+    loadExampleList();
     initEventListeners();
-    console.log('[app] pine-tv initialized');
+    window.addEventListener('resize', () => {
+        const main = $('main-container');
+        if (main) {
+            applyLayoutSizes(main.getBoundingClientRect().width, 8);
+        }
+    });
+    console.log('[app] pine-tv initialized (3-column)');
 }
 
-// Resizable panels
-function initResizer() {
-    let isResizing = false;
+function initLayoutSizes() {
+    const main = $('main-container');
+    if (!main || !panels.chart || !panels.editor || !panels.side) return;
 
-    const startResize = (e) => {
-        isResizing = true;
-        document.addEventListener('mousemove', onResize);
-        document.addEventListener('mouseup', stopResize);
+    const total = main.getBoundingClientRect().width;
+    const gap = 8;
+    if (!state.chartW || !state.editorW) {
+        state.chartW = Math.round(total * 0.38);
+        state.editorW = Math.round(total * 0.34);
+    }
+    applyLayoutSizes(total, gap);
+}
+
+function applyLayoutSizes(total, gap) {
+    const minChart = Math.max(180, total * 0.16);
+    const minEditor = 260;
+    const minSide = 160;
+
+    let cw = state.chartW;
+    let ew = state.editorW;
+    let sw = total - cw - ew - gap;
+
+    if (sw < minSide) {
+        const deficit = minSide - sw;
+        ew = Math.max(minEditor, ew - deficit);
+        sw = total - cw - ew - gap;
+    }
+    if (sw < minSide) {
+        cw = Math.max(minChart, cw - (minSide - sw));
+        sw = total - cw - ew - gap;
+    }
+
+    cw = Math.max(minChart, Math.min(cw, total - minEditor - minSide - gap));
+    ew = Math.max(minEditor, Math.min(ew, total - cw - minSide - gap));
+    sw = Math.max(minSide, total - cw - ew - gap);
+
+    state.chartW = cw;
+    state.editorW = ew;
+
+    panels.chart.style.width = `${cw}px`;
+    panels.editor.style.width = `${ew}px`;
+    panels.side.style.width = `${sw}px`;
+
+    window.dispatchEvent(new CustomEvent('pine:resize'));
+}
+
+function initResizers() {
+    const main = $('main-container');
+    if (!main || !resizer1 || !resizer2) return;
+
+    let active = null;
+
+    const onMove = (e) => {
+        if (!active) return;
+        const rect = main.getBoundingClientRect();
+        const total = rect.width;
+        const gap = 8;
+        const minChart = Math.max(180, total * 0.16);
+        const minEditor = 260;
+        const minSide = 160;
+        const x = e.clientX - rect.left;
+
+        if (active === 'chart') {
+            state.chartW = Math.max(minChart, Math.min(x, total - minEditor - minSide - gap));
+        } else if (active === 'editor') {
+            state.editorW = x - state.chartW - 4;
+        }
+        applyLayoutSizes(total, gap);
+    };
+
+    const onUp = () => {
+        active = null;
+        document.removeEventListener('mousemove', onMove);
+        document.removeEventListener('mouseup', onUp);
+    };
+
+    resizer1.addEventListener('mousedown', (e) => {
+        active = 'chart';
+        document.addEventListener('mousemove', onMove);
+        document.addEventListener('mouseup', onUp);
         e.preventDefault();
-    };
+    });
 
-    const onResize = (e) => {
-        if (!isResizing) return;
-
-        const containerRect = $('main-container').getBoundingClientRect();
-        const totalWidth = containerRect.width;
-        const x = e.clientX - containerRect.left;
-
-        const minWidth = totalWidth * 0.2;
-        const maxWidth = totalWidth * 0.8;
-        const chartWidth = Math.max(minWidth, Math.min(maxWidth, x));
-        const editorWidth = totalWidth - chartWidth - 4; // 4px for resizer
-
-        panels.chart.style.width = `${chartWidth}px`;
-        panels.editor.style.width = `${editorWidth}px`;
-
-        // Notify panels of resize
-        window.dispatchEvent(new CustomEvent('pine:resize'));
-    };
-
-    const stopResize = () => {
-        isResizing = false;
-        document.removeEventListener('mousemove', onResize);
-        document.removeEventListener('mouseup', stopResize);
-    };
-
-    resizer.addEventListener('mousedown', startResize);
+    resizer2.addEventListener('mousedown', (e) => {
+        active = 'editor';
+        document.addEventListener('mousemove', onMove);
+        document.addEventListener('mouseup', onUp);
+        e.preventDefault();
+    });
 }
 
-// Toolbar
 function initToolbar() {
     toolbar.symbolSelect.value = state.symbol;
     toolbar.tfSelect.value = state.timeframe;
 }
 
-// Event listeners
+async function loadExampleList() {
+    try {
+        const response = await fetch('/api/examples');
+        if (!response.ok) {
+            throw new Error(`HTTP ${response.status}`);
+        }
+        const categories = await response.json();
+        state.examples = categories;
+        populateExampleSelect(categories);
+    } catch (e) {
+        console.error('[app] Failed to load examples:', e);
+        toolbar.exampleSelect.innerHTML = '<option value="">Load Error</option>';
+    }
+}
+
+function populateExampleSelect(categories) {
+    const select = toolbar.exampleSelect;
+    select.innerHTML = '<option value="">Examples...</option>';
+
+    for (const category of categories) {
+        const optgroup = document.createElement('optgroup');
+        optgroup.label = `${category.name} - ${category.description}`;
+
+        for (const example of category.examples) {
+            const option = document.createElement('option');
+            option.value = example.id;
+            option.textContent = example.name;
+            optgroup.appendChild(option);
+        }
+
+        select.appendChild(optgroup);
+    }
+}
+
 function initEventListeners() {
-    // Symbol change
     toolbar.symbolSelect.addEventListener('change', () => {
         state.symbol = toolbar.symbolSelect.value;
         window.dispatchEvent(new CustomEvent('pine:symbol-change', {
-            detail: { symbol: state.symbol, tf: state.timeframe }
+            detail: { symbol: state.symbol, tf: state.timeframe },
         }));
     });
 
-    // Timeframe change
     toolbar.tfSelect.addEventListener('change', () => {
         state.timeframe = toolbar.tfSelect.value;
         window.dispatchEvent(new CustomEvent('pine:symbol-change', {
-            detail: { symbol: state.symbol, tf: state.timeframe }
+            detail: { symbol: state.symbol, tf: state.timeframe },
         }));
     });
 
-    // Example selection
     toolbar.exampleSelect.addEventListener('change', async () => {
-        const example = toolbar.exampleSelect.value;
-        if (example) {
-            await loadExample(example);
+        const exampleId = toolbar.exampleSelect.value;
+        if (exampleId) {
+            await loadExample(exampleId);
             toolbar.exampleSelect.value = '';
         }
     });
 
-    // Run button
     toolbar.runBtn.addEventListener('click', runScript);
 
-    // Listen for editor code changes
     window.addEventListener('pine:code-change', (e) => {
         state.code = e.detail.code;
     });
+
+    window.addEventListener('pine:result', (e) => {
+        if (sideContentEl) {
+            try {
+                sideContentEl.textContent = JSON.stringify(e.detail, null, 2);
+            } catch {
+                sideContentEl.textContent = String(e.detail);
+            }
+        }
+    });
 }
 
-// Load example script
-async function loadExample(name) {
-    const examples = {
-        sma: `//@version=6
-indicator("SMA Indicator", overlay=true)
-len = input.int(20, title="Length")
-src = input(close, title="Source")
-sma_val = ta.sma(src, len)
-plot(sma_val, title="SMA", color=#2196F3, linewidth=2)`,
-        rsi: `//@version=6
-indicator("RSI Indicator")
-len = input.int(14, title="Length")
-src = input(close, title="Source")
-rsi_val = ta.rsi(src, len)
-plot(rsi_val, title="RSI", color=#FF9800, linewidth=2)
-hline(70, "Overbought", color=#F44336)
-hline(30, "Oversold", color=#4CAF50)`,
-        ema_triple: `//@version=6
-indicator("EMA Triple - 30/60/120", overlay=true)
+async function loadExample(exampleId) {
+    try {
+        setStatus('Loading example...');
+        const response = await fetch(`/api/examples/${exampleId}`);
+        if (!response.ok) {
+            throw new Error(`HTTP ${response.status}`);
+        }
+        const example = await response.json();
 
-// Calculate EMAs
-ema30 = ta.ema(close, 30)
-ema60 = ta.ema(close, 60)
-ema120 = ta.ema(close, 120)
-
-// Plot EMAs
-plot(ema30, title="EMA 30", color=#FF9800, linewidth=2)
-plot(ema60, title="EMA 60", color=#E91E63, linewidth=2)
-plot(ema120, title="EMA 120", color=#9C27B0, linewidth=2)`,
-    };
-
-    const code = examples[name];
-    if (code) {
         window.dispatchEvent(new CustomEvent('pine:editor-set-code', {
-            detail: { code }
+            detail: { code: example.code },
         }));
+        setStatus(`Loaded: ${example.name}`);
+    } catch (e) {
+        console.error('[app] Failed to load example:', e);
+        setStatus(`Error loading example: ${e.message}`);
     }
 }
 
-// Run script
 async function runScript() {
     if (state.isRunning) return;
 
@@ -194,6 +272,9 @@ async function runScript() {
             const msg = errors.length > 0 ? errors[0].msg : 'Unknown error';
             setStatus(`Error: ${msg}`);
             window.dispatchEvent(new CustomEvent('pine:error', { detail: { errors } }));
+            if (sideContentEl) {
+                sideContentEl.textContent = JSON.stringify(result, null, 2);
+            }
         }
     } catch (e) {
         console.error('[app] Run failed:', e);
@@ -205,17 +286,14 @@ async function runScript() {
     }
 }
 
-// Set status
 export function setStatus(text) {
-    statusEl.textContent = text;
+    if (statusEl) statusEl.textContent = text;
 }
 
-// Expose state for other modules
 export function getState() {
     return state;
 }
 
-// Initialize on load
 if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', init);
 } else {

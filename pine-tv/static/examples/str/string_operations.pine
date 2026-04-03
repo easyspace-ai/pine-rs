@@ -1,0 +1,34 @@
+//@version=6
+indicator("String - Operations", overlay=true)
+
+// String creation and concatenation
+symbolStr = syminfo.ticker
+timeStr = str.tostring(timeframe.period)
+combined = str.concat(symbolStr, " - ", timeStr)
+
+// String manipulation
+upperStr = str.upper("hello")
+lowerStr = str.lower("WORLD")
+trimmed = str.trim("  spaces  ")
+replaced = str.replace("hello world", "world", "trading")
+
+// String to number
+priceStr = "123.45"
+priceNum = str.tonumber(priceStr)
+
+// String from number
+rsiStr = str.tostring(50.5)
+
+// Substring
+sub = str.substring("PineScript", 0, 4)
+
+// Length
+len = str.length("test")
+
+// Split
+parts = str.split("a,b,c", ",")
+
+// Join
+joined = str.join("-", ["A", "B", "C"])
+
+plot(close, title=joined, color=#2196F3)

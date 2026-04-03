@@ -1,0 +1,11 @@
+//@version=6
+indicator("SMA - Simple Moving Average", overlay=true)
+
+// Basic SMA with different lengths
+sma10 = ta.sma(close, 10)
+sma20 = ta.sma(close, 20)
+sma50 = ta.sma(close, 50)
+
+plot(sma10, title="SMA 10", color=color.new(#2196F3, 0), linewidth=1)
+plot(sma20, title="SMA 20", color=color.new(#FF9800, 0), linewidth=2)
+plot(sma50, title="SMA 50", color=color.new(#9C27B0, 0), linewidth=2)
