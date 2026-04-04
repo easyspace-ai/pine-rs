@@ -21,10 +21,11 @@ impl Default for BinanceClient {
 
 impl BinanceClient {
     /// Create a new Binance client
+    /// Uses Binance Futures to align with playground market data.
     pub fn new() -> Self {
         Self {
             client: reqwest::Client::new(),
-            base_url: "https://api.binance.com".to_string(),
+            base_url: "https://fapi.binance.com".to_string(),
         }
     }
 
@@ -51,7 +52,7 @@ impl BinanceClient {
         let limit = limit.min(1000); // Binance max is 1000
 
         let url = format!(
-            "{}/api/v3/klines?symbol={}&interval={}&limit={}",
+            "{}/fapi/v1/klines?symbol={}&interval={}&limit={}",
             self.base_url,
             symbol.to_uppercase(),
             interval,
@@ -87,7 +88,7 @@ impl BinanceClient {
         let limit = limit.min(1000);
 
         let url = format!(
-            "{}/api/v3/klines?symbol={}&interval={}&startTime={}&limit={}",
+            "{}/fapi/v1/klines?symbol={}&interval={}&startTime={}&limit={}",
             self.base_url,
             symbol.to_uppercase(),
             interval,

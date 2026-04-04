@@ -35,6 +35,32 @@ struct SeriesKey {
     call_site: CallSiteId,
 }
 
+/// Persistence mode for Pine variables.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PersistentVarKind {
+    /// `var`: persisted across bars, rolled back on realtime ticks.
+    Var,
+    /// `varip`: persisted across bars and intrabar updates.
+    Varip,
+}
+
+/// Runtime bar state flags exposed through `barstate.*`.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct BarState {
+    /// True on historical bars.
+    pub ishistory: bool,
+    /// True on realtime executions.
+    pub isrealtime: bool,
+    /// True on first update of a bar.
+    pub isnew: bool,
+    /// True when the current bar is confirmed/closed.
+    pub isconfirmed: bool,
+    /// True on the last visible bar.
+    pub islast: bool,
+    /// True only on the first bar in the dataset.
+    pub isfirst: bool,
+}
+
 /// Execution context for bar-by-bar script execution
 ///
 /// The context maintains:
@@ -101,6 +127,18 @@ pub struct ExecutionContext {
     /// ID interned for each call expression (see pine-eval).
     var_scoped: IndexMap<(String, CallSiteId), Value>,
 
+    /// Persistence mode for scoped variables.
+    scoped_var_kinds: IndexMap<(String, CallSiteId), PersistentVarKind>,
+
+    /// Snapshot of `var` values at the last committed bar close.
+    committed_var_scoped: IndexMap<(String, CallSiteId), Value>,
+
+    /// Snapshot of series state at the last committed bar close.
+    committed_series: IndexMap<SeriesKey, SeriesBuf<Value>>,
+
+    /// Snapshot of per-series current bar tracking at the last committed bar close.
+    committed_series_last_bar: IndexMap<SeriesKey, i64>,
+
     /// Current bar index
     bar_index: i64,
 
@@ -124,6 +162,9 @@ pub struct ExecutionContext {
 
     /// Base path for resolving relative imports
     base_path: PathBuf,
+
+    /// Runtime `barstate.*` flags.
+    bar_state: BarState,
 }
 
 impl ExecutionContext {
@@ -143,6 +184,10 @@ impl ExecutionContext {
             persistent_vars: IndexMap::new(),
             varip_vars: IndexMap::new(),
             var_scoped: IndexMap::new(),
+            scoped_var_kinds: IndexMap::new(),
+            committed_var_scoped: IndexMap::new(),
+            committed_series: IndexMap::new(),
+            committed_series_last_bar: IndexMap::new(),
             bar_index: 0,
             timestamp: 0,
             next_call_site_id: 1, // 0 is reserved for global scope
@@ -151,6 +196,7 @@ impl ExecutionContext {
             current_module: None,
             module_namespaces: IndexMap::new(),
             base_path: PathBuf::from("."),
+            bar_state: BarState::default(),
         }
     }
 
@@ -459,9 +505,33 @@ impl ExecutionContext {
         self.var_scoped.contains_key(&(name.to_string(), call_site))
     }
 
+    /// Get the persistence mode for a scoped variable.
+    pub fn get_var_scoped_kind(
+        &self,
+        name: &str,
+        call_site: CallSiteId,
+    ) -> Option<PersistentVarKind> {
+        self.scoped_var_kinds
+            .get(&(name.to_string(), call_site))
+            .copied()
+    }
+
     /// Get scoped `var` value.
     pub fn get_var_scoped(&self, name: &str, call_site: CallSiteId) -> Option<&Value> {
         self.var_scoped.get(&(name.to_string(), call_site))
+    }
+
+    /// Declare a scoped persistent variable with its persistence mode.
+    pub fn declare_var_scoped(
+        &mut self,
+        name: impl Into<String>,
+        call_site: CallSiteId,
+        kind: PersistentVarKind,
+        value: Value,
+    ) {
+        let n = name.into();
+        self.scoped_var_kinds.insert((n.clone(), call_site), kind);
+        self.var_scoped.insert((n, call_site), value);
     }
 
     /// Set scoped `var` value (creates or replaces).
@@ -473,6 +543,8 @@ impl ExecutionContext {
     /// Clear all call-site scoped vars (e.g. full script reset).
     pub fn clear_var_scoped(&mut self) {
         self.var_scoped.clear();
+        self.scoped_var_kinds.clear();
+        self.committed_var_scoped.clear();
     }
 
     //========================================================================
@@ -499,6 +571,88 @@ impl ExecutionContext {
     /// Clear varip variables
     pub fn clear_varip_vars(&mut self) {
         self.varip_vars.clear();
+    }
+
+    /// Snapshot current `var` state at bar close.
+    pub fn commit_bar_state(&mut self) {
+        self.committed_var_scoped = self
+            .var_scoped
+            .iter()
+            .filter(|(key, _)| {
+                matches!(
+                    self.scoped_var_kinds.get(*key),
+                    Some(PersistentVarKind::Var)
+                )
+            })
+            .map(|(key, value)| (key.clone(), value.clone()))
+            .collect();
+        self.committed_series = self.series.clone();
+        self.committed_series_last_bar = self.series_last_bar.clone();
+    }
+
+    /// Restore all `var` state to the last committed bar-close snapshot.
+    ///
+    /// `varip` values intentionally keep their intrabar updates.
+    pub fn rollback_bar_state(&mut self) {
+        let var_keys: Vec<_> = self
+            .scoped_var_kinds
+            .iter()
+            .filter_map(|(key, kind)| (*kind == PersistentVarKind::Var).then_some(key.clone()))
+            .collect();
+
+        for key in var_keys {
+            match self.committed_var_scoped.get(&key).cloned() {
+                Some(value) => {
+                    self.var_scoped.insert(key, value);
+                }
+                None => {
+                    self.var_scoped.shift_remove(&key);
+                }
+            }
+        }
+
+        let series_keys: Vec<_> = self
+            .series
+            .keys()
+            .filter(|key| {
+                matches!(
+                    self.scoped_var_kinds
+                        .get(&(key.name.clone(), key.call_site)),
+                    Some(PersistentVarKind::Var)
+                )
+            })
+            .cloned()
+            .collect();
+
+        for key in series_keys {
+            match self.committed_series.get(&key).cloned() {
+                Some(series) => {
+                    self.series.insert(key.clone(), series);
+                }
+                None => {
+                    self.series.shift_remove(&key);
+                }
+            }
+
+            match self.committed_series_last_bar.get(&key).copied() {
+                Some(last_bar) => {
+                    self.series_last_bar.insert(key, last_bar);
+                }
+                None => {
+                    self.series_last_bar.shift_remove(&key);
+                }
+            }
+        }
+    }
+
+    /// Set current `barstate.*` flags.
+    pub fn set_bar_state(&mut self, bar_state: BarState) {
+        self.bar_state = bar_state;
+    }
+
+    /// Get current `barstate.*` flags.
+    pub fn bar_state(&self) -> &BarState {
+        &self.bar_state
     }
 
     //========================================================================
@@ -541,6 +695,7 @@ impl ExecutionContext {
     pub fn next_bar(&mut self) {
         self.clear_vars();
         self.bar_index += 1;
+        self.bar_state = BarState::default();
     }
 
     /// Reset the context
@@ -557,11 +712,16 @@ impl ExecutionContext {
         self.timestamp = 0;
         self.recursion_depth = 0;
         self.next_call_site_id = 1;
+        self.bar_state = BarState::default();
+        self.committed_series.clear();
+        self.committed_series_last_bar.clear();
+        self.committed_var_scoped.clear();
 
         if full {
             self.persistent_vars.clear();
             self.varip_vars.clear();
             self.var_scoped.clear();
+            self.scoped_var_kinds.clear();
         }
     }
 
@@ -738,6 +898,72 @@ mod tests {
 
         // Persistent vars should remain
         assert_eq!(ctx.get_persistent_var("total"), Some(&Value::Int(10)));
+    }
+
+    #[test]
+    fn test_rollback_restores_var_but_keeps_varip() {
+        let mut ctx = test_context();
+        let cs = ExecutionContext::global_call_site();
+
+        ctx.declare_var_scoped("v", cs, PersistentVarKind::Var, Value::Int(1));
+        ctx.push_to_series("v", cs, Value::Int(1));
+        ctx.declare_var_scoped("vip", cs, PersistentVarKind::Varip, Value::Int(10));
+        ctx.push_to_series("vip", cs, Value::Int(10));
+        ctx.commit_bar_state();
+
+        ctx.set_bar_index(1);
+        ctx.set_var_scoped("v", cs, Value::Int(2));
+        ctx.push_to_series("v", cs, Value::Int(2));
+        ctx.set_var_scoped("vip", cs, Value::Int(20));
+        ctx.push_to_series("vip", cs, Value::Int(20));
+
+        ctx.rollback_bar_state();
+
+        assert_eq!(ctx.get_var_scoped("v", cs), Some(&Value::Int(1)));
+        assert_eq!(ctx.get_series_current("v", cs), Some(&Value::Int(1)));
+        assert_eq!(ctx.get_var_scoped("vip", cs), Some(&Value::Int(20)));
+        assert_eq!(ctx.get_series_current("vip", cs), Some(&Value::Int(20)));
+    }
+
+    #[test]
+    fn test_commit_advances_snapshot_to_latest_bar() {
+        let mut ctx = test_context();
+        let cs = ExecutionContext::global_call_site();
+
+        ctx.declare_var_scoped("count", cs, PersistentVarKind::Var, Value::Int(1));
+        ctx.push_to_series("count", cs, Value::Int(1));
+        ctx.commit_bar_state();
+
+        ctx.set_bar_index(1);
+        ctx.set_var_scoped("count", cs, Value::Int(2));
+        ctx.push_to_series("count", cs, Value::Int(2));
+        ctx.commit_bar_state();
+
+        ctx.set_bar_index(2);
+        ctx.set_var_scoped("count", cs, Value::Int(99));
+        ctx.push_to_series("count", cs, Value::Int(99));
+        ctx.rollback_bar_state();
+
+        assert_eq!(ctx.get_var_scoped("count", cs), Some(&Value::Int(2)));
+        assert_eq!(ctx.get_series_current("count", cs), Some(&Value::Int(2)));
+        assert_eq!(ctx.get_series_at("count", cs, 1), Some(&Value::Int(1)));
+    }
+
+    #[test]
+    fn test_bar_state_round_trip() {
+        let mut ctx = test_context();
+        let state = BarState {
+            ishistory: false,
+            isrealtime: true,
+            isnew: true,
+            isconfirmed: false,
+            islast: true,
+            isfirst: false,
+        };
+
+        ctx.set_bar_state(state.clone());
+
+        assert_eq!(ctx.bar_state(), &state);
     }
 
     #[test]

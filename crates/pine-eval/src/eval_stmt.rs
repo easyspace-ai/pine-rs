@@ -4,6 +4,7 @@ use crate::eval_expr::eval_expr;
 use crate::{EvalError, EvaluationContext, Result, UserFn};
 use pine_parser::ast;
 use pine_parser::ast::{AssignOp, ForInPattern, ImportPath, SwitchArmBody};
+use pine_runtime::context::PersistentVarKind;
 use pine_runtime::value::Value;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -319,8 +320,13 @@ pub fn eval_stmt(stmt: &ast::Stmt, ctx: &mut EvaluationContext) -> Result<()> {
                     Value::Na
                 };
                 let n = name.name.clone();
+                let mode = match kind {
+                    ast::VarKind::Var => PersistentVarKind::Var,
+                    ast::VarKind::Varip => PersistentVarKind::Varip,
+                    ast::VarKind::Plain => unreachable!("plain vars handled above"),
+                };
                 ctx.runtime_mut()
-                    .set_var_scoped(n.clone(), cs, value.clone());
+                    .declare_var_scoped(n.clone(), cs, mode, value.clone());
                 ctx.runtime_mut().push_to_series(n, cs, value);
                 Ok(())
             }

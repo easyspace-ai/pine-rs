@@ -11,6 +11,9 @@ use tokio_tungstenite::tungstenite::protocol::Message;
 use crate::data::OhlcvBar;
 use std::env;
 
+const BINANCE_FUTURES_WS_HOST: &str = "fstream.binance.com:443";
+const DEFAULT_BINANCE_PROXY: &str = "127.0.0.1:15236";
+
 /// Generate a random WebSocket key for the handshake
 fn generate_websocket_key() -> String {
     use base64::{engine::general_purpose::STANDARD, Engine};
@@ -105,10 +108,12 @@ impl BinanceWsClient {
     async fn start(symbol: String, interval: String, tx: broadcast::Sender<BarUpdate>) {
         let symbol_lower = symbol.to_lowercase();
         let ws_path = format!("{}@kline_{}", symbol_lower, interval);
-        let ws_url = format!("wss://stream.binance.com:9443/ws/{}", ws_path);
+        let ws_url = format!("wss://{}/ws/{}", BINANCE_FUTURES_WS_HOST, ws_path);
 
         // Check for proxy configuration
-        let proxy_addr = env::var("PINE_TV_BINANCE_PROXY").ok();
+        let proxy_addr = env::var("PINE_TV_BINANCE_PROXY")
+            .ok()
+            .or_else(|| Some(DEFAULT_BINANCE_PROXY.to_string()));
 
         tracing::info!("Connecting to Binance WebSocket: {}", ws_url);
         if let Some(ref proxy) = proxy_addr {
@@ -117,7 +122,7 @@ impl BinanceWsClient {
 
         loop {
             let result = if let Some(ref proxy) = proxy_addr {
-                Self::connect_with_proxy(&ws_url, &ws_path, proxy).await
+                Self::connect_with_proxy(&ws_url, proxy).await
             } else {
                 Self::connect_direct(&ws_url).await
             };
@@ -151,8 +156,7 @@ impl BinanceWsClient {
 
     /// Connect via HTTP proxy using CONNECT method
     async fn connect_with_proxy(
-        _ws_url: &str,
-        ws_path: &str,
+        ws_url: &str,
         proxy: &str,
     ) -> Result<
         tokio_tungstenite::WebSocketStream<
@@ -177,8 +181,8 @@ impl BinanceWsClient {
         })?;
 
         // Send CONNECT request to establish tunnel to Binance
-        const CONNECT_REQ: &str = "CONNECT stream.binance.com:9443 HTTP/1.1\r\n\
-             Host: stream.binance.com:9443\r\n\
+        const CONNECT_REQ: &str = "CONNECT fstream.binance.com:443 HTTP/1.1\r\n\
+             Host: fstream.binance.com:443\r\n\
              Proxy-Connection: keep-alive\r\n\
              \r\n";
 
@@ -200,15 +204,15 @@ impl BinanceWsClient {
         // Wrap the stream with TLS using tokio_native_tls
         let tls_connector =
             tokio_native_tls::TlsConnector::from(native_tls::TlsConnector::builder().build()?);
-        let tls_stream = tls_connector.connect("stream.binance.com", stream).await?;
+        let tls_stream = tls_connector.connect("fstream.binance.com", stream).await?;
 
         // Wrap in MaybeTlsStream
         let maybe_tls = tokio_tungstenite::MaybeTlsStream::NativeTls(tls_stream);
 
         // Complete WebSocket handshake
         let request = tokio_tungstenite::tungstenite::handshake::client::Request::builder()
-            .uri(format!("/ws/{}", ws_path))
-            .header("Host", "stream.binance.com:9443")
+            .uri(ws_url)
+            .header("Host", BINANCE_FUTURES_WS_HOST)
             .header("Upgrade", "websocket")
             .header("Connection", "Upgrade")
             .header("Sec-WebSocket-Key", generate_websocket_key())
@@ -306,5 +310,13 @@ mod tests {
         assert_eq!(msg.symbol, "BTCUSDT");
         assert_eq!(msg.kline.interval, "1h");
         assert!(!msg.kline.is_final);
+    }
+
+    #[test]
+    fn futures_ws_url_uses_fstream_host() {
+        let ws_path = "btcusdt@kline_1m";
+        let ws_url = format!("wss://{}/ws/{}", BINANCE_FUTURES_WS_HOST, ws_path);
+        assert!(ws_url.contains("fstream.binance.com"));
+        assert!(ws_url.contains("/ws/btcusdt@kline_1m"));
     }
 }

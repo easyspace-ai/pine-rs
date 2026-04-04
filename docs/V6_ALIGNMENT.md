@@ -5,6 +5,7 @@
 
 - **产品与门禁**仍以 [`AGENTS.md`](../AGENTS.md) 为准；本表是 **「还要走多远」** 的路线图，**不单独降低** `dev_verify.sh --full` 标准。
 - **North Star**：支持 **原生官方语法** 写就的指标与策略（社区脚本高比例 **无需改写** 即可 parse + sema + 执行）；**解析层避免 TV 不存在的专属语法成为「主路径」**（例如 UDF 应以官方 `name(params) =>` 为主，见 §1）。
+- **执行边界与实时路线**另见 [`EXECUTION_BOUNDARY.md`](./EXECUTION_BOUNDARY.md)；其中已明确：前端 JS 指标计算不是长期方案，后续以统一 Pine/WASM 执行为方向。
 
 ---
 

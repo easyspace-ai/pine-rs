@@ -11,11 +11,84 @@ use pine_parser::ast::{Arg, Expr, Lit, Script, Stmt};
 use pine_runtime::value::Value;
 use pine_stdlib::registry::FunctionRegistry;
 
-/// Read `indicator(..., overlay=...)` / `strategy(..., overlay=...)` from the script AST.
-///
-/// Returns `None` when no `indicator` / `strategy` call is found at the top level; the caller
-/// defaults that to overlay-style (main pane only) for backward compatibility.
-fn extract_declaration_overlay(script: &Script) -> Option<bool> {
+/// Script declaration kind.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ScriptKind {
+    /// `indicator(...)`
+    Indicator,
+    /// `strategy(...)`
+    Strategy,
+    /// No explicit top-level declaration found.
+    Unknown,
+}
+
+/// Realtime execution policy for a script session.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RealtimeExecutionPolicy {
+    /// Execute on every forming tick and bar close.
+    EveryTick,
+    /// Execute only on bar close.
+    BarCloseOnly,
+}
+
+/// Realtime trigger source for a script execution.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum RealtimeExecutionTrigger {
+    /// Initial full snapshot / explicit rerun.
+    Snapshot,
+    /// Forming bar tick update.
+    Tick,
+    /// Closed bar commit.
+    BarClose,
+    /// Re-execution after an order fill.
+    OrderFill,
+}
+
+/// Top-level declaration information extracted from the script.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ScriptDeclaration {
+    /// Declaration kind.
+    pub kind: ScriptKind,
+    /// Whether the script overlays on the main pane.
+    pub overlay: bool,
+    /// Whether strategy requested every-tick execution.
+    pub calc_on_every_tick: bool,
+    /// Whether strategy requested re-execution on fills.
+    pub calc_on_order_fills: bool,
+    /// Whether strategy requested processing orders on close.
+    pub process_orders_on_close: bool,
+}
+
+impl ScriptDeclaration {
+    /// Realtime execution policy implied by the declaration.
+    pub fn realtime_execution_policy(&self) -> RealtimeExecutionPolicy {
+        match self.kind {
+            ScriptKind::Indicator => RealtimeExecutionPolicy::EveryTick,
+            ScriptKind::Strategy if self.calc_on_every_tick => RealtimeExecutionPolicy::EveryTick,
+            ScriptKind::Strategy => RealtimeExecutionPolicy::BarCloseOnly,
+            ScriptKind::Unknown => RealtimeExecutionPolicy::EveryTick,
+        }
+    }
+
+    /// Whether this script should execute for the given realtime trigger.
+    pub fn should_execute_on(&self, trigger: RealtimeExecutionTrigger) -> bool {
+        match trigger {
+            RealtimeExecutionTrigger::Snapshot => true,
+            RealtimeExecutionTrigger::Tick => {
+                self.realtime_execution_policy() == RealtimeExecutionPolicy::EveryTick
+            }
+            RealtimeExecutionTrigger::BarClose => true,
+            RealtimeExecutionTrigger::OrderFill => {
+                self.kind == ScriptKind::Strategy && self.calc_on_order_fills
+            }
+        }
+    }
+}
+
+/// Read top-level `indicator(...)` / `strategy(...)` declaration details from the script AST.
+fn extract_script_declaration(script: &Script) -> ScriptDeclaration {
     for stmt in &script.stmts {
         let Stmt::Expr(expr) = stmt else {
             continue;
@@ -28,12 +101,38 @@ fn extract_declaration_overlay(script: &Script) -> Option<bool> {
         };
         match callee.name.as_str() {
             "indicator" | "strategy" => {
-                return Some(overlay_from_decl_args(callee.name.as_str(), args));
+                return ScriptDeclaration {
+                    kind: if callee.name == "strategy" {
+                        ScriptKind::Strategy
+                    } else {
+                        ScriptKind::Indicator
+                    },
+                    overlay: overlay_from_decl_args(callee.name.as_str(), args),
+                    calc_on_order_fills: calc_on_order_fills_from_decl_args(
+                        callee.name.as_str(),
+                        args,
+                    ),
+                    process_orders_on_close: process_orders_on_close_from_decl_args(
+                        callee.name.as_str(),
+                        args,
+                    ),
+                    calc_on_every_tick: calc_on_every_tick_from_decl_args(
+                        callee.name.as_str(),
+                        args,
+                    ),
+                };
             }
             _ => {}
         }
     }
-    None
+
+    ScriptDeclaration {
+        kind: ScriptKind::Unknown,
+        overlay: true,
+        calc_on_every_tick: false,
+        calc_on_order_fills: false,
+        process_orders_on_close: false,
+    }
 }
 
 fn overlay_from_decl_args(callee: &str, args: &[Arg]) -> bool {
@@ -54,6 +153,84 @@ fn overlay_from_decl_args(callee: &str, args: &[Arg]) -> bool {
         "strategy" => true,
         _ => true,
     }
+}
+
+fn calc_on_every_tick_from_decl_args(callee: &str, args: &[Arg]) -> bool {
+    if callee != "strategy" {
+        return false;
+    }
+
+    for arg in args {
+        if arg
+            .name
+            .as_ref()
+            .is_some_and(|n| n.name == "calc_on_every_tick")
+        {
+            if let Expr::Literal(Lit::Bool(b), _) = &arg.value {
+                return *b;
+            }
+        }
+    }
+
+    if args.len() > 14 && args[14].name.is_none() {
+        if let Expr::Literal(Lit::Bool(b), _) = &args[14].value {
+            return *b;
+        }
+    }
+
+    false
+}
+
+fn calc_on_order_fills_from_decl_args(callee: &str, args: &[Arg]) -> bool {
+    if callee != "strategy" {
+        return false;
+    }
+
+    for arg in args {
+        if arg
+            .name
+            .as_ref()
+            .is_some_and(|n| n.name == "calc_on_order_fills")
+        {
+            if let Expr::Literal(Lit::Bool(b), _) = &arg.value {
+                return *b;
+            }
+        }
+    }
+
+    if args.len() > 13 && args[13].name.is_none() {
+        if let Expr::Literal(Lit::Bool(b), _) = &args[13].value {
+            return *b;
+        }
+    }
+
+    false
+}
+
+fn process_orders_on_close_from_decl_args(callee: &str, args: &[Arg]) -> bool {
+    if callee != "strategy" {
+        return false;
+    }
+
+    for arg in args {
+        if arg
+            .name
+            .as_ref()
+            .is_some_and(|n| n.name == "process_orders_on_close")
+        {
+            if let Expr::Literal(Lit::Bool(b), _) = &arg.value {
+                return *b;
+            }
+        }
+    }
+
+    if args.len() > 15 && args[15].name.is_none() {
+        if let Expr::Literal(Lit::Bool(b), _) = &args[15].value {
+            return *b;
+        }
+    }
+
+    false
 }
 
 /// Execution mode for PineEngine
@@ -133,6 +310,25 @@ impl PineEngine {
         Ok(())
     }
 
+    /// Inspect the top-level declaration without executing the script.
+    pub fn inspect_script(&self, code: &str) -> Result<ScriptDeclaration, Vec<ApiError>> {
+        let tokens = match Lexer::lex_with_indentation(code) {
+            Ok(t) => t,
+            Err(e) => {
+                return Err(vec![ApiError::simple(format!("Lex error: {:?}", e))]);
+            }
+        };
+
+        let ast = match pine_parser::parser::parse(tokens) {
+            Ok(ast) => ast,
+            Err(e) => {
+                return Err(vec![ApiError::simple(format!("Parse error: {:?}", e))]);
+            }
+        };
+
+        Ok(extract_script_declaration(&ast))
+    }
+
     /// Run Pine Script code with OHLCV data
     pub fn run(&self, code: &str, bars: &[OhlcvBar]) -> Result<ApiResponse, Vec<ApiError>> {
         let start = Instant::now();
@@ -161,8 +357,8 @@ impl PineEngine {
             })
             .collect();
 
-        // Overlay from declaration: TV default indicator overlay=false (separate pane), strategy default true.
-        let overlay = extract_declaration_overlay(&ast).unwrap_or(true);
+        let declaration = extract_script_declaration(&ast);
+        let overlay = declaration.overlay;
         // 4. Execute based on mode
         let (plots, strategy) = match self.mode {
             ExecutionMode::Vm => {
@@ -554,5 +750,82 @@ plot(ta.sma(close, 5), title="SMA")
             res.strategy.is_none(),
             "Indicator scripts should not have strategy output"
         );
+    }
+
+    #[test]
+    fn test_inspect_indicator_defaults_to_every_tick() {
+        let engine = PineEngine::with_mode(ExecutionMode::Eval);
+        let info = engine
+            .inspect_script("//@version=6\nindicator(\"x\")\nplot(close)")
+            .expect("inspect");
+        assert_eq!(info.kind, ScriptKind::Indicator);
+        assert_eq!(info.overlay, false);
+        assert_eq!(
+            info.realtime_execution_policy(),
+            RealtimeExecutionPolicy::EveryTick
+        );
+    }
+
+    #[test]
+    fn test_inspect_strategy_defaults_to_bar_close_only() {
+        let engine = PineEngine::with_mode(ExecutionMode::Eval);
+        let info = engine
+            .inspect_script("//@version=6\nstrategy(\"x\")\nplot(close)")
+            .expect("inspect");
+        assert_eq!(info.kind, ScriptKind::Strategy);
+        assert!(!info.calc_on_every_tick);
+        assert_eq!(
+            info.realtime_execution_policy(),
+            RealtimeExecutionPolicy::BarCloseOnly
+        );
+    }
+
+    #[test]
+    fn test_inspect_strategy_calc_on_every_tick_named_arg() {
+        let engine = PineEngine::with_mode(ExecutionMode::Eval);
+        let info = engine
+            .inspect_script("//@version=6\nstrategy(\"x\", calc_on_every_tick=true)\nplot(close)")
+            .expect("inspect");
+        assert_eq!(info.kind, ScriptKind::Strategy);
+        assert!(info.calc_on_every_tick);
+        assert_eq!(
+            info.realtime_execution_policy(),
+            RealtimeExecutionPolicy::EveryTick
+        );
+    }
+
+    #[test]
+    fn test_inspect_strategy_calc_on_order_fills_named_arg() {
+        let engine = PineEngine::with_mode(ExecutionMode::Eval);
+        let info = engine
+            .inspect_script("//@version=6\nstrategy(\"x\", calc_on_order_fills=true)\nplot(close)")
+            .expect("inspect");
+        assert_eq!(info.kind, ScriptKind::Strategy);
+        assert!(info.calc_on_order_fills);
+        assert!(info.should_execute_on(RealtimeExecutionTrigger::OrderFill));
+    }
+
+    #[test]
+    fn test_inspect_strategy_process_orders_on_close_named_arg() {
+        let engine = PineEngine::with_mode(ExecutionMode::Eval);
+        let info = engine
+            .inspect_script(
+                "//@version=6\nstrategy(\"x\", process_orders_on_close=true)\nplot(close)",
+            )
+            .expect("inspect");
+        assert_eq!(info.kind, ScriptKind::Strategy);
+        assert!(info.process_orders_on_close);
+    }
+
+    #[test]
+    fn test_strategy_bar_close_policy_skips_tick_trigger() {
+        let engine = PineEngine::with_mode(ExecutionMode::Eval);
+        let info = engine
+            .inspect_script("//@version=6\nstrategy(\"x\")\nplot(close)")
+            .expect("inspect");
+
+        assert!(!info.should_execute_on(RealtimeExecutionTrigger::Tick));
+        assert!(info.should_execute_on(RealtimeExecutionTrigger::BarClose));
+        assert!(!info.should_execute_on(RealtimeExecutionTrigger::OrderFill));
     }
 }

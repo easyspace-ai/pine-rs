@@ -23,8 +23,12 @@ pub struct RealtimeDataManager {
 pub enum RealtimeUpdate {
     /// Full snapshot of all bars
     Snapshot { bars: Vec<OhlcvBar> },
+    /// First update for a newly opened forming bar
+    BarOpened { bar: OhlcvBar },
     /// Update to the forming bar
     FormingUpdate { bar: OhlcvBar },
+    /// Closed/finalized bar update
+    BarClosed { bar: OhlcvBar },
     /// New bar added (previous closed)
     NewBar {
         closed_bar: OhlcvBar,
@@ -54,6 +58,18 @@ impl RealtimeDataManager {
     /// Get current bars snapshot
     pub async fn get_bars(&self) -> Vec<OhlcvBar> {
         self.bars.read().await.iter().cloned().collect()
+    }
+
+    /// Replace current bars with a full snapshot.
+    pub async fn set_bars(&self, bars: Vec<OhlcvBar>) {
+        let mut bars_lock = self.bars.write().await;
+        bars_lock.clear();
+        bars_lock.extend(bars.into_iter().take(self.max_bars));
+
+        let snapshot = RealtimeUpdate::Snapshot {
+            bars: bars_lock.iter().cloned().collect(),
+        };
+        let _ = self.tx.send(snapshot);
     }
 
     /// Initialize with historical data
@@ -113,6 +129,8 @@ impl RealtimeDataManager {
                             new_bar: bar.clone(),
                         });
                     }
+
+                    let _ = self.tx.send(RealtimeUpdate::BarOpened { bar });
                 } else {
                     // Update the existing forming bar (last one)
                     if let Some(last) = bars.back_mut() {
@@ -134,7 +152,7 @@ impl RealtimeDataManager {
                 }
 
                 // Send update
-                let _ = self.tx.send(RealtimeUpdate::FormingUpdate { bar });
+                let _ = self.tx.send(RealtimeUpdate::BarClosed { bar });
             }
         }
     }
@@ -159,6 +177,16 @@ mod realtime_serde_tests {
         assert!(serde_json::to_string(&form)
             .unwrap()
             .contains("\"type\":\"forming_update\""));
+
+        let opened = RealtimeUpdate::BarOpened { bar: bar.clone() };
+        assert!(serde_json::to_string(&opened)
+            .unwrap()
+            .contains("\"type\":\"bar_opened\""));
+
+        let closed = RealtimeUpdate::BarClosed { bar: bar.clone() };
+        assert!(serde_json::to_string(&closed)
+            .unwrap()
+            .contains("\"type\":\"bar_closed\""));
 
         let nb = RealtimeUpdate::NewBar {
             closed_bar: bar.clone(),

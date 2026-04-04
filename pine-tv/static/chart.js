@@ -137,8 +137,14 @@ function handleWebSocketMessage(msg) {
         case 'snapshot':
             handleSnapshot(msg);
             break;
+        case 'bar_opened':
+            handleBarOpened(msg);
+            break;
         case 'forming_update':
             handleFormingUpdate(msg);
+            break;
+        case 'bar_closed':
+            handleBarClosed(msg);
             break;
         case 'new_bar':
             handleNewBar(msg);
@@ -154,23 +160,23 @@ function handleWebSocketMessage(msg) {
 
 function handleSnapshot(msg) {
     renderCandlesticks(msg.bars);
-    if (currentCode) {
-        runScriptOnRealtimeData();
-    }
+}
+
+function handleBarOpened(msg) {
+    addNewBar(msg.bar);
 }
 
 function handleFormingUpdate(msg) {
     updateLastBar(msg.bar);
-    if (currentCode) {
-        runScriptOnRealtimeData();
-    }
+}
+
+function handleBarClosed(msg) {
+    updateLastBar(msg.bar);
 }
 
 function handleNewBar(msg) {
-    addNewBar(msg.new_bar);
-    if (currentCode) {
-        runScriptOnRealtimeData();
-    }
+    // `bar_opened` now carries the append action; keep `new_bar` as a semantic event.
+    void msg;
 }
 
 async function loadDataAndRender() {
@@ -246,6 +252,8 @@ function initEventListeners() {
         currentCode = e.detail.code;
         if (isRealtime && currentCode) {
             runScriptOnRealtimeData();
+        } else if (isRealtime && ws && ws.readyState === WebSocket.OPEN) {
+            ws.send(JSON.stringify({ action: 'stop' }));
         }
     });
 

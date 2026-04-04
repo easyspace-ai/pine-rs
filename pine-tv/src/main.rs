@@ -18,7 +18,7 @@ mod engine;
 mod routes;
 
 use data::{BinanceClient, BinanceWsClient, DataLoader, RealtimeDataManager};
-use engine::{ExecutionMode, PineEngine};
+use engine::{realtime_runner::RealtimeRunner, ExecutionMode, PineEngine};
 use routes::{CheckHandler, DataHandler, RunHandler, WsHandler};
 
 /// Server configuration
@@ -99,13 +99,16 @@ async fn main() {
     ));
 
     // Start processing real-time updates
-    data_manager.clone().start(ws_client).await;
+    data_manager.clone().start(ws_client.clone()).await;
+
+    // Start realtime script sessions
+    let realtime_runner = RealtimeRunner::new(engine.clone(), data_loader.clone(), config.max_bars);
 
     // Create handlers
     let run_handler = Arc::new(RunHandler::new(engine.clone(), data_loader.clone()));
     let check_handler = Arc::new(CheckHandler::new(engine.clone()));
     let data_handler = Arc::new(DataHandler::new(data_loader.clone()));
-    let ws_handler = Arc::new(WsHandler::new(data_manager.clone(), engine.clone()));
+    let ws_handler = Arc::new(WsHandler::new(data_manager.clone(), realtime_runner));
 
     // Build router
     let app = Router::new()

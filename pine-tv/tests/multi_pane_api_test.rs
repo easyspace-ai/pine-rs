@@ -17,7 +17,7 @@ use std::sync::Arc;
 use tower::ServiceExt;
 
 use pine_tv::engine::runner::{ExecutionMode, PineEngine};
-use pine_tv::routes::{RunHandler};
+use pine_tv::routes::RunHandler;
 
 fn test_app() -> Router {
     let engine = Arc::new(PineEngine::with_mode(ExecutionMode::Eval));
@@ -26,8 +26,7 @@ fn test_app() -> Router {
     ));
     let run_handler = Arc::new(RunHandler::new(engine.clone(), data_loader));
 
-    Router::new()
-        .route("/api/run", post(RunHandler::handle).with_state(run_handler))
+    Router::new().route("/api/run", post(RunHandler::handle).with_state(run_handler))
 }
 
 /// Test Case 1: Two Panes (pane=1, pane=2)
@@ -72,16 +71,19 @@ plot(rsi_val, "RSI", color=color.orange, pane=2)
         .await
         .unwrap();
     let json: serde_json::Value = serde_json::from_slice(&body_bytes).unwrap();
-    
-    println!("API Response: {}", serde_json::to_string_pretty(&json).unwrap());
-    
+
+    println!(
+        "API Response: {}",
+        serde_json::to_string_pretty(&json).unwrap()
+    );
+
     assert!(json.get("ok").and_then(|v| v.as_bool()).unwrap_or(false));
 
     let plots = json
         .get("plots")
         .and_then(|v| v.as_array())
         .expect("expected plots array");
-    
+
     assert_eq!(plots.len(), 2, "Should have 2 plots");
 
     // Verify pane indices
@@ -89,18 +91,18 @@ plot(rsi_val, "RSI", color=color.orange, pane=2)
         .iter()
         .filter_map(|p| p.get("pane").and_then(|v| v.as_i64()))
         .collect();
-    
+
     println!("Pane indices from API: {:?}", pane_indices);
-    
+
     assert!(pane_indices.contains(&1), "Should have plot with pane=1");
     assert!(pane_indices.contains(&2), "Should have plot with pane=2");
-    
+
     // Verify titles
     let titles: Vec<&str> = plots
         .iter()
         .filter_map(|p| p.get("title").and_then(|v| v.as_str()))
         .collect();
-    
+
     assert!(titles.contains(&"SMA"), "Should have SMA plot");
     assert!(titles.contains(&"RSI"), "Should have RSI plot");
 }
@@ -146,25 +148,28 @@ plot(macd_val[0], "MACD", color=color.green, pane=3)
         .await
         .unwrap();
     let json: serde_json::Value = serde_json::from_slice(&body_bytes).unwrap();
-    
-    println!("API Response: {}", serde_json::to_string_pretty(&json).unwrap());
-    
+
+    println!(
+        "API Response: {}",
+        serde_json::to_string_pretty(&json).unwrap()
+    );
+
     assert!(json.get("ok").and_then(|v| v.as_bool()).unwrap_or(false));
 
     let plots = json
         .get("plots")
         .and_then(|v| v.as_array())
         .expect("expected plots array");
-    
+
     assert_eq!(plots.len(), 3, "Should have 3 plots");
 
     let pane_indices: Vec<i64> = plots
         .iter()
         .filter_map(|p| p.get("pane").and_then(|v| v.as_i64()))
         .collect();
-    
+
     println!("Pane indices from API: {:?}", pane_indices);
-    
+
     assert!(pane_indices.contains(&1), "Should have plot with pane=1");
     assert!(pane_indices.contains(&2), "Should have plot with pane=2");
     assert!(pane_indices.contains(&3), "Should have plot with pane=3");
@@ -209,28 +214,34 @@ plot(macd_val[0], "MACD", color=color.green, pane=3)
         .await
         .unwrap();
     let json: serde_json::Value = serde_json::from_slice(&body_bytes).unwrap();
-    
-    println!("API Response: {}", serde_json::to_string_pretty(&json).unwrap());
-    
+
+    println!(
+        "API Response: {}",
+        serde_json::to_string_pretty(&json).unwrap()
+    );
+
     assert!(json.get("ok").and_then(|v| v.as_bool()).unwrap_or(false));
 
     let plots = json
         .get("plots")
         .and_then(|v| v.as_array())
         .expect("expected plots array");
-    
+
     assert_eq!(plots.len(), 2, "Should have 2 plots");
 
     let pane_indices: Vec<i64> = plots
         .iter()
         .filter_map(|p| p.get("pane").and_then(|v| v.as_i64()))
         .collect();
-    
+
     println!("Pane indices from API: {:?}", pane_indices);
-    
+
     assert!(pane_indices.contains(&1), "Should have plot with pane=1");
     assert!(pane_indices.contains(&3), "Should have plot with pane=3");
-    assert!(!pane_indices.contains(&2), "Should NOT have plot with pane=2");
+    assert!(
+        !pane_indices.contains(&2),
+        "Should NOT have plot with pane=2"
+    );
 }
 
 /// Documentation of Bug Condition
@@ -264,7 +275,9 @@ fn document_bug_condition() {
     println!("      const h = Math.max(100, Math.floor(chartContainer.clientHeight * 0.28));");
     println!("      sub.setHeight(h);");
     println!("  }}");
-    println!("\nProblem: Only sets height for maxPane, doesn't iterate through all unique pane indices.");
+    println!(
+        "\nProblem: Only sets height for maxPane, doesn't iterate through all unique pane indices."
+    );
     println!("\nExpected behavior:");
     println!("  - Collect all unique pane indices from plots array");
     println!("  - Iterate through each unique pane index");

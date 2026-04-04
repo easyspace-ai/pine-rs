@@ -195,6 +195,24 @@ impl SeriesBufF64 {
         }
     }
 
+    /// Overwrite the most recent element without deepening history.
+    pub fn update_current(&mut self, value: f64) {
+        if self.len == 0 {
+            self.push(value);
+            return;
+        }
+
+        let idx = if self.buffer.len() < self.capacity {
+            self.head.wrapping_sub(1)
+        } else {
+            (self.head + self.capacity - 1) % self.capacity
+        };
+
+        if let Some(slot) = self.buffer.get_mut(idx) {
+            *slot = value;
+        }
+    }
+
     /// Get the value at the given offset from current
     ///
     /// - `get(0)` returns the most recent value (current bar)

@@ -6,6 +6,7 @@
 use crate::eval_stmt::eval_stmt;
 use crate::{EvaluationContext, Result, SeriesData};
 use pine_parser::ast;
+use pine_runtime::context::BarState;
 use pine_runtime::series::SeriesBufF64;
 use pine_runtime::value::Value;
 
@@ -124,6 +125,21 @@ impl ExecutionState {
         self.current_bar = self.total_bars - 1;
     }
 
+    /// Update the latest bar in place for realtime intrabar recalculation.
+    pub fn update_current_bar(&mut self, bar: &BarData) {
+        if self.total_bars == 0 {
+            self.add_bar(bar);
+            return;
+        }
+
+        self.open_series.update_current(bar.open);
+        self.high_series.update_current(bar.high);
+        self.low_series.update_current(bar.low);
+        self.close_series.update_current(bar.close);
+        self.volume_series.update_current(bar.volume);
+        self.time_series.update_current(bar.time as f64);
+    }
+
     /// Get current bar data
     pub fn current_bar_data(&self) -> Option<BarData> {
         if self.current_bar >= self.total_bars {
@@ -162,7 +178,17 @@ pub fn run_bar_by_bar(
     // Execute script for each bar
     for bar_idx in 0..bars.len() {
         state.current_bar = bar_idx;
+        ctx.runtime_mut().clear_vars();
         ctx.runtime_mut().set_bar_index(bar_idx as i64);
+        ctx.runtime_mut().set_timestamp(bars[bar_idx].time);
+        ctx.set_bar_state(BarState {
+            ishistory: true,
+            isrealtime: false,
+            isnew: true,
+            isconfirmed: true,
+            islast: bar_idx + 1 == bars.len(),
+            isfirst: bar_idx == 0,
+        });
 
         // Set up built-in variables for this bar
         setup_builtin_vars(ctx, &state, bar_idx)?;
@@ -171,6 +197,8 @@ pub fn run_bar_by_bar(
         for stmt in &script.stmts {
             eval_stmt(stmt, ctx)?;
         }
+
+        ctx.runtime_mut().commit_bar_state();
 
         // Advance plot outputs and strategy signals to next bar
         ctx.plot_outputs.next_bar();
@@ -196,15 +224,69 @@ pub fn run_single_bar(
     state.add_bar(bar);
 
     // Set up built-in variables
+    ctx.runtime_mut().clear_vars();
     setup_builtin_vars(ctx, state, state.current_bar)?;
     ctx.runtime_mut().set_bar_index(state.current_bar as i64);
+    ctx.runtime_mut().set_timestamp(bar.time);
+    ctx.set_bar_state(BarState {
+        ishistory: false,
+        isrealtime: true,
+        isnew: true,
+        isconfirmed: true,
+        islast: true,
+        isfirst: state.current_bar == 0,
+    });
 
     // Execute the script
     for stmt in &script.stmts {
         eval_stmt(stmt, ctx)?;
     }
 
+    ctx.runtime_mut().commit_bar_state();
+
     // TODO: Return actual result from statement evaluation
+    Ok(Value::Na)
+}
+
+/// Run a realtime tick on the current bar, applying rollback semantics for `var`.
+pub fn run_realtime_tick(
+    script: &ast::Script,
+    bar: &BarData,
+    state: &mut ExecutionState,
+    ctx: &mut EvaluationContext,
+    is_new_bar: bool,
+    is_bar_close: bool,
+) -> Result<Value> {
+    pine_sema::analyze(script)?;
+
+    if is_new_bar || state.total_bars == 0 {
+        state.add_bar(bar);
+    } else {
+        state.update_current_bar(bar);
+        ctx.runtime_mut().rollback_bar_state();
+    }
+
+    ctx.runtime_mut().clear_vars();
+    ctx.runtime_mut().set_bar_index(state.current_bar as i64);
+    ctx.runtime_mut().set_timestamp(bar.time);
+    ctx.set_bar_state(BarState {
+        ishistory: false,
+        isrealtime: true,
+        isnew: is_new_bar,
+        isconfirmed: is_bar_close,
+        islast: true,
+        isfirst: state.current_bar == 0,
+    });
+    setup_builtin_vars(ctx, state, state.current_bar)?;
+
+    for stmt in &script.stmts {
+        eval_stmt(stmt, ctx)?;
+    }
+
+    if is_bar_close {
+        ctx.runtime_mut().commit_bar_state();
+    }
+
     Ok(Value::Na)
 }
 
@@ -316,6 +398,22 @@ fn setup_builtin_vars(
     ctx.set_var("array", Value::Namespace("array".to_string()));
     ctx.set_var("map", Value::Namespace("map".to_string()));
     ctx.set_var("strategy", Value::Namespace("strategy".to_string()));
+    let bar_state = ctx.runtime().bar_state().clone();
+    let barstate_obj = ctx.create_object_with_fields(
+        "barstate",
+        [
+            ("ishistory".to_string(), Value::Bool(bar_state.ishistory)),
+            ("isrealtime".to_string(), Value::Bool(bar_state.isrealtime)),
+            ("isnew".to_string(), Value::Bool(bar_state.isnew)),
+            (
+                "isconfirmed".to_string(),
+                Value::Bool(bar_state.isconfirmed),
+            ),
+            ("islast".to_string(), Value::Bool(bar_state.islast)),
+            ("isfirst".to_string(), Value::Bool(bar_state.isfirst)),
+        ],
+    );
+    ctx.set_var("barstate", barstate_obj);
 
     Ok(())
 }
@@ -335,6 +433,8 @@ pub fn run(script: &ast::Script) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::EvaluationContext;
+    use pine_parser::stmt::StmtParser;
 
     fn create_test_bars() -> Vec<BarData> {
         vec![
@@ -375,5 +475,74 @@ mod tests {
 
         let result = run(&script);
         assert!(result.is_ok());
+    }
+
+    fn parse_script(src: &str) -> ast::Script {
+        let tokens = pine_lexer::Lexer::lex_with_indentation(src).unwrap();
+        let mut parser = StmtParser::new(tokens);
+        parser.parse_script().unwrap()
+    }
+
+    #[test]
+    fn test_history_barstate_flags_are_injected() {
+        let script = parse_script(
+            r#"
+first_flag = barstate.isfirst ? 1 : 0
+last_flag = barstate.islast ? 1 : 0
+history_flag = barstate.ishistory ? 1 : 0
+confirmed_flag = barstate.isconfirmed ? 1 : 0
+"#,
+        );
+        let bars = create_test_bars();
+        let mut ctx = EvaluationContext::new();
+
+        run_bar_by_bar(&script, &bars, &mut ctx).unwrap();
+
+        assert_eq!(
+            ctx.get_var_history("first_flag"),
+            Some(&[Value::Int(1), Value::Int(0), Value::Int(0)][..])
+        );
+        assert_eq!(
+            ctx.get_var_history("last_flag"),
+            Some(&[Value::Int(0), Value::Int(0), Value::Int(1)][..])
+        );
+        assert_eq!(
+            ctx.get_var_history("history_flag"),
+            Some(&[Value::Int(1), Value::Int(1), Value::Int(1)][..])
+        );
+        assert_eq!(
+            ctx.get_var_history("confirmed_flag"),
+            Some(&[Value::Int(1), Value::Int(1), Value::Int(1)][..])
+        );
+    }
+
+    #[test]
+    fn test_realtime_tick_rolls_back_var_but_keeps_varip() {
+        let script = parse_script(
+            r#"
+var count = 0
+varip ticks = 0
+count := count + 1
+ticks := ticks + 1
+count_out = count
+ticks_out = ticks
+"#,
+        );
+        let mut ctx = EvaluationContext::new();
+        let mut state = ExecutionState::new(16);
+        let open_tick = BarData::new(100.0, 101.0, 99.0, 100.0, 1000.0, 1609459200000);
+        let update_tick = BarData::new(100.0, 102.0, 99.0, 101.0, 1200.0, 1609459205000);
+
+        run_realtime_tick(&script, &open_tick, &mut state, &mut ctx, true, false).unwrap();
+        assert_eq!(ctx.get_var("count_out"), Some(&Value::Int(1)));
+        assert_eq!(ctx.get_var("ticks_out"), Some(&Value::Int(1)));
+
+        run_realtime_tick(&script, &update_tick, &mut state, &mut ctx, false, false).unwrap();
+        assert_eq!(ctx.get_var("count_out"), Some(&Value::Int(1)));
+        assert_eq!(ctx.get_var("ticks_out"), Some(&Value::Int(2)));
+
+        run_realtime_tick(&script, &update_tick, &mut state, &mut ctx, false, true).unwrap();
+        assert_eq!(ctx.get_var("count_out"), Some(&Value::Int(1)));
+        assert_eq!(ctx.get_var("ticks_out"), Some(&Value::Int(3)));
     }
 }

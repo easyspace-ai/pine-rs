@@ -1,32 +1,57 @@
-Phase 6 完成总结（2026-04-03）
+Phase 4 当前任务（2026-04-04）
 
-任务完成状态
-所有 Phase 6 任务已完成！
+主任务
+- 定义并执行实时执行边界与脚本会话路线
 
-已完成的任务：
-- P6-T1: strategy() 基础实现 ✅
-- P6-T2: 策略交易函数实现 ✅
-- P6-T3: 策略信号输出实现 ✅
-- P6-T4: 完善 ta.wma 实现 ✅
-- P6-T5: 完善 ta.rma 实现 ✅
-- P6-T6: 完善 math.sum 实现 ✅
-- P6-T7: 完善 math.avg 实现 ✅
-- P6-T8: 完善 math.pow 实现 ✅
-- P6-T9: 完善 math.nz 实现 ✅
-- P6-T10: 完善 math.copysign 实现 ✅
-- P6-T11: 完善 math.round_to_nearest 实现 ✅
+当前口径
+- 前端 JS 指标计算保留现状，但不再继续扩张
+- Pine 脚本 / 自定义脚本 / 策略 / 告警前置条件以后端主执行为准
+- rollback、varip、calc_on_every_tick 等实时细粒度语义暂不宣称已对齐
+- 下一阶段以 WASM 统一执行替换前端 JS 指标实现
 
-函数覆盖率状态
-- array.*: 23/23 ✅
-- color.*: 13/13 ✅
-- input.*: 8/8 ✅
-- map.*: 11/11 ✅
-- math.*: 29/29 ✅
-- plot.*: 1/1 ✅
-- strategy.*: 6/6 ✅
-- str.*: 16/16 ✅
-- ta.*: 19/19 ✅
-- 总计: ~126 个函数全部完成 ✅
+当前执行顺序
+- 已完成第一批实现：
+  - 历史 bar 执行路径补齐 `barstate.*` 注入
+  - `var` / `varip` 持久化模式拆分
+  - rollback / commit 快照基线落入 runtime
+  - realtime tick 执行入口补齐
+  - pine-tv WebSocket 脚本会话支持多 session
+- 已完成第二批实现：
+  - tick / bar close 调度分流为 `bar_opened` / `forming_update` / `bar_closed`
+  - 脚本会话推送协议补齐 `update_kind` / `bar_time`
+  - indicator / strategy 的实时执行差异接入后端调度
+  - strategy 默认仅在 bar close 执行；`calc_on_every_tick=true` 才参与 forming tick
+- 已完成第三批实现：
+  - `calc_on_order_fills` 进入脚本声明与实时调度骨架
+  - 成交信号出现时，strategy 可按声明追加一次 `order_fill` 重算
+  - WebSocket 增量消息外壳固定为 `schema_version + channel + seq + payload`
+  - 脚本结果补齐 `script_kind` / `trigger`，顶层 schema 稳定
+- 已完成第四批实现：
+  - `process_orders_on_close` 进入 strategy 声明识别与 bar close 后续触发
+  - ws schema 文档补齐 `order_fill` 追加执行约定与稳定字段说明
+  - playground 内置指标新增 `Tick / 收盘` 实时计算开关
+  - `realtime=false` 时内置指标只在新 bar 确认后更新，`realtime=true` 保持逐 tick 更新
+- 已完成第五批实现：
+  - playground 右侧 `PINE SCRIPT` 改为实时脚本会话，不再只是单次运行
+  - 同一脚本会话的实时结果改为覆盖更新，不重复堆叠 pane
+  - WebSocket `run` 请求正式接入 `symbol / timeframe / bars`
+  - 后端实时脚本会话按市场上下文分流，脚本会跟随当前 playground 选择的 `symbol / interval`
+- 已完成第六批实现：
+  - 前端 WebSocket 消费补成统一分发入口，不再把消息判断散在组件里
+  - playground 增加脚本会话切换单测，锁住 `run / stop / rerun` 的上下文行为
+  - 后端补齐 `bar_open / bar_update / bar_close / order_fill` 触发映射与 follow-up 规则测试
+- 下一批执行：
+  - S3-T1/S3-T2: 数据源抽象收口与 tick / bar close 调度继续细化
+  - ws schema 前端显式消费层
+  - 数据源抽象统一
+  - 实时策略与图表输出的更多细粒度回归
 
-下一步
-Phase 6 全部完成。根据 AGENTS.md 判断是否需要进入 Phase 7 或继续其他工作。
+当前最高优先级
+- ws schema 消费层显式化
+- 数据源抽象统一
+- 实时策略与图表输出的更多细粒度回归
+
+参考文档
+- docs/EXECUTION_BOUNDARY.md
+- docs/V6_ALIGNMENT.md
+- docs/GUIDE.md

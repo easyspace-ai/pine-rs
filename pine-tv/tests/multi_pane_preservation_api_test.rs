@@ -32,8 +32,7 @@ fn test_app() -> Router {
     ));
     let run_handler = Arc::new(RunHandler::new(engine.clone(), data_loader));
 
-    Router::new()
-        .route("/api/run", post(RunHandler::handle).with_state(run_handler))
+    Router::new().route("/api/run", post(RunHandler::handle).with_state(run_handler))
 }
 
 /// Preservation Test 1: Overlay Plots (pane=0)
@@ -87,7 +86,10 @@ plot(ema_val, title="EMA 20", color=color.orange)
     let json: serde_json::Value = serde_json::from_slice(&body_bytes).unwrap();
 
     println!("\n=== Preservation Test: Overlay Plots (pane=0) ===");
-    println!("API Response: {}", serde_json::to_string_pretty(&json).unwrap());
+    println!(
+        "API Response: {}",
+        serde_json::to_string_pretty(&json).unwrap()
+    );
 
     assert!(json.get("ok").and_then(|v| v.as_bool()).unwrap_or(false));
 
@@ -169,7 +171,10 @@ plot(rsi_val, title="RSI", color=color.purple)
     let json: serde_json::Value = serde_json::from_slice(&body_bytes).unwrap();
 
     println!("\n=== Preservation Test: Single Indicator Pane (pane=1) ===");
-    println!("API Response: {}", serde_json::to_string_pretty(&json).unwrap());
+    println!(
+        "API Response: {}",
+        serde_json::to_string_pretty(&json).unwrap()
+    );
 
     assert!(json.get("ok").and_then(|v| v.as_bool()).unwrap_or(false));
 
@@ -240,7 +245,10 @@ indicator("Empty Test", overlay=false)
     let json: serde_json::Value = serde_json::from_slice(&body_bytes).unwrap();
 
     println!("\n=== Preservation Test: Empty Plot Results ===");
-    println!("API Response: {}", serde_json::to_string_pretty(&json).unwrap());
+    println!(
+        "API Response: {}",
+        serde_json::to_string_pretty(&json).unwrap()
+    );
 
     assert!(json.get("ok").and_then(|v| v.as_bool()).unwrap_or(false));
 
@@ -306,7 +314,10 @@ plot(rsi_val, title="RSI", color=color.orange)
     let json: serde_json::Value = serde_json::from_slice(&body_bytes).unwrap();
 
     println!("\n=== Preservation Test: Overlay + Single Pane ===");
-    println!("API Response: {}", serde_json::to_string_pretty(&json).unwrap());
+    println!(
+        "API Response: {}",
+        serde_json::to_string_pretty(&json).unwrap()
+    );
 
     assert!(json.get("ok").and_then(|v| v.as_bool()).unwrap_or(false));
 
@@ -329,7 +340,10 @@ plot(rsi_val, title="RSI", color=color.orange)
     // Current behavior: overlay=true with multiple plots
     // - Plots without explicit pane default to pane=0 (overlay)
     // - But we expect at least one overlay (pane=0) and one indicator (pane=1)
-    assert!(pane_indices.contains(&0), "Should have overlay plot with pane=0");
+    assert!(
+        pane_indices.contains(&0),
+        "Should have overlay plot with pane=0"
+    );
     // Note: Current implementation may put all plots in pane=0 for overlay=true
     // This test documents the baseline behavior
 
@@ -339,7 +353,10 @@ plot(rsi_val, title="RSI", color=color.orange)
         .filter_map(|p| p.get("title").and_then(|v| v.as_str()))
         .collect();
 
-    assert!(titles.contains(&"SMA Overlay"), "Should have SMA Overlay plot");
+    assert!(
+        titles.contains(&"SMA Overlay"),
+        "Should have SMA Overlay plot"
+    );
     assert!(titles.contains(&"RSI"), "Should have RSI plot");
 
     println!("✓ Overlay + single pane combination works correctly (baseline preserved)");
@@ -395,7 +412,10 @@ plot(ema_val, title="EMA 20", color=color.orange)
     let json: serde_json::Value = serde_json::from_slice(&body_bytes).unwrap();
 
     println!("\n=== Preservation Test: Multiple Plots in Same Pane ===");
-    println!("API Response: {}", serde_json::to_string_pretty(&json).unwrap());
+    println!(
+        "API Response: {}",
+        serde_json::to_string_pretty(&json).unwrap()
+    );
 
     assert!(json.get("ok").and_then(|v| v.as_bool()).unwrap_or(false));
 

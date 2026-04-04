@@ -16,7 +16,7 @@ use indexmap::IndexMap;
 use pine_lexer::Span;
 use pine_parser::ast;
 use pine_runtime::config::RuntimeConfig;
-use pine_runtime::context::{CallSiteId, ExecutionContext};
+use pine_runtime::context::{BarState, CallSiteId, ExecutionContext};
 use pine_runtime::module::{ModuleId, ModuleRegistry};
 use pine_runtime::value::{Object, Value};
 use pine_stdlib::registry::FunctionRegistry;
@@ -410,13 +410,21 @@ impl EvaluationContext {
         &mut self.runtime
     }
 
+    /// Update the current runtime `barstate.*` flags.
+    pub fn set_bar_state(&mut self, bar_state: BarState) {
+        self.runtime.set_bar_state(bar_state);
+    }
+
     /// Get a variable value
     pub fn get_var(&self, name: &str) -> Option<&Value> {
         if let Some(v) = self.variables.get(name) {
             return Some(v);
         }
         let cs = self.current_call_site();
-        self.runtime.get_var_scoped(name, cs)
+        self.runtime
+            .get_var_scoped(name, cs)
+            .or_else(|| self.runtime.get_persistent_var(name))
+            .or_else(|| self.runtime.get_varip_var(name))
     }
 
     /// Set a variable value
@@ -479,6 +487,15 @@ impl EvaluationContext {
     pub fn create_object(&mut self, type_name: impl Into<String>) -> Value {
         let obj = Object::new(type_name);
         Value::from(obj)
+    }
+
+    /// Create a runtime object with fields.
+    pub fn create_object_with_fields(
+        &mut self,
+        type_name: impl Into<String>,
+        fields: impl IntoIterator<Item = (String, Value)>,
+    ) -> Value {
+        Value::from(Object::with_fields(type_name, fields))
     }
 
     /// Get a reference to the module registry
