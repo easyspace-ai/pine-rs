@@ -276,19 +276,38 @@ function applyResult(result) {
     }
     plotSeries.clear();
 
+    // Collect unique pane indices
+    const uniquePanes = new Set();
     let maxPane = 0;
+    
     for (const plot of plots) {
         const paneIdx = Number(plot.pane) || 0;
+        if (paneIdx > 0) {
+            uniquePanes.add(paneIdx);
+        }
         if (paneIdx > maxPane) {
             maxPane = paneIdx;
         }
         addLineSeriesToPane(plot, paneIdx, LWC);
     }
 
-    if (maxPane > 0 && chart.panes().length > maxPane && chartContainer) {
-        const sub = chart.panes()[maxPane];
-        const h = Math.max(100, Math.floor(chartContainer.clientHeight * 0.28));
-        sub.setHeight(h);
+    // Configure heights for all indicator panes
+    if (uniquePanes.size > 0 && chartContainer) {
+        const indicatorPanes = Array.from(uniquePanes).sort((a, b) => a - b);
+        
+        // For single pane: maintain existing 28% height logic (backward compatibility)
+        // For multiple panes: use ~40% of container height total, divide by number of panes
+        const heightPerPane = indicatorPanes.length === 1
+            ? Math.max(100, Math.floor(chartContainer.clientHeight * 0.28))
+            : Math.max(80, Math.floor(chartContainer.clientHeight * 0.4 / indicatorPanes.length));
+        
+        for (const paneIdx of indicatorPanes) {
+            // Defensive check: verify chart.panes().length > paneIdx before calling setHeight
+            if (chart.panes().length > paneIdx) {
+                const pane = chart.panes()[paneIdx];
+                pane.setHeight(heightPerPane);
+            }
+        }
     }
 }
 
