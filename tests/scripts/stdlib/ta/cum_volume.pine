@@ -1,0 +1,6 @@
+// Golden test: ta.cum(volume)
+// Cumulative volume over full history
+
+indicator("Cum Volume Golden Test")
+
+plot(ta.cum(volume), title="Cum Volume", color=color.fuchsia)

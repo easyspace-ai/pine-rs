@@ -61,17 +61,26 @@ pub fn register_functions(registry: &mut FunctionRegistry) {
     register_ema(registry);
     register_rma(registry);
     register_wma(registry);
+    register_vwma(registry);
+    register_roc(registry);
+    register_obv(registry);
+    register_change(registry);
+    register_cum(registry);
+    register_pvt(registry);
 
     // Momentum indicators
     register_rsi(registry);
     register_macd(registry);
     register_mom(registry);
     register_cci(registry);
+    register_mfi(registry);
 
     // Volatility indicators
     register_atr(registry);
     register_tr(registry);
     register_bbands(registry);
+    register_dmi(registry);
+    register_supertrend(registry);
 
     // Stochastic
     register_stoch(registry);
@@ -245,6 +254,170 @@ fn calculate_wma(values: &[Value], length: usize) -> Value {
     Value::Float(weighted_sum / weight_sum as f64)
 }
 
+fn calculate_vwma(source: &[Value], volume: &[Value], length: usize) -> Value {
+    let source_values = value_slice_to_f64(source);
+    let volume_values = value_slice_to_f64(volume);
+    let window_len = length.min(source_values.len()).min(volume_values.len());
+    if length == 0 || window_len < length {
+        return Value::Na;
+    }
+
+    let source_window = &source_values[source_values.len() - window_len..];
+    let volume_window = &volume_values[volume_values.len() - window_len..];
+
+    let weighted_sum: f64 = source_window
+        .iter()
+        .zip(volume_window.iter())
+        .map(|(price, volume)| price * volume)
+        .sum();
+    let volume_sum: f64 = volume_window.iter().sum();
+
+    if volume_sum == 0.0 {
+        return Value::Na;
+    }
+
+    Value::Float(weighted_sum / volume_sum)
+}
+
+fn calculate_roc(source: &[Value], length: usize) -> Value {
+    let values = value_slice_to_f64(source);
+    if length == 0 || values.len() <= length {
+        return Value::Na;
+    }
+
+    let current = values[values.len() - 1];
+    let previous = values[values.len() - 1 - length];
+    if previous == 0.0 {
+        return Value::Na;
+    }
+
+    Value::Float(((current - previous) / previous) * 100.0)
+}
+
+fn calculate_obv(source: &[Value], volume: &[Value]) -> Value {
+    let price_values = value_slice_to_f64(source);
+    let volume_values = value_slice_to_f64(volume);
+    let window_len = price_values.len().min(volume_values.len());
+
+    if window_len == 0 {
+        return Value::Na;
+    }
+
+    let price_window = &price_values[price_values.len() - window_len..];
+    let volume_window = &volume_values[volume_values.len() - window_len..];
+
+    let mut obv = 0.0;
+    for idx in 1..window_len {
+        if price_window[idx] > price_window[idx - 1] {
+            obv += volume_window[idx];
+        } else if price_window[idx] < price_window[idx - 1] {
+            obv -= volume_window[idx];
+        }
+    }
+
+    Value::Float(obv)
+}
+
+fn calculate_change(source: &[Value], length: usize) -> Value {
+    if length == 0 || source.len() <= length {
+        return Value::Na;
+    }
+
+    let current = &source[source.len() - 1];
+    let previous = &source[source.len() - 1 - length];
+
+    match (current, previous) {
+        (Value::Bool(a), Value::Bool(b)) => Value::Bool(a != b),
+        _ => match (get_float(current), get_float(previous)) {
+            (Some(a), Some(b)) => Value::Float(a - b),
+            _ => Value::Na,
+        },
+    }
+}
+
+fn calculate_cum(source: &[Value]) -> Value {
+    let mut sum = 0.0;
+    let mut found = false;
+
+    for value in source {
+        if let Some(v) = get_float(value) {
+            sum += v;
+            found = true;
+        }
+    }
+
+    if found {
+        Value::Float(sum)
+    } else {
+        Value::Na
+    }
+}
+
+fn calculate_pvt(source: &[Value], volume: &[Value]) -> Value {
+    let price_values = value_slice_to_f64(source);
+    let volume_values = value_slice_to_f64(volume);
+    let window_len = price_values.len().min(volume_values.len());
+
+    if window_len == 0 {
+        return Value::Na;
+    }
+
+    let price_window = &price_values[price_values.len() - window_len..];
+    let volume_window = &volume_values[volume_values.len() - window_len..];
+
+    let mut pvt = 0.0;
+    for idx in 1..window_len {
+        let previous = price_window[idx - 1];
+        if previous == 0.0 {
+            continue;
+        }
+        pvt += ((price_window[idx] - previous) / previous) * volume_window[idx];
+    }
+
+    Value::Float(pvt)
+}
+
+fn calculate_mfi(source: &[Value], volume: &[Value], length: usize) -> Value {
+    let window_len = source.len().min(volume.len());
+    if length == 0 || window_len <= length {
+        return Value::Na;
+    }
+
+    let mut positive_flow = 0.0;
+    let mut negative_flow = 0.0;
+
+    let source_window = &source[source.len() - (length + 1)..];
+    let volume_window = &volume[volume.len() - (length + 1)..];
+
+    for idx in 1..source_window.len() {
+        let current_src = match get_float(&source_window[idx]) {
+            Some(value) => value,
+            None => continue,
+        };
+        let previous_src = match get_float(&source_window[idx - 1]) {
+            Some(value) => value,
+            None => continue,
+        };
+        let current_volume = match get_float(&volume_window[idx]) {
+            Some(value) => value,
+            None => continue,
+        };
+
+        if current_src > previous_src {
+            positive_flow += current_volume * current_src;
+        } else if current_src < previous_src {
+            negative_flow += current_volume * current_src;
+        }
+    }
+
+    if negative_flow == 0.0 {
+        return Value::Float(100.0);
+    }
+
+    let money_ratio = positive_flow / negative_flow;
+    Value::Float(100.0 - (100.0 / (1.0 + money_ratio)))
+}
+
 /// Calculate True Range
 fn calculate_tr(high: &[Value], low: &[Value], close: &[Value]) -> Value {
     let current_high = match high.last().and_then(get_float) {
@@ -294,6 +467,55 @@ fn calculate_smoothed_avg(values: &[f64], length: usize) -> f64 {
     avg
 }
 
+fn calculate_rma_series(values: &[f64], length: usize) -> Vec<Option<f64>> {
+    let mut result = vec![None; values.len()];
+    if length == 0 || values.len() < length {
+        return result;
+    }
+
+    let mut avg = values[..length].iter().sum::<f64>() / length as f64;
+    result[length - 1] = Some(avg);
+
+    let alpha = 1.0 / length as f64;
+    for (idx, value) in values.iter().enumerate().skip(length) {
+        avg = alpha * value + (1.0 - alpha) * avg;
+        result[idx] = Some(avg);
+    }
+
+    result
+}
+
+fn calculate_atr_series_from_hlc(
+    high: &[f64],
+    low: &[f64],
+    close: &[f64],
+    length: usize,
+) -> Vec<Option<f64>> {
+    let source_len = high.len().min(low.len()).min(close.len());
+    let mut result = vec![None; source_len];
+    if length == 0 || source_len == 0 {
+        return result;
+    }
+
+    let mut tr_values = Vec::with_capacity(source_len);
+    for idx in 0..source_len {
+        let tr1 = high[idx] - low[idx];
+        let tr = if idx == 0 {
+            tr1
+        } else {
+            tr1.max((high[idx] - close[idx - 1]).abs())
+                .max((low[idx] - close[idx - 1]).abs())
+        };
+        tr_values.push(tr);
+    }
+
+    let smoothed = calculate_rma_series(&tr_values, length);
+    for (idx, value) in smoothed.into_iter().enumerate() {
+        result[idx] = value;
+    }
+    result
+}
+
 // ============================================================================
 // Moving Averages
 // ============================================================================
@@ -318,6 +540,136 @@ fn register_sma(registry: &mut FunctionRegistry) {
             None => return Value::Na,
         };
         calculate_sma(series, length)
+    });
+
+    registry.register(meta, func);
+}
+
+/// Register ta.vwma - Volume Weighted Moving Average
+fn register_vwma(registry: &mut FunctionRegistry) {
+    let meta = FunctionMeta::new("vwma")
+        .with_namespace("ta")
+        .with_required_args(2)
+        .with_optional_args(1)
+        .with_series_return();
+
+    let func: crate::registry::BuiltinFn = Arc::new(|args| {
+        let source = match args.first().and_then(extract_array) {
+            Some(s) => s,
+            None => return Value::Na,
+        };
+        let volume = match args.get(1).and_then(extract_array) {
+            Some(s) => s,
+            None => return Value::Na,
+        };
+        let length = extract_length(args, 2, 1);
+
+        calculate_vwma(source, volume, length)
+    });
+
+    registry.register(meta, func);
+}
+
+/// Register ta.roc - Rate of Change
+fn register_roc(registry: &mut FunctionRegistry) {
+    let meta = FunctionMeta::new("roc")
+        .with_namespace("ta")
+        .with_required_args(2)
+        .with_series_return();
+
+    let func: crate::registry::BuiltinFn = Arc::new(|args| {
+        let source = match args.first().and_then(extract_array) {
+            Some(s) => s,
+            None => return Value::Na,
+        };
+        let length = extract_length(args, 1, 1);
+        calculate_roc(source, length)
+    });
+
+    registry.register(meta, func);
+}
+
+/// Register ta.obv - On-Balance Volume
+fn register_obv(registry: &mut FunctionRegistry) {
+    let meta = FunctionMeta::new("obv")
+        .with_namespace("ta")
+        .with_required_args(2)
+        .with_series_return();
+
+    let func: crate::registry::BuiltinFn = Arc::new(|args| {
+        let source = match args.first().and_then(extract_array) {
+            Some(s) => s,
+            None => return Value::Na,
+        };
+        let volume = match args.get(1).and_then(extract_array) {
+            Some(s) => s,
+            None => return Value::Na,
+        };
+
+        calculate_obv(source, volume)
+    });
+
+    registry.register(meta, func);
+}
+
+/// Register ta.change - Difference from N bars ago, or bool change flag
+fn register_change(registry: &mut FunctionRegistry) {
+    let meta = FunctionMeta::new("change")
+        .with_namespace("ta")
+        .with_required_args(1)
+        .with_optional_args(1)
+        .with_series_return();
+
+    let func: crate::registry::BuiltinFn = Arc::new(|args| {
+        let source = match args.first().and_then(extract_array) {
+            Some(s) => s,
+            None => return Value::Na,
+        };
+        let length = extract_length(args, 1, 1);
+
+        calculate_change(source, length)
+    });
+
+    registry.register(meta, func);
+}
+
+/// Register ta.cum - Cumulative sum over the full source history
+fn register_cum(registry: &mut FunctionRegistry) {
+    let meta = FunctionMeta::new("cum")
+        .with_namespace("ta")
+        .with_required_args(1)
+        .with_series_return();
+
+    let func: crate::registry::BuiltinFn = Arc::new(|args| {
+        let source = match args.first().and_then(extract_array) {
+            Some(s) => s,
+            None => return Value::Na,
+        };
+
+        calculate_cum(source)
+    });
+
+    registry.register(meta, func);
+}
+
+/// Register ta.pvt - Price-Volume Trend
+fn register_pvt(registry: &mut FunctionRegistry) {
+    let meta = FunctionMeta::new("pvt")
+        .with_namespace("ta")
+        .with_required_args(2)
+        .with_series_return();
+
+    let func: crate::registry::BuiltinFn = Arc::new(|args| {
+        let source = match args.first().and_then(extract_array) {
+            Some(s) => s,
+            None => return Value::Na,
+        };
+        let volume = match args.get(1).and_then(extract_array) {
+            Some(s) => s,
+            None => return Value::Na,
+        };
+
+        calculate_pvt(source, volume)
     });
 
     registry.register(meta, func);
@@ -749,6 +1101,292 @@ fn register_bbands(registry: &mut FunctionRegistry) {
         let lower = Value::Float(sma - mult * stdev);
 
         Value::Tuple(Box::new([basis, upper, lower]))
+    });
+
+    registry.register(meta, func);
+}
+
+/// Register ta.dmi - Directional Movement Index
+fn register_dmi(registry: &mut FunctionRegistry) {
+    let meta = FunctionMeta::new("dmi")
+        .with_namespace("ta")
+        .with_required_args(2)
+        .with_optional_args(3)
+        .with_series_return();
+
+    let func: crate::registry::BuiltinFn = Arc::new(|args| {
+        let high = match args.first().and_then(extract_array) {
+            Some(s) => s,
+            None => return Value::Tuple(Box::new([Value::Na, Value::Na, Value::Na])),
+        };
+        let low = match args.get(1).and_then(extract_array) {
+            Some(s) => s,
+            None => return Value::Tuple(Box::new([Value::Na, Value::Na, Value::Na])),
+        };
+        let close = match args.get(2).and_then(extract_array) {
+            Some(s) => s,
+            None => return Value::Tuple(Box::new([Value::Na, Value::Na, Value::Na])),
+        };
+
+        let di_length = extract_length(args, 3, 14);
+        let adx_smoothing = extract_length(args, 4, 14);
+        let source_len = high.len().min(low.len()).min(close.len());
+        if source_len < 2 {
+            return Value::Tuple(Box::new([Value::Na, Value::Na, Value::Na]));
+        }
+
+        let mut tr_values = Vec::with_capacity(source_len - 1);
+        let mut plus_dm_values = Vec::with_capacity(source_len - 1);
+        let mut minus_dm_values = Vec::with_capacity(source_len - 1);
+
+        for index in 1..source_len {
+            let current_high = match high.get(index).and_then(get_float) {
+                Some(value) => value,
+                None => return Value::Tuple(Box::new([Value::Na, Value::Na, Value::Na])),
+            };
+            let current_low = match low.get(index).and_then(get_float) {
+                Some(value) => value,
+                None => return Value::Tuple(Box::new([Value::Na, Value::Na, Value::Na])),
+            };
+            let previous_high = match high.get(index - 1).and_then(get_float) {
+                Some(value) => value,
+                None => return Value::Tuple(Box::new([Value::Na, Value::Na, Value::Na])),
+            };
+            let previous_low = match low.get(index - 1).and_then(get_float) {
+                Some(value) => value,
+                None => return Value::Tuple(Box::new([Value::Na, Value::Na, Value::Na])),
+            };
+            let previous_close = match close.get(index - 1).and_then(get_float) {
+                Some(value) => value,
+                None => return Value::Tuple(Box::new([Value::Na, Value::Na, Value::Na])),
+            };
+
+            let up_move = current_high - previous_high;
+            let down_move = previous_low - current_low;
+            let plus_dm = if up_move > down_move && up_move > 0.0 {
+                up_move
+            } else {
+                0.0
+            };
+            let minus_dm = if down_move > up_move && down_move > 0.0 {
+                down_move
+            } else {
+                0.0
+            };
+
+            let tr = (current_high - current_low)
+                .max((current_high - previous_close).abs())
+                .max((current_low - previous_close).abs());
+
+            plus_dm_values.push(plus_dm);
+            minus_dm_values.push(minus_dm);
+            tr_values.push(tr);
+        }
+
+        let smoothed_tr = calculate_rma_series(&tr_values, di_length);
+        let smoothed_plus_dm = calculate_rma_series(&plus_dm_values, di_length);
+        let smoothed_minus_dm = calculate_rma_series(&minus_dm_values, di_length);
+
+        let last_di_plus = match (
+            smoothed_tr.last().copied().flatten(),
+            smoothed_plus_dm.last().copied().flatten(),
+        ) {
+            (Some(tr), Some(plus_dm)) if tr != 0.0 => Some(100.0 * plus_dm / tr),
+            _ => None,
+        };
+        let last_di_minus = match (
+            smoothed_tr.last().copied().flatten(),
+            smoothed_minus_dm.last().copied().flatten(),
+        ) {
+            (Some(tr), Some(minus_dm)) if tr != 0.0 => Some(100.0 * minus_dm / tr),
+            _ => None,
+        };
+
+        let dx_values: Vec<f64> = smoothed_tr
+            .iter()
+            .zip(smoothed_plus_dm.iter())
+            .zip(smoothed_minus_dm.iter())
+            .filter_map(|((tr, plus_dm), minus_dm)| {
+                let tr = tr.as_ref().copied()?;
+                let plus_dm = plus_dm.as_ref().copied()?;
+                let minus_dm = minus_dm.as_ref().copied()?;
+                if tr == 0.0 {
+                    return None;
+                }
+                let di_plus = 100.0 * plus_dm / tr;
+                let di_minus = 100.0 * minus_dm / tr;
+                let sum = di_plus + di_minus;
+                if sum == 0.0 {
+                    None
+                } else {
+                    Some(100.0 * (di_plus - di_minus).abs() / sum)
+                }
+            })
+            .collect();
+
+        let adx = if dx_values.len() < adx_smoothing {
+            None
+        } else {
+            Some(calculate_smoothed_avg(&dx_values, adx_smoothing))
+        };
+
+        Value::Tuple(Box::new([
+            last_di_plus.map_or(Value::Na, Value::Float),
+            last_di_minus.map_or(Value::Na, Value::Float),
+            adx.map_or(Value::Na, Value::Float),
+        ]))
+    });
+
+    registry.register(meta, func);
+}
+
+/// Register ta.mfi - Money Flow Index
+fn register_mfi(registry: &mut FunctionRegistry) {
+    let meta = FunctionMeta::new("mfi")
+        .with_namespace("ta")
+        .with_required_args(2)
+        .with_optional_args(1)
+        .with_series_return();
+
+    let func: crate::registry::BuiltinFn = Arc::new(|args| {
+        let source = match args.first().and_then(extract_array) {
+            Some(s) => s,
+            None => return Value::Na,
+        };
+        let volume = match args.get(1).and_then(extract_array) {
+            Some(s) => s,
+            None => return Value::Na,
+        };
+        let length = extract_length(args, 2, 14);
+
+        calculate_mfi(source, volume, length)
+    });
+
+    registry.register(meta, func);
+}
+
+/// Register ta.supertrend - Supertrend indicator
+fn register_supertrend(registry: &mut FunctionRegistry) {
+    let meta = FunctionMeta::new("supertrend")
+        .with_namespace("ta")
+        .with_required_args(2)
+        .with_optional_args(5)
+        .with_series_return();
+
+    let func: crate::registry::BuiltinFn = Arc::new(|args| {
+        let high = match args.first().and_then(extract_array) {
+            Some(s) => s,
+            None => return Value::Tuple(Box::new([Value::Na, Value::Na])),
+        };
+        let low = match args.get(1).and_then(extract_array) {
+            Some(s) => s,
+            None => return Value::Tuple(Box::new([Value::Na, Value::Na])),
+        };
+        let close = match args.get(2).and_then(extract_array) {
+            Some(s) => s,
+            None => return Value::Tuple(Box::new([Value::Na, Value::Na])),
+        };
+
+        let factor = args.get(3).and_then(get_float).unwrap_or(3.0);
+        let atr_period = extract_length(args, 4, 10);
+
+        let high_values = value_slice_to_f64(high);
+        let low_values = value_slice_to_f64(low);
+        let close_values = value_slice_to_f64(close);
+        let source_len = high_values
+            .len()
+            .min(low_values.len())
+            .min(close_values.len());
+        if source_len == 0 {
+            return Value::Tuple(Box::new([Value::Na, Value::Na]));
+        }
+
+        let atr_series = calculate_atr_series_from_hlc(
+            &high_values[..source_len],
+            &low_values[..source_len],
+            &close_values[..source_len],
+            atr_period,
+        );
+
+        let mut final_upper: Vec<Option<f64>> = vec![None; source_len];
+        let mut final_lower: Vec<Option<f64>> = vec![None; source_len];
+        let mut trend: Vec<Option<f64>> = vec![None; source_len];
+        let mut direction: Vec<Option<f64>> = vec![None; source_len];
+
+        for idx in 0..source_len {
+            let atr = match atr_series[idx] {
+                Some(value) => value,
+                None => continue,
+            };
+            let hl2 = (high_values[idx] + low_values[idx]) / 2.0;
+            let basic_upper = hl2 + factor * atr;
+            let basic_lower = hl2 - factor * atr;
+
+            let prev_upper = idx
+                .checked_sub(1)
+                .and_then(|prev| final_upper[prev])
+                .unwrap_or(basic_upper);
+            let prev_lower = idx
+                .checked_sub(1)
+                .and_then(|prev| final_lower[prev])
+                .unwrap_or(basic_lower);
+            let prev_close = idx
+                .checked_sub(1)
+                .map(|prev| close_values[prev])
+                .unwrap_or(close_values[idx]);
+
+            let current_lower = if basic_lower > prev_lower || prev_close < prev_lower {
+                basic_lower
+            } else {
+                prev_lower
+            };
+            let current_upper = if basic_upper < prev_upper || prev_close > prev_upper {
+                basic_upper
+            } else {
+                prev_upper
+            };
+
+            final_lower[idx] = Some(current_lower);
+            final_upper[idx] = Some(current_upper);
+
+            let current_direction = if idx == 0 || atr_series[idx - 1].is_none() {
+                1.0
+            } else if let Some(prev_trend) = trend[idx - 1] {
+                if (prev_trend - prev_upper).abs() < 1e-10 {
+                    if close_values[idx] > current_upper {
+                        -1.0
+                    } else {
+                        1.0
+                    }
+                } else if close_values[idx] < current_lower {
+                    1.0
+                } else {
+                    -1.0
+                }
+            } else {
+                1.0
+            };
+
+            let current_trend = if current_direction < 0.0 {
+                current_lower
+            } else {
+                current_upper
+            };
+
+            direction[idx] = Some(current_direction);
+            trend[idx] = Some(current_trend);
+        }
+
+        Value::Tuple(Box::new([
+            trend
+                .last()
+                .and_then(|value| *value)
+                .map_or(Value::Na, Value::Float),
+            direction
+                .last()
+                .and_then(|value| *value)
+                .map_or(Value::Na, Value::Float),
+        ]))
     });
 
     registry.register(meta, func);
@@ -1252,6 +1890,93 @@ mod tests {
     }
 
     #[test]
+    fn test_dmi_returns_expected_tuple() {
+        let registry = test_registry();
+
+        let high = series(vec![
+            30.20, 30.60, 31.10, 31.40, 31.80, 31.60, 32.00, 32.50, 32.80, 33.10, 33.40, 33.00,
+        ]);
+        let low = series(vec![
+            29.60, 29.90, 30.20, 30.50, 30.90, 30.80, 31.10, 31.70, 31.90, 32.20, 32.60, 32.30,
+        ]);
+        let close = series(vec![
+            29.90, 30.40, 30.80, 31.10, 31.50, 31.10, 31.80, 32.30, 32.40, 32.90, 33.10, 32.50,
+        ]);
+
+        let result = registry.dispatch("ta.dmi", &[high, low, close, Value::Int(5), Value::Int(5)]);
+
+        match result {
+            Some(Value::Tuple(values)) => {
+                assert!(matches!(values[0], Value::Float(v) if (v - 31.9232316337).abs() < 1e-9));
+                assert!(matches!(values[1], Value::Float(v) if (v - 7.7662757957).abs() < 1e-9));
+                assert!(matches!(values[2], Value::Float(v) if (v - 86.7180957741).abs() < 1e-9));
+            }
+            other => panic!("expected DMI tuple, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_dmi_returns_warmup_na_when_not_enough_history() {
+        let registry = test_registry();
+
+        let high = series(vec![10.0, 11.0, 12.0]);
+        let low = series(vec![9.0, 9.5, 10.5]);
+        let close = series(vec![9.5, 10.5, 11.0]);
+        let result = registry.dispatch("ta.dmi", &[high, low, close, Value::Int(5), Value::Int(5)]);
+
+        assert_eq!(
+            result,
+            Some(Value::Tuple(Box::new([Value::Na, Value::Na, Value::Na])))
+        );
+    }
+
+    #[test]
+    fn test_supertrend_returns_line_and_direction() {
+        let registry = test_registry();
+
+        let high = series(vec![
+            11.1, 11.6, 12.1, 12.6, 13.1, 13.6, 14.1, 14.6, 15.8, 17.0, 18.2, 19.4, 17.4, 15.4,
+            13.4, 11.4, 14.4, 16.2, 18.0, 19.8,
+        ]);
+        let low = series(vec![
+            9.9, 10.4, 10.9, 11.4, 11.9, 12.4, 12.9, 13.4, 14.6, 15.8, 17.0, 18.2, 16.2, 14.2,
+            12.2, 10.2, 13.2, 15.0, 16.8, 18.6,
+        ]);
+        let close = series(vec![
+            10.5, 11.0, 11.5, 12.0, 12.5, 13.0, 13.5, 14.0, 15.2, 16.4, 17.6, 18.8, 16.8, 14.8,
+            12.8, 10.8, 13.8, 15.6, 17.4, 19.2,
+        ]);
+
+        let result = registry.dispatch(
+            "ta.supertrend",
+            &[high, low, close, Value::Float(3.0), Value::Int(5)],
+        );
+
+        match result {
+            Some(Value::Tuple(values)) => {
+                assert!(matches!(values[0], Value::Float(v) if (v - 11.9119482421).abs() < 1e-6));
+                assert!(matches!(values[1], Value::Float(v) if (v + 1.0).abs() < 1e-9));
+            }
+            other => panic!("expected supertrend tuple, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_supertrend_returns_warmup_na_when_not_enough_history() {
+        let registry = test_registry();
+
+        let high = series(vec![10.0, 11.0, 12.0]);
+        let low = series(vec![9.0, 10.0, 11.0]);
+        let close = series(vec![9.5, 10.5, 11.5]);
+        let result = registry.dispatch(
+            "ta.supertrend",
+            &[high, low, close, Value::Float(3.0), Value::Int(5)],
+        );
+
+        assert_eq!(result, Some(Value::Tuple(Box::new([Value::Na, Value::Na]))));
+    }
+
+    #[test]
     fn test_mom_uses_current_minus_length_bars_ago() {
         let registry = test_registry();
 
@@ -1259,6 +1984,116 @@ mod tests {
         let result = registry.dispatch("ta.mom", &[data, Value::Int(2)]);
 
         assert_eq!(result, Some(Value::Float(7.0)));
+    }
+
+    #[test]
+    fn test_vwma_weights_by_volume() {
+        let registry = test_registry();
+
+        let source = series(vec![10.0, 20.0, 30.0, 40.0]);
+        let volume = series(vec![1.0, 1.0, 2.0, 6.0]);
+        let result = registry.dispatch("ta.vwma", &[source, volume, Value::Int(4)]);
+
+        assert_eq!(result, Some(Value::Float(33.0)));
+    }
+
+    #[test]
+    fn test_vwma_returns_na_when_volume_sum_zero() {
+        let registry = test_registry();
+
+        let source = series(vec![10.0, 20.0, 30.0]);
+        let volume = series(vec![0.0, 0.0, 0.0]);
+        let result = registry.dispatch("ta.vwma", &[source, volume, Value::Int(3)]);
+
+        assert_eq!(result, Some(Value::Na));
+    }
+
+    #[test]
+    fn test_roc_returns_percent_change() {
+        let registry = test_registry();
+
+        let source = series(vec![100.0, 110.0, 121.0, 133.1]);
+        let result = registry.dispatch("ta.roc", &[source, Value::Int(2)]);
+
+        assert!(matches!(result, Some(Value::Float(v)) if (v - 21.0).abs() < 1e-9));
+    }
+
+    #[test]
+    fn test_obv_accumulates_volume_by_close_direction() {
+        let registry = test_registry();
+
+        let source = series(vec![100.0, 103.0, 103.0, 101.0, 104.0]);
+        let volume = series(vec![1000.0, 1200.0, 900.0, 1300.0, 1100.0]);
+        let result = registry.dispatch("ta.obv", &[source, volume]);
+
+        assert_eq!(result, Some(Value::Float(1000.0)));
+    }
+
+    #[test]
+    fn test_change_returns_difference_from_length_bars_ago() {
+        let registry = test_registry();
+
+        let source = series(vec![100.0, 103.0, 101.0, 105.0]);
+        let result = registry.dispatch("ta.change", &[source, Value::Int(2)]);
+
+        assert_eq!(result, Some(Value::Float(2.0)));
+    }
+
+    #[test]
+    fn test_change_returns_bool_when_bool_series_changes() {
+        let registry = test_registry();
+
+        let source = Value::Array(vec![
+            Value::Bool(true),
+            Value::Bool(true),
+            Value::Bool(false),
+        ]);
+        let result = registry.dispatch("ta.change", &[source]);
+
+        assert_eq!(result, Some(Value::Bool(true)));
+    }
+
+    #[test]
+    fn test_cum_sums_numeric_history() {
+        let registry = test_registry();
+
+        let source = series(vec![10.0, 5.0, -2.0, 8.0]);
+        let result = registry.dispatch("ta.cum", &[source]);
+
+        assert_eq!(result, Some(Value::Float(21.0)));
+    }
+
+    #[test]
+    fn test_pvt_accumulates_price_volume_trend() {
+        let registry = test_registry();
+
+        let source = series(vec![100.0, 103.0, 103.0, 101.0, 104.0]);
+        let volume = series(vec![1000.0, 1200.0, 900.0, 1300.0, 1100.0]);
+        let result = registry.dispatch("ta.pvt", &[source, volume]);
+
+        assert!(matches!(result, Some(Value::Float(v)) if (v - 43.43054888013073).abs() < 1e-9));
+    }
+
+    #[test]
+    fn test_mfi_returns_100_when_no_negative_flow() {
+        let registry = test_registry();
+
+        let source = series(vec![10.0, 11.0, 12.0, 13.0, 14.0, 15.0]);
+        let volume = series(vec![100.0, 100.0, 100.0, 100.0, 100.0, 100.0]);
+        let result = registry.dispatch("ta.mfi", &[source, volume, Value::Int(5)]);
+
+        assert_eq!(result, Some(Value::Float(100.0)));
+    }
+
+    #[test]
+    fn test_mfi_oscillates_between_zero_and_hundred() {
+        let registry = test_registry();
+
+        let source = series(vec![10.0, 11.0, 10.5, 11.5, 10.8, 11.8]);
+        let volume = series(vec![100.0, 120.0, 110.0, 130.0, 115.0, 140.0]);
+        let result = registry.dispatch("ta.mfi", &[source, volume, Value::Int(5)]);
+
+        assert!(matches!(result, Some(Value::Float(v)) if v > 0.0 && v < 100.0));
     }
 
     #[test]

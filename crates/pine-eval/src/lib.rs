@@ -21,7 +21,7 @@ use pine_runtime::module::{ModuleId, ModuleRegistry};
 use pine_runtime::value::{Object, Value};
 use pine_stdlib::registry::FunctionRegistry;
 use std::collections::HashMap;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use thiserror::Error;
 
@@ -32,6 +32,13 @@ pub struct UserFn {
     pub params: Vec<ast::Param>,
     /// Body (`=> expr` or block)
     pub body: ast::FnBody,
+}
+
+#[derive(Debug, Clone)]
+pub(crate) struct LoadedModule {
+    pub path: PathBuf,
+    pub exports: HashMap<String, Value>,
+    pub exported_functions: HashMap<String, UserFn>,
 }
 
 /// Evaluation errors
@@ -301,6 +308,8 @@ pub struct EvaluationContext {
     base_path: PathBuf,
     /// Current module ID (if executing a library)
     current_module: Option<ModuleId>,
+    /// Loaded module cache with executable exports.
+    loaded_modules: HashMap<PathBuf, LoadedModule>,
     /// Series data for historical access (open, high, low, close, volume, time)
     pub series_data: Option<SeriesData>,
     /// Plot outputs collector
@@ -350,6 +359,7 @@ impl Default for EvaluationContext {
             loading_modules: Vec::new(),
             base_path: PathBuf::from("."),
             current_module: None,
+            loaded_modules: HashMap::new(),
             series_data: None,
             plot_outputs: PlotOutputs::new(),
             strategy_signals: StrategySignals::new(),
@@ -553,6 +563,14 @@ impl EvaluationContext {
     /// Set the current module ID
     pub fn set_current_module(&mut self, module_id: Option<ModuleId>) {
         self.current_module = module_id;
+    }
+
+    pub(crate) fn cache_loaded_module(&mut self, module: LoadedModule) {
+        self.loaded_modules.insert(module.path.clone(), module);
+    }
+
+    pub(crate) fn get_loaded_module(&self, path: &Path) -> Option<&LoadedModule> {
+        self.loaded_modules.get(path)
     }
 
     /// Get a historical value from a series

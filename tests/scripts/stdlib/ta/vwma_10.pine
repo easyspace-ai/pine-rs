@@ -1,0 +1,8 @@
+// Golden test: ta.vwma(close, 10)
+// Volume-weighted moving average over a 10-bar window
+
+indicator("VWMA 10 Golden Test")
+
+vwma_10 = ta.vwma(close, 10)
+
+plot(vwma_10, title="VWMA 10", color=color.orange)

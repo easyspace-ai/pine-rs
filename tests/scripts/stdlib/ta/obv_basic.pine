@@ -1,0 +1,6 @@
+// Golden test: ta.obv
+// On-Balance Volume with rising, falling, and flat close transitions
+
+indicator("OBV Basic Golden Test")
+
+plot(ta.obv, title="OBV", color=color.yellow)

@@ -1,0 +1,8 @@
+// Golden test: ta.mfi(hlc3, 14)
+// Money Flow Index over a 14-bar window on oscillating price/volume data
+
+indicator("MFI 14 Golden Test")
+
+mfi_14 = ta.mfi(hlc3, 14)
+
+plot(mfi_14, title="MFI 14", color=color.purple)

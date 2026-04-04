@@ -1,0 +1,10 @@
+// Golden test: ta.dmi(5, 5)
+// Directional Movement Index with short lengths for compact warmup coverage
+
+indicator("DMI 5 5 Golden Test")
+
+[di_plus, di_minus, adx] = ta.dmi(5, 5)
+
+plot(di_plus, title="DI Plus", color=color.blue)
+plot(di_minus, title="DI Minus", color=color.orange)
+plot(adx, title="ADX", color=color.red)

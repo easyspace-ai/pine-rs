@@ -116,7 +116,7 @@ impl WsHandler {
                             trigger: update.trigger,
                             bar_time: update.bar_time,
                             timestamp: update.timestamp,
-                            result: update.result,
+                            result: Box::new(update.result),
                         };
                         seq += 1;
                         if let Ok(json) = serialize_ws_message("script", seq, &response) {
@@ -216,7 +216,7 @@ impl WsHandler {
                                                             bar_time: None,
                                                             timestamp: chrono::Utc::now()
                                                                 .timestamp_millis(),
-                                                            result,
+                                                            result: Box::new(result),
                                                         };
                                                         seq += 1;
                                                         if let Ok(json) = serialize_ws_message("script", seq, &response) {
@@ -307,7 +307,7 @@ enum WsServerMessage {
         trigger: RealtimeExecutionTrigger,
         bar_time: Option<i64>,
         timestamp: i64,
-        result: ApiResponse,
+        result: Box<ApiResponse>,
     },
     #[serde(rename = "error")]
     Error { errors: Vec<ApiError> },
@@ -329,7 +329,7 @@ mod tests {
             trigger: RealtimeExecutionTrigger::Snapshot,
             bar_time: Some(123),
             timestamp: 123,
-            result: ApiResponse::success(1, vec![]),
+            result: Box::new(ApiResponse::success(1, vec![])),
         };
         let session = WsServerMessage::Session {
             session_id: "session_1".to_string(),

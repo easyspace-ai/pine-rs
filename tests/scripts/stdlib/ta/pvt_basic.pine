@@ -1,0 +1,6 @@
+// Golden test: ta.pvt
+// Price-Volume Trend over mixed rising, falling, and flat closes
+
+indicator("PVT Basic Golden Test")
+
+plot(ta.pvt, title="PVT", color=color.yellow)

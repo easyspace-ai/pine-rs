@@ -160,10 +160,93 @@ pub struct StrategyOutput {
     pub entries: Vec<TradeSignal>,
     /// Exit signals (sell/close)
     pub exits: Vec<TradeSignal>,
+    /// Closed trade list with PnL details
+    pub trades: Vec<StrategyTrade>,
+    /// Backtest summary report
+    pub report: StrategyReport,
     /// Current position size (positive = long, negative = short)
     pub position_size: f64,
     /// Current position direction
     pub position_direction: String,
+}
+
+/// Closed trade detail
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct StrategyTrade {
+    /// Entry signal id
+    pub entry_id: String,
+    /// Exit signal id
+    pub exit_id: String,
+    /// Direction: "long" or "short"
+    pub direction: String,
+    /// Entry bar index
+    pub entry_bar_index: usize,
+    /// Exit bar index
+    pub exit_bar_index: usize,
+    /// Entry time in unix seconds
+    pub entry_time: i64,
+    /// Exit time in unix seconds
+    pub exit_time: i64,
+    /// Entry fill price
+    pub entry_price: f64,
+    /// Exit fill price
+    pub exit_price: f64,
+    /// Filled quantity
+    pub qty: f64,
+    /// Profit or loss in quote currency
+    pub pnl: f64,
+    /// Profit or loss in percent
+    pub pnl_percent: f64,
+    /// Number of bars between entry and exit
+    pub bars_held: usize,
+    /// Optional entry comment
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub entry_comment: Option<String>,
+    /// Optional exit comment
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub exit_comment: Option<String>,
+}
+
+/// Strategy backtest summary report
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct StrategyReport {
+    /// Initial capital declared by the strategy
+    pub initial_capital: f64,
+    /// Current equity after closed trades
+    pub equity: f64,
+    /// Net profit after closed trades
+    pub net_profit: f64,
+    /// Net profit percentage on initial capital
+    pub net_profit_percent: f64,
+    /// Sum of winning trades
+    pub gross_profit: f64,
+    /// Sum of losing trades (negative)
+    pub gross_loss: f64,
+    /// Number of closed trades
+    pub total_closed_trades: usize,
+    /// Number of winning trades
+    pub winning_trades: usize,
+    /// Number of losing trades
+    pub losing_trades: usize,
+    /// Win rate percentage
+    pub win_rate: f64,
+    /// Profit factor if gross loss exists
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub profit_factor: Option<f64>,
+    /// Average profit per closed trade
+    pub avg_trade: f64,
+    /// Average profit percent per closed trade
+    pub avg_trade_percent: f64,
+    /// Best closed trade
+    pub largest_win: f64,
+    /// Worst closed trade
+    pub largest_loss: f64,
+    /// Maximum closed-equity drawdown
+    pub max_drawdown: f64,
+    /// Maximum closed-equity drawdown percent
+    pub max_drawdown_percent: f64,
+    /// Number of still-open trade lots
+    pub open_trades: usize,
 }
 
 /// Individual trade signal

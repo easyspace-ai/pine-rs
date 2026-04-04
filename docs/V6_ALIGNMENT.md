@@ -29,8 +29,8 @@
 | L1 | **用户函数 UDF** | `name(params) => expr` 或块；无 `fn` | ✅ `name(params) => expr/body` 已成为首要路径；`fn` 保留为兼容层 | **P0 完成** |
 | L2 | **`switch`** | 表达式 + 缩进臂 **`pattern => body`**；可无 scrutinee；默认支 **`=>`** | ✅ 已支持 `pattern => body` 缩进臂；无 scrutinee switch；默认支 `=>` | **P0 完成** |
 | L3 | **`for ... in`** | `for x in arr`、`for [i,v] in arr` 等 | ✅ 已支持 array 和 series 迭代，含元组解构 | **P1 完成** |
-| L4 | **`import` 路径** | 如 `user/lib/1 as m`（非必选字符串路径） | ✅ Parser 已支持官方语法；执行层为 stub | **P1 完成** |
-| L5 | **`export`** | 修饰整段声明（含参数表与 `=>`） | ✅ AST 形态与官方一致；执行层为 stub | **P1 完成** |
+| L4 | **`import` 路径** | 如 `user/lib/1 as m`（非必选字符串路径） | ✅ Parser 已支持官方语法；eval 已支持真实文件加载、别名绑定与直接导入 | **P1 完成** |
+| L5 | **`export`** | 修饰整段声明（含参数表与 `=>`） | ✅ AST 形态与官方一致；eval 已支持导出函数与常量 | **P1 完成** |
 | L6 | **`enum`** | 独立枚举 | **无**对应 keyword/stmt | **P2** |
 | L7 | **`else if`** | 手册常见 | ✅ Parser 正确处理 `else` + `if` 组合，不依赖 `elif` | **P1 完成** |
 | L8 | **复合赋值** | `%= ` 等 | 部分未进 `AssignOp` | **P2** |

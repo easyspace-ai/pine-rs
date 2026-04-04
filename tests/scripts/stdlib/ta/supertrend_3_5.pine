@@ -1,0 +1,9 @@
+// Golden test: ta.supertrend(3, 5)
+// Includes multiple direction flips to lock trend switching behavior
+
+indicator("Supertrend 3 5 Golden Test")
+
+[supertrend, direction] = ta.supertrend(3, 5)
+
+plot(supertrend, title="Supertrend", color=color.green)
+plot(direction, title="Direction", color=color.red)

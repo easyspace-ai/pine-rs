@@ -145,9 +145,19 @@ fn eval_field_access(
                     }
                 }
             } else {
+                let qualified_name = format!("{}.{}", ns, field.name);
+                if let Some(value) = ctx.get_var(&qualified_name).cloned() {
+                    return Ok(value);
+                }
+                if ctx.get_user_fn(&qualified_name).is_some() {
+                    return Ok(Value::Namespace(qualified_name));
+                }
+                if let Some(value) = eval_builtin_namespace_variable(&qualified_name, ctx) {
+                    return Ok(value);
+                }
                 // For other namespaces, return a namespaced identifier
                 // This allows things like input.int to be resolved later
-                Ok(Value::Namespace(format!("{}.{}", ns, field.name)))
+                Ok(Value::Namespace(qualified_name))
             }
         }
         _ => Err(EvalError::NotAnObject { found: base, span }),
@@ -190,6 +200,21 @@ fn eval_method_call(
             // Namespace function call: input.int(...), ta.sma(...), etc.
             let full_name = format!("{}.{}", ns, method.name);
 
+            if let Some(user_fn) = ctx.get_user_fn(&full_name).cloned() {
+                let mut arg_values = Vec::with_capacity(args.len());
+                for arg in args {
+                    arg_values.push(eval_expr(&arg.value, ctx)?);
+                }
+                return crate::eval_stmt::invoke_user_function(
+                    ctx,
+                    &user_fn,
+                    &full_name,
+                    span,
+                    &arg_values,
+                    method.span,
+                );
+            }
+
             // Evaluate arguments
             let mut arg_values = Vec::with_capacity(args.len());
             for arg in args {
@@ -199,16 +224,26 @@ fn eval_method_call(
 
             // Some ta.* functions use implicit built-in series in Pine Script.
             if (full_name == "ta.atr" && arg_values.len() == 1)
+                || (full_name == "ta.dmi" && arg_values.len() == 2)
+                || (full_name == "ta.mfi" && arg_values.len() == 2)
+                || (full_name == "ta.supertrend" && arg_values.len() == 2)
+                || (full_name == "ta.vwma" && arg_values.len() == 2)
                 || (full_name == "ta.tr" && arg_values.len() <= 1)
             {
-                if let (Some(high), Some(low), Some(close)) = (
+                if full_name == "ta.vwma" || full_name == "ta.mfi" {
+                    if let Some(volume) = builtin_series_value("volume", ctx) {
+                        arg_values.insert(1, volume);
+                    }
+                } else if let (Some(high), Some(low), Some(close)) = (
                     builtin_series_value("high", ctx),
                     builtin_series_value("low", ctx),
                     builtin_series_value("close", ctx),
                 ) {
-                    arg_values.insert(0, close);
-                    arg_values.insert(0, low);
-                    arg_values.insert(0, high);
+                    {
+                        arg_values.insert(0, close);
+                        arg_values.insert(0, low);
+                        arg_values.insert(0, high);
+                    }
                 }
             }
 
@@ -269,6 +304,44 @@ fn builtin_series_value(name: &str, ctx: &EvaluationContext) -> Option<Value> {
         "low" => series_data.low.get(..end)?,
         "close" => series_data.close.get(..end)?,
         "volume" => series_data.volume.get(..end)?,
+        "hl2" => {
+            return Some(Value::Array(
+                series_data
+                    .high
+                    .get(..end)?
+                    .iter()
+                    .zip(series_data.low.get(..end)?.iter())
+                    .map(|(high, low)| Value::Float((high + low) / 2.0))
+                    .collect(),
+            ))
+        }
+        "hlc3" => {
+            return Some(Value::Array(
+                series_data
+                    .high
+                    .get(..end)?
+                    .iter()
+                    .zip(series_data.low.get(..end)?.iter())
+                    .zip(series_data.close.get(..end)?.iter())
+                    .map(|((high, low), close)| Value::Float((high + low + close) / 3.0))
+                    .collect(),
+            ))
+        }
+        "ohlc4" => {
+            return Some(Value::Array(
+                series_data
+                    .open
+                    .get(..end)?
+                    .iter()
+                    .zip(series_data.high.get(..end)?.iter())
+                    .zip(series_data.low.get(..end)?.iter())
+                    .zip(series_data.close.get(..end)?.iter())
+                    .map(|(((open, high), low), close)| {
+                        Value::Float((open + high + low + close) / 4.0)
+                    })
+                    .collect(),
+            ))
+        }
         "time" => {
             return Some(Value::Array(
                 series_data
@@ -285,6 +358,22 @@ fn builtin_series_value(name: &str, ctx: &EvaluationContext) -> Option<Value> {
     Some(Value::Array(
         values.iter().copied().map(Value::Float).collect(),
     ))
+}
+
+fn eval_builtin_namespace_variable(name: &str, ctx: &EvaluationContext) -> Option<Value> {
+    match name {
+        "ta.obv" => {
+            let close = builtin_series_value("close", ctx)?;
+            let volume = builtin_series_value("volume", ctx)?;
+            ctx.function_registry().dispatch(name, &[close, volume])
+        }
+        "ta.pvt" => {
+            let close = builtin_series_value("close", ctx)?;
+            let volume = builtin_series_value("volume", ctx)?;
+            ctx.function_registry().dispatch(name, &[close, volume])
+        }
+        _ => None,
+    }
 }
 
 /// Evaluate a binary operation
@@ -487,5 +576,53 @@ mod tests {
         // Evaluate the field access
         let result = eval_expr(&field_access, &mut ctx).unwrap();
         assert_eq!(result, Value::Int(10));
+    }
+
+    #[test]
+    fn test_ta_obv_field_access_uses_builtin_series() {
+        let mut ctx = EvaluationContext::new();
+        ctx.set_var("ta", Value::Namespace("ta".to_string()));
+        ctx.series_data = Some(crate::SeriesData {
+            open: vec![99.0, 100.0, 103.0, 103.0, 101.0],
+            high: vec![102.0, 106.0, 105.0, 106.0, 106.0],
+            low: vec![96.0, 98.0, 100.0, 99.0, 98.0],
+            close: vec![100.0, 103.0, 103.0, 101.0, 104.0],
+            volume: vec![1000.0, 1200.0, 900.0, 1300.0, 1100.0],
+            time: vec![1, 2, 3, 4, 5],
+            current_bar: 4,
+        });
+
+        let expr = ast::Expr::FieldAccess {
+            base: Box::new(ast::Expr::Ident(ast::Ident::new("ta", Span::default()))),
+            field: ast::Ident::new("obv", Span::default()),
+            span: Span::default(),
+        };
+
+        let result = eval_expr(&expr, &mut ctx).unwrap();
+        assert_eq!(result, Value::Float(1000.0));
+    }
+
+    #[test]
+    fn test_ta_pvt_field_access_uses_builtin_series() {
+        let mut ctx = EvaluationContext::new();
+        ctx.set_var("ta", Value::Namespace("ta".to_string()));
+        ctx.series_data = Some(crate::SeriesData {
+            open: vec![99.0, 100.0, 103.0, 103.0, 101.0],
+            high: vec![102.0, 106.0, 105.0, 106.0, 106.0],
+            low: vec![96.0, 98.0, 100.0, 99.0, 98.0],
+            close: vec![100.0, 103.0, 103.0, 101.0, 104.0],
+            volume: vec![1000.0, 1200.0, 900.0, 1300.0, 1100.0],
+            time: vec![1, 2, 3, 4, 5],
+            current_bar: 4,
+        });
+
+        let expr = ast::Expr::FieldAccess {
+            base: Box::new(ast::Expr::Ident(ast::Ident::new("ta", Span::default()))),
+            field: ast::Ident::new("pvt", Span::default()),
+            span: Span::default(),
+        };
+
+        let result = eval_expr(&expr, &mut ctx).unwrap();
+        assert!(matches!(result, Value::Float(v) if (v - 43.43054888013073).abs() < 1e-9));
     }
 }

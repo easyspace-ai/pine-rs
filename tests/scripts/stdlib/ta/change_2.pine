@@ -1,0 +1,6 @@
+// Golden test: ta.change(close, 2)
+// Two-bar difference over mixed rising and falling closes
+
+indicator("Change 2 Golden Test")
+
+plot(ta.change(close, 2), title="Change 2", color=color.aqua)

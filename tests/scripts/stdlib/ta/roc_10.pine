@@ -1,0 +1,8 @@
+// Golden test: ta.roc(close, 10)
+// Rate of change over a 10-bar window on oscillating close data
+
+indicator("ROC 10 Golden Test")
+
+roc_10 = ta.roc(close, 10)
+
+plot(roc_10, title="ROC 10", color=color.teal)

@@ -1,11 +1,15 @@
 //! Statement evaluation
 
 use crate::eval_expr::eval_expr;
-use crate::{EvalError, EvaluationContext, Result, UserFn};
+use crate::{EvalError, EvaluationContext, LoadedModule, Result, UserFn};
+use pine_lexer::Lexer;
 use pine_parser::ast;
 use pine_parser::ast::{AssignOp, ForInPattern, ImportPath, SwitchArmBody};
 use pine_runtime::context::PersistentVarKind;
+use pine_runtime::module::Module;
 use pine_runtime::value::Value;
+use std::collections::HashMap;
+use std::fs;
 use std::path::PathBuf;
 use std::sync::Arc;
 
@@ -733,6 +737,11 @@ fn eval_import_path(
     } else {
         ctx.base_path().join(&path_str)
     };
+    let module_path = if module_path.extension().is_some() {
+        module_path
+    } else {
+        module_path.with_extension("pine")
+    };
 
     let path_str = module_path.to_string_lossy().to_string();
 
@@ -744,33 +753,152 @@ fn eval_import_path(
         });
     }
 
-    // Check if already loaded
-    if ctx.module_registry().get_by_path(&module_path).is_some() {
-        // Module already loaded, just bind it to the alias
-        if let Some(_alias_ident) = alias {
-            let _module_id = ctx
-                .module_registry()
-                .get_by_path(&module_path)
-                .map(|m| m.id)
-                .unwrap();
-            // Store the module namespace binding
-            // This will be used when resolving qualified names like `alias.function()`
-            // For now, we just note that the import was successful
-        }
+    if let Some(loaded_module) = ctx.get_loaded_module(&module_path).cloned() {
+        bind_loaded_module(&loaded_module, alias, ctx);
         return Ok(());
     }
 
-    // In a full implementation, we would:
-    // 1. Load the file content
-    // 2. Parse it
-    // 3. Execute the module code
-    // 4. Collect exports
-    // 5. Register the module
+    let source = fs::read_to_string(&module_path).map_err(|_| EvalError::ModuleNotFound {
+        path: module_path.display().to_string(),
+        span,
+    })?;
+    let tokens = Lexer::lex_with_indentation(&source).map_err(|_| EvalError::ModuleNotFound {
+        path: module_path.display().to_string(),
+        span,
+    })?;
+    let script = pine_parser::parser::parse(tokens).map_err(|errors| EvalError::TypeError {
+        message: format!(
+            "failed to parse module {}: {}",
+            module_path.display(),
+            errors.join("; ")
+        ),
+        span,
+    })?;
 
-    // For now, this is a stub that notes the import would happen
-    // The actual implementation requires file I/O and parser integration
+    ctx.begin_module_load(path_str);
 
+    let mut module_ctx = EvaluationContext::with_base_path(
+        module_path
+            .parent()
+            .map(|parent| parent.to_path_buf())
+            .unwrap_or_else(|| PathBuf::from(".")),
+    );
+    module_ctx.series_data = ctx.series_data.clone();
+    let module_id = ctx
+        .module_registry_mut()
+        .resolve(&module_path)
+        .map_err(|err| EvalError::TypeError {
+            message: err.to_string(),
+            span,
+        })?;
+    module_ctx.set_current_module(Some(module_id));
+
+    let execution_result = (|| -> Result<LoadedModule> {
+        for stmt in &script.stmts {
+            eval_stmt(stmt, &mut module_ctx)?;
+        }
+
+        let module_name = script
+            .stmts
+            .iter()
+            .find_map(|stmt| match stmt {
+                ast::Stmt::Library { name, .. } => Some(name.clone()),
+                _ => None,
+            })
+            .unwrap_or_else(|| {
+                module_path
+                    .file_stem()
+                    .and_then(|stem| stem.to_str())
+                    .unwrap_or("module")
+                    .to_string()
+            });
+
+        let mut module = Module::new(module_id, module_name.clone(), module_path.clone());
+        let mut exports = HashMap::new();
+        let mut exported_functions = HashMap::new();
+
+        for stmt in &script.stmts {
+            match stmt {
+                ast::Stmt::ExportFn { name, .. } => {
+                    let user_fn = module_ctx.get_user_fn(&name.name).cloned().ok_or(
+                        EvalError::ExportNotFound {
+                            name: name.name.clone(),
+                            span,
+                        },
+                    )?;
+                    exported_functions.insert(name.name.clone(), user_fn);
+                    module.export(
+                        name.name.clone(),
+                        Value::String(format!("fn {}", name.name).into()),
+                    );
+                }
+                ast::Stmt::ExportAssign { name, .. } => {
+                    if let Some(user_fn) = module_ctx.get_user_fn(&name.name).cloned() {
+                        exported_functions.insert(name.name.clone(), user_fn);
+                        module.export(
+                            name.name.clone(),
+                            Value::String(format!("fn {}", name.name).into()),
+                        );
+                    } else {
+                        let value = module_ctx.get_var(&name.name).cloned().ok_or(
+                            EvalError::ExportNotFound {
+                                name: name.name.clone(),
+                                span,
+                            },
+                        )?;
+                        exports.insert(name.name.clone(), value.clone());
+                        module.export(name.name.clone(), value);
+                    }
+                }
+                _ => {}
+            }
+        }
+
+        ctx.module_registry_mut().register(module);
+
+        Ok(LoadedModule {
+            path: module_path.clone(),
+            exports,
+            exported_functions,
+        })
+    })();
+
+    ctx.end_module_load();
+
+    let loaded_module = execution_result?;
+    ctx.cache_loaded_module(loaded_module.clone());
+    bind_loaded_module(&loaded_module, alias, ctx);
     Ok(())
+}
+
+fn bind_loaded_module(
+    loaded_module: &LoadedModule,
+    alias: Option<&ast::Ident>,
+    ctx: &mut EvaluationContext,
+) {
+    let prefix = alias.map(|ident| ident.name.clone());
+
+    if let Some(alias_name) = prefix.as_ref() {
+        ctx.set_var(alias_name, Value::Namespace(alias_name.clone()));
+    }
+
+    for (name, value) in &loaded_module.exports {
+        let binding = if let Some(prefix) = prefix.as_ref() {
+            format!("{prefix}.{name}")
+        } else {
+            name.clone()
+        };
+        ctx.set_var(binding, value.clone());
+    }
+
+    for (name, user_fn) in &loaded_module.exported_functions {
+        let binding = if let Some(prefix) = prefix.as_ref() {
+            format!("{prefix}.{name}")
+        } else {
+            name.clone()
+        };
+        ctx.register_user_fn(binding, user_fn.clone());
+    }
 }
 
 #[cfg(test)]
@@ -780,6 +908,18 @@ mod tests {
     use pine_lexer::Span;
     use pine_parser::ast::{Block, FnBody, Ident, Lit, Param, Stmt, SwitchArm, SwitchArmBody};
     use pine_runtime::value::Value;
+    use std::fs;
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    fn temp_dir(prefix: &str) -> PathBuf {
+        let nanos = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_nanos();
+        let dir = std::env::temp_dir().join(format!("pine-rs-{prefix}-{nanos}"));
+        fs::create_dir_all(&dir).unwrap();
+        dir
+    }
 
     #[test]
     fn test_field_assignment() {
@@ -945,34 +1085,40 @@ mod tests {
 
     #[test]
     fn test_import_stmt_basic() {
-        let mut ctx = EvaluationContext::new();
+        let dir = temp_dir("import-basic");
+        fs::write(dir.join("test_module.pine"), "export answer = 42\n").unwrap();
+        let mut ctx = EvaluationContext::with_base_path(&dir);
 
-        // Create a simple import statement AST
         let import_stmt = Stmt::Import {
             path: ImportPath::String("test_module.pine".to_string()),
             alias: Some(Ident::new("test", Span::default())),
             span: Span::default(),
         };
 
-        // Evaluate the import statement (should not fail for stub implementation)
         let result = eval_stmt(&import_stmt, &mut ctx);
         assert!(result.is_ok());
+        assert!(matches!(ctx.get_var("test.answer"), Some(Value::Int(42))));
+
+        let _ = fs::remove_dir_all(dir);
     }
 
     #[test]
     fn test_import_stmt_without_alias() {
-        let mut ctx = EvaluationContext::new();
+        let dir = temp_dir("import-no-alias");
+        fs::write(dir.join("utils.pine"), "export answer = 7\n").unwrap();
+        let mut ctx = EvaluationContext::with_base_path(&dir);
 
-        // Create an import statement without alias
         let import_stmt = Stmt::Import {
             path: ImportPath::String("utils.pine".to_string()),
             alias: None,
             span: Span::default(),
         };
 
-        // Evaluate the import statement
         let result = eval_stmt(&import_stmt, &mut ctx);
         assert!(result.is_ok());
+        assert!(matches!(ctx.get_var("answer"), Some(Value::Int(7))));
+
+        let _ = fs::remove_dir_all(dir);
     }
 
     #[test]
@@ -1227,5 +1373,107 @@ out = sum
             ctx.current_module(),
             Some(pine_runtime::module::ModuleId(1))
         );
+    }
+
+    #[test]
+    fn test_import_stmt_with_alias_loads_functions_and_values() {
+        let dir = temp_dir("import-alias");
+        let module_path = dir.join("math_lib.pine");
+        fs::write(
+            &module_path,
+            r#"
+export add = (a, b) => a + b
+export PI = 3.14159
+"#,
+        )
+        .unwrap();
+
+        let mut ctx = EvaluationContext::with_base_path(&dir);
+        let import_stmt = Stmt::Import {
+            path: ImportPath::String("math_lib.pine".to_string()),
+            alias: Some(Ident::new("m", Span::default())),
+            span: Span::default(),
+        };
+
+        eval_stmt(&import_stmt, &mut ctx).unwrap();
+        let sum = eval_expr(
+            &ast::Expr::MethodCall {
+                base: Box::new(ast::Expr::Ident(Ident::new("m", Span::default()))),
+                method: Ident::new("add", Span::default()),
+                args: vec![
+                    ast::Arg {
+                        name: None,
+                        value: ast::Expr::Literal(Lit::Int(2), Span::default()),
+                    },
+                    ast::Arg {
+                        name: None,
+                        value: ast::Expr::Literal(Lit::Int(3), Span::default()),
+                    },
+                ],
+                span: Span::default(),
+            },
+            &mut ctx,
+        )
+        .unwrap();
+        let pi = eval_expr(
+            &ast::Expr::FieldAccess {
+                base: Box::new(ast::Expr::Ident(Ident::new("m", Span::default()))),
+                field: Ident::new("PI", Span::default()),
+                span: Span::default(),
+            },
+            &mut ctx,
+        )
+        .unwrap();
+
+        assert_eq!(sum, Value::Int(5));
+        assert!(matches!(pi, Value::Float(v) if (v - 3.14159).abs() < 1e-10));
+
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn test_import_stmt_without_alias_binds_exports_directly() {
+        let dir = temp_dir("import-direct");
+        let module_path = dir.join("math_lib.pine");
+        fs::write(
+            &module_path,
+            r#"
+export subtract = (a, b) => a - b
+export PI = 3.14159
+"#,
+        )
+        .unwrap();
+
+        let mut ctx = EvaluationContext::with_base_path(&dir);
+        let import_stmt = Stmt::Import {
+            path: ImportPath::String("math_lib.pine".to_string()),
+            alias: None,
+            span: Span::default(),
+        };
+
+        eval_stmt(&import_stmt, &mut ctx).unwrap();
+        let diff = eval_expr(
+            &ast::Expr::FnCall {
+                func: Box::new(ast::Expr::Ident(Ident::new("subtract", Span::default()))),
+                args: vec![
+                    ast::Arg {
+                        name: None,
+                        value: ast::Expr::Literal(Lit::Int(7), Span::default()),
+                    },
+                    ast::Arg {
+                        name: None,
+                        value: ast::Expr::Literal(Lit::Int(4), Span::default()),
+                    },
+                ],
+                span: Span::default(),
+            },
+            &mut ctx,
+        )
+        .unwrap();
+
+        assert_eq!(diff, Value::Int(3));
+        assert!(matches!(ctx.get_var("PI"), Some(Value::Float(v)) if (*v - 3.14159).abs() < 1e-10));
+
+        let _ = fs::remove_dir_all(dir);
     }
 }

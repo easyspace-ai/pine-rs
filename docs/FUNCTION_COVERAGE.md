@@ -2,7 +2,7 @@
 
 This document tracks the implementation status of Pine Script v6 built-in functions in pine-rs.
 
-> Generated: 2026-04-03
+> Generated: 2026-04-04
 > Total functions: ~100+
 
 ## Status Legend
@@ -165,7 +165,7 @@ This document tracks the implementation status of Pine Script v6 built-in functi
 | `str.trim_start` | ✅ | Unit tested |
 | `str.upper` | ✅ | Unit tested |
 
-## ta.* (19 functions)
+## ta.* (28 functions)
 
 | Function | Status | Notes |
 |----------|--------|-------|
@@ -173,20 +173,29 @@ This document tracks the implementation status of Pine Script v6 built-in functi
 | `ta.barssince` | ✅ | |
 | `ta.bb` | ✅ | Golden test: bbands_20_2 |
 | `ta.cci` | ✅ | Golden test: cci_20 |
+| `ta.change` | ✅ | Golden test: change_2 |
+| `ta.cum` | ✅ | Golden test: cum_volume |
 | `ta.crossover` | ✅ | |
 | `ta.crossunder` | ✅ | |
+| `ta.dmi` | ✅ | Golden test: dmi_5_5 |
 | `ta.ema` | ✅ | Golden test: ema_12 |
 | `ta.highest` | ✅ | Golden test: highest_10 |
 | `ta.highestbars` | ✅ | Golden test: highestbars_10 |
 | `ta.lowest` | ✅ | Golden test: lowest_10 |
 | `ta.lowestbars` | ✅ | Golden test: lowestbars_10 |
 | `ta.macd` | ✅ | Golden test: macd_12_26_9 |
+| `ta.mfi` | ✅ | Golden test: mfi_14 |
 | `ta.mom` | ✅ | Golden test: mom_10 |
+| `ta.obv` | ✅ | Golden test: obv_basic (namespace variable) |
+| `ta.pvt` | ✅ | Golden test: pvt_basic (namespace variable) |
+| `ta.roc` | ✅ | Golden test: roc_10 |
 | `ta.rma` | ✅ | Unit tested, uses Wilder smoothing (alpha=1/N) |
 | `ta.rsi` | ✅ | Golden test: rsi_14 |
 | `ta.sma` | ✅ | Golden test: sma_14, sma_manual |
 | `ta.stoch` | ✅ | Golden test: stoch_14_3_3 |
+| `ta.supertrend` | ✅ | Golden test: supertrend_3_5 |
 | `ta.tr` | ✅ | Golden test: tr_basic |
+| `ta.vwma` | ✅ | Golden test: vwma_10 |
 | `ta.wma` | ✅ | Unit tested |
 
 ---
@@ -203,8 +212,8 @@ This document tracks the implementation status of Pine Script v6 built-in functi
 | plot | 1 | 1 | 0 | 0 |
 | strategy | 6 | 6 | 0 | 0 |
 | str | 16 | 16 | 0 | 0 |
-| ta | 19 | 19 | 0 | 0 |
-| **Total** | **~126** | **~126** | **0** | **0** |
+| ta | 28 | 28 | 0 | 0 |
+| **Total** | **~132** | **~132** | **0** | **0** |
 
 ---
 
