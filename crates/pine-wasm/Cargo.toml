@@ -2,7 +2,7 @@
 name = "pine-wasm"
 version = "0.1.0"
 edition = "2021"
-description = "Thin wasm-bindgen bridge over pine-eval (check + run)"
+description = "Thin wasm-bindgen bridge over pine-eval and pine-vm (check + run)"
 
 [lib]
 crate-type = ["cdylib", "rlib"]
@@ -11,6 +11,7 @@ crate-type = ["cdylib", "rlib"]
 pine-eval = { path = "../pine-eval", default-features = false }
 pine-lexer = { path = "../pine-lexer" }
 pine-parser = { path = "../pine-parser" }
+pine-vm = { path = "../pine-vm" }
 serde = { workspace = true }
 serde_json = { workspace = true }
 
