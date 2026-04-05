@@ -2,6 +2,12 @@
 
 本目录从 [`three/PineTS/docs/api-coverage`](../../three/PineTS/docs/api-coverage) **原样复制** PineTS 的逐函数表格，并经脚本插入 **pine-rs** 列。
 
+注意：
+
+- 这些页面的强项是“逐函数对照 PineTS 结构”。
+- 这些页面不保证始终等于 pine-rs 当前 registry 的实时计数。
+- 若要看 pine-rs 当前已注册函数数量与验证深度，请优先看 [`docs/FUNCTION_COVERAGE.md`](../FUNCTION_COVERAGE.md)。
+
 - **更新(copy)**：`rm -rf docs/api-coverage && cp -R three/PineTS/docs/api-coverage docs/api-coverage`
 - **更新(标注)**：`python3 scripts/annotate_api_coverage_pinets.py`
 

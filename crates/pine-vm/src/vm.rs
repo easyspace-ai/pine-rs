@@ -3,7 +3,7 @@
 //! This module provides a stack-based virtual machine that executes
 //! bytecode compiled from Pine Script source.
 
-use crate::compiler::BytecodeChunk;
+use crate::compiler::{BytecodeChunk, EXTERNAL_FUNCTION_BASE};
 use crate::debug::vm_debug;
 use crate::opcode::OpCode;
 use crate::VmError;
@@ -109,14 +109,21 @@ pub struct CallFrame {
     pub pc: usize,
     /// Stack base pointer (where this frame's locals start)
     pub bp: usize,
+    /// Slot vector length before entering this frame
+    pub slots_len: usize,
     /// Return address (for when this frame returns)
     pub return_pc: usize,
 }
 
 impl CallFrame {
     /// Create a new call frame
-    pub fn new(pc: usize, bp: usize, return_pc: usize) -> Self {
-        Self { pc, bp, return_pc }
+    pub fn new(pc: usize, bp: usize, slots_len: usize, return_pc: usize) -> Self {
+        Self {
+            pc,
+            bp,
+            slots_len,
+            return_pc,
+        }
     }
 }
 
@@ -203,6 +210,22 @@ impl VM {
         self.chunk = Some(chunk);
         self.pc = 0;
         self.slots.clear();
+        self.stack.clear();
+        self.call_stack.clear();
+        self.plot_outputs.clear();
+        self.bp = 0;
+    }
+
+    /// Prepare for executing the currently loaded chunk on the next bar.
+    ///
+    /// This preserves slots and execution context so `var` state survives
+    /// across bars, while clearing transient execution state.
+    pub fn rewind_for_next_bar(&mut self) {
+        self.pc = 0;
+        self.bp = 0;
+        self.stack.clear();
+        self.call_stack.clear();
+        self.plot_outputs.clear();
     }
 
     /// Execute the loaded bytecode
@@ -331,7 +354,7 @@ impl VM {
                 }
                 OpCode::JumpIfFalse => {
                     let target = instruction.operands.first().copied().unwrap_or(0);
-                    let condition = self.stack.peek().unwrap_or(&Value::Na);
+                    let condition = self.stack.pop().unwrap_or(Value::Na);
                     vm_debug!(
                         "DEBUG VM JumpIfFalse: condition={:?}, target={}, is_truthy={}, will_jump={}",
                         condition,
@@ -347,7 +370,7 @@ impl VM {
                 }
                 OpCode::JumpIfTrue => {
                     let target = instruction.operands.first().copied().unwrap_or(0);
-                    let condition = self.stack.peek().unwrap_or(&Value::Na);
+                    let condition = self.stack.pop().unwrap_or(Value::Na);
                     if condition.is_truthy() {
                         self.pc = target;
                     } else {
@@ -361,6 +384,7 @@ impl VM {
                     if let Some(frame) = self.call_stack.pop() {
                         // Restore base pointer
                         self.bp = frame.bp;
+                        self.slots.truncate(frame.slots_len);
                         // Jump to return address
                         self.pc = frame.return_pc;
                         // Push return value back to stack
@@ -439,19 +463,18 @@ impl VM {
                 OpCode::Call => {
                     let func_idx = instruction.operands.first().copied().unwrap_or(0);
                     let arg_count = instruction.operands.get(1).copied().unwrap_or(0);
-                    let user_func_count = chunk.function_addresses.len();
                     vm_debug!(
-                        "DEBUG VM: OpCode::Call func_idx={} arg_count={} user_func_count={}",
+                        "DEBUG VM: OpCode::Call func_idx={} arg_count={} external_base={}",
                         func_idx,
                         arg_count,
-                        user_func_count
+                        EXTERNAL_FUNCTION_BASE
                     );
                     vm_debug!("DEBUG VM: external_functions={:?}", self.external_functions);
 
                     // Check if this is an external function call
-                    if func_idx >= user_func_count {
+                    if func_idx >= EXTERNAL_FUNCTION_BASE {
                         // External function call
-                        let ext_idx = func_idx - user_func_count;
+                        let ext_idx = func_idx - EXTERNAL_FUNCTION_BASE;
                         if let Some(func_name) = self.external_functions.get(ext_idx) {
                             // Collect arguments from stack
                             let mut args = Vec::with_capacity(arg_count);
@@ -639,14 +662,14 @@ impl VM {
                             .copied()
                             .ok_or(VmError::InvalidFunction(func_idx))?;
 
-                        // Calculate base pointer for new frame (args are already on stack)
-                        let new_bp = self.stack.len().saturating_sub(arg_count);
+                        // Allocate a fresh slot region for this call frame.
+                        let new_bp = self.slots.len();
 
                         for (offset, arg) in self
                             .stack
                             .data
                             .iter()
-                            .skip(new_bp)
+                            .skip(self.stack.len().saturating_sub(arg_count))
                             .take(arg_count)
                             .cloned()
                             .enumerate()
@@ -662,8 +685,12 @@ impl VM {
                             }
                         }
 
+                        for _ in 0..arg_count {
+                            self.stack.pop();
+                        }
+
                         // Create new call frame
-                        let frame = CallFrame::new(self.pc, self.bp, self.pc + 1);
+                        let frame = CallFrame::new(self.pc, self.bp, new_bp, self.pc + 1);
                         self.call_stack.push(frame);
 
                         // Set new base pointer and jump to function

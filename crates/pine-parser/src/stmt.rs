@@ -1343,6 +1343,44 @@ else
     }
 
     #[test]
+    fn test_parse_import_qualified_path_with_alias() {
+        let input = "import user/lib/1 as m";
+        let script = parse(input).unwrap();
+
+        match &script.stmts[0] {
+            Stmt::Import { path, alias, .. } => {
+                assert_eq!(
+                    path,
+                    &ImportPath::Qualified(vec![
+                        "user".to_string(),
+                        "lib".to_string(),
+                        "1".to_string()
+                    ])
+                );
+                assert_eq!(alias.as_ref().map(|a| a.name.as_str()), Some("m"));
+            }
+            other => panic!("expected import stmt, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_parse_export_fn_arrow_form() {
+        let input = "export add(x, y) => x + y";
+        let script = parse(input).unwrap();
+
+        match &script.stmts[0] {
+            Stmt::ExportFn {
+                name, params, body, ..
+            } => {
+                assert_eq!(name.name, "add");
+                assert_eq!(params.len(), 2);
+                assert!(matches!(body, FnBody::Expr(_)));
+            }
+            other => panic!("expected export fn stmt, got {:?}", other),
+        }
+    }
+
+    #[test]
     fn test_two_udf_call_sites_have_distinct_fn_call_spans() {
         let input = r#"fn f(x)
     x

@@ -7,7 +7,6 @@
 use axum::{extract::State, http::StatusCode, response::IntoResponse, Json};
 use std::sync::Arc;
 
-use crate::data::binance::BinanceClient;
 use crate::data::loader::DataLoader;
 use crate::engine::output::{ApiResponse, RunRequest};
 use crate::engine::runner::PineEngine;
@@ -32,11 +31,9 @@ impl RunHandler {
         State(state): State<Arc<Self>>,
         Json(request): Json<RunRequest>,
     ) -> impl IntoResponse {
-        // Load data - use the async load method
-        let binance_client = BinanceClient::new();
-        let bars = match binance_client
-            .fetch_klines(&request.symbol, &request.timeframe, request.bars)
-            .await
+        let bars = match state
+            .data_loader
+            .load_local(&request.symbol, &request.timeframe)
         {
             Ok(mut b) => {
                 if b.len() > request.bars {
@@ -46,10 +43,10 @@ impl RunHandler {
                 b
             }
             Err(_) => {
-                // Fall back to local/sample data (synchronous)
                 match state
                     .data_loader
-                    .load_local(&request.symbol, &request.timeframe)
+                    .load_from_binance(&request.symbol, &request.timeframe, request.bars)
+                    .await
                 {
                     Ok(mut b) => {
                         if b.len() > request.bars {

@@ -394,3 +394,300 @@ fn test_script_parity_for_na_math() {
     })
     .expect("for_na_math script parity failed");
 }
+
+#[test]
+fn test_script_parity_while_loop() {
+    assert_script_parity(&ScriptParityCase {
+        name: "while_loop",
+        script_path: "tests/scripts/language/while_loop.pine",
+        golden_path: "tests/golden/while_loop.csv",
+        plots: &["While Avg 5"],
+    })
+    .expect("while_loop script parity failed");
+}
+
+#[test]
+fn test_script_parity_switch_basic() {
+    assert_script_parity(&ScriptParityCase {
+        name: "switch_basic",
+        script_path: "tests/scripts/language/switch_basic.pine",
+        golden_path: "tests/golden/switch_basic.csv",
+        plots: &["Switch Result"],
+    })
+    .expect("switch_basic script parity failed");
+}
+
+#[test]
+fn test_script_parity_udf_basic() {
+    assert_script_parity(&ScriptParityCase {
+        name: "udf_basic",
+        script_path: "tests/scripts/language/udf_basic.pine",
+        golden_path: "tests/golden/udf_basic.csv",
+        plots: &["UDF Diff", "UDF Scale"],
+    })
+    .expect("udf_basic script parity failed");
+}
+
+#[test]
+fn test_script_parity_bbw_20_2() {
+    assert_script_parity(&ScriptParityCase {
+        name: "bbw_20_2",
+        script_path: "tests/scripts/stdlib/ta/bbw_20_2.pine",
+        golden_path: "tests/golden/bbw_20_2.csv",
+        plots: &["BBW 20 2"],
+    })
+    .expect("bbw_20_2 script parity failed");
+}
+
+#[test]
+fn test_script_parity_change_2() {
+    assert_script_parity(&ScriptParityCase {
+        name: "change_2",
+        script_path: "tests/scripts/stdlib/ta/change_2.pine",
+        golden_path: "tests/golden/change_2.csv",
+        plots: &["Change 2"],
+    })
+    .expect("change_2 script parity failed");
+}
+
+#[test]
+fn test_script_parity_correlation_10() {
+    assert_script_parity(&ScriptParityCase {
+        name: "correlation_10",
+        script_path: "tests/scripts/stdlib/ta/correlation_10.pine",
+        golden_path: "tests/golden/correlation_10.csv",
+        plots: &["Corr 10"],
+    })
+    .expect("correlation_10 script parity failed");
+}
+
+#[test]
+fn test_script_parity_cum_volume() {
+    assert_script_parity(&ScriptParityCase {
+        name: "cum_volume",
+        script_path: "tests/scripts/stdlib/ta/cum_volume.pine",
+        golden_path: "tests/golden/cum_volume.csv",
+        plots: &["Cum Volume"],
+    })
+    .expect("cum_volume script parity failed");
+}
+
+#[test]
+fn test_script_parity_dev_10() {
+    assert_script_parity(&ScriptParityCase {
+        name: "dev_10",
+        script_path: "tests/scripts/stdlib/ta/dev_10.pine",
+        golden_path: "tests/golden/dev_10.csv",
+        plots: &["Dev 10"],
+    })
+    .expect("dev_10 script parity failed");
+}
+
+#[test]
+fn test_script_parity_dmi_5_5() {
+    assert_script_parity(&ScriptParityCase {
+        name: "dmi_5_5",
+        script_path: "tests/scripts/stdlib/ta/dmi_5_5.pine",
+        golden_path: "tests/golden/dmi_5_5.csv",
+        plots: &["DI Plus", "DI Minus", "ADX"],
+    })
+    .expect("dmi_5_5 script parity failed");
+}
+
+#[test]
+fn test_script_parity_linreg_10() {
+    assert_script_parity(&ScriptParityCase {
+        name: "linreg_10",
+        script_path: "tests/scripts/stdlib/ta/linreg_10.pine",
+        golden_path: "tests/golden/linreg_10.csv",
+        plots: &["LinReg 10"],
+    })
+    .expect("linreg_10 script parity failed");
+}
+
+#[test]
+fn test_script_parity_median_10() {
+    assert_script_parity(&ScriptParityCase {
+        name: "median_10",
+        script_path: "tests/scripts/stdlib/ta/median_10.pine",
+        golden_path: "tests/golden/median_10.csv",
+        plots: &["Median 10"],
+    })
+    .expect("median_10 script parity failed");
+}
+
+#[test]
+fn test_script_parity_mfi_14() {
+    assert_script_parity(&ScriptParityCase {
+        name: "mfi_14",
+        script_path: "tests/scripts/stdlib/ta/mfi_14.pine",
+        golden_path: "tests/golden/mfi_14.csv",
+        plots: &["MFI 14"],
+    })
+    .expect("mfi_14 script parity failed");
+}
+
+#[test]
+fn test_script_parity_obv_basic() {
+    assert_script_parity(&ScriptParityCase {
+        name: "obv_basic",
+        script_path: "tests/scripts/stdlib/ta/obv_basic.pine",
+        golden_path: "tests/golden/obv_basic.csv",
+        plots: &["OBV"],
+    })
+    .expect("obv_basic script parity failed");
+}
+
+#[test]
+fn test_script_parity_percentrank_10() {
+    assert_script_parity(&ScriptParityCase {
+        name: "percentrank_10",
+        script_path: "tests/scripts/stdlib/ta/percentrank_10.pine",
+        golden_path: "tests/golden/percentrank_10.csv",
+        plots: &["PctRank 10"],
+    })
+    .expect("percentrank_10 script parity failed");
+}
+
+#[test]
+fn test_script_parity_pvt_basic() {
+    assert_script_parity(&ScriptParityCase {
+        name: "pvt_basic",
+        script_path: "tests/scripts/stdlib/ta/pvt_basic.pine",
+        golden_path: "tests/golden/pvt_basic.csv",
+        plots: &["PVT"],
+    })
+    .expect("pvt_basic script parity failed");
+}
+
+#[test]
+fn test_script_parity_range_10() {
+    assert_script_parity(&ScriptParityCase {
+        name: "range_10",
+        script_path: "tests/scripts/stdlib/ta/range_10.pine",
+        golden_path: "tests/golden/range_10.csv",
+        plots: &["Range 10"],
+    })
+    .expect("range_10 script parity failed");
+}
+
+#[test]
+fn test_script_parity_rising_falling() {
+    assert_script_parity(&ScriptParityCase {
+        name: "rising_falling",
+        script_path: "tests/scripts/stdlib/ta/rising_falling.pine",
+        golden_path: "tests/golden/rising_falling.csv",
+        plots: &["Rising 3", "Falling 3"],
+    })
+    .expect("rising_falling script parity failed");
+}
+
+#[test]
+fn test_script_parity_rma_14() {
+    assert_script_parity(&ScriptParityCase {
+        name: "rma_14",
+        script_path: "tests/scripts/stdlib/ta/rma_14.pine",
+        golden_path: "tests/golden/rma_14.csv",
+        plots: &["RMA 14"],
+    })
+    .expect("rma_14 script parity failed");
+}
+
+#[test]
+fn test_script_parity_roc_10() {
+    assert_script_parity(&ScriptParityCase {
+        name: "roc_10",
+        script_path: "tests/scripts/stdlib/ta/roc_10.pine",
+        golden_path: "tests/golden/roc_10.csv",
+        plots: &["ROC 10"],
+    })
+    .expect("roc_10 script parity failed");
+}
+
+#[test]
+fn test_script_parity_stdev_10() {
+    assert_script_parity(&ScriptParityCase {
+        name: "stdev_10",
+        script_path: "tests/scripts/stdlib/ta/stdev_10.pine",
+        golden_path: "tests/golden/stdev_10.csv",
+        plots: &["StDev 10"],
+    })
+    .expect("stdev_10 script parity failed");
+}
+
+#[test]
+fn test_script_parity_supertrend_3_5() {
+    assert_script_parity(&ScriptParityCase {
+        name: "supertrend_3_5",
+        script_path: "tests/scripts/stdlib/ta/supertrend_3_5.pine",
+        golden_path: "tests/golden/supertrend_3_5.csv",
+        plots: &["Supertrend", "Direction"],
+    })
+    .expect("supertrend_3_5 script parity failed");
+}
+
+#[test]
+fn test_script_parity_swma_basic() {
+    assert_script_parity(&ScriptParityCase {
+        name: "swma_basic",
+        script_path: "tests/scripts/stdlib/ta/swma_basic.pine",
+        golden_path: "tests/golden/swma_basic.csv",
+        plots: &["SWMA"],
+    })
+    .expect("swma_basic script parity failed");
+}
+
+#[test]
+fn test_script_parity_tsi_13_25() {
+    assert_script_parity(&ScriptParityCase {
+        name: "tsi_13_25",
+        script_path: "tests/scripts/stdlib/ta/tsi_13_25.pine",
+        golden_path: "tests/golden/tsi_13_25.csv",
+        plots: &["TSI"],
+    })
+    .expect("tsi_13_25 script parity failed");
+}
+
+#[test]
+fn test_script_parity_variance_10() {
+    assert_script_parity(&ScriptParityCase {
+        name: "variance_10",
+        script_path: "tests/scripts/stdlib/ta/variance_10.pine",
+        golden_path: "tests/golden/variance_10.csv",
+        plots: &["Variance 10"],
+    })
+    .expect("variance_10 script parity failed");
+}
+
+#[test]
+fn test_script_parity_vwma_10() {
+    assert_script_parity(&ScriptParityCase {
+        name: "vwma_10",
+        script_path: "tests/scripts/stdlib/ta/vwma_10.pine",
+        golden_path: "tests/golden/vwma_10.csv",
+        plots: &["VWMA 10"],
+    })
+    .expect("vwma_10 script parity failed");
+}
+
+#[test]
+fn test_script_parity_wma_10() {
+    assert_script_parity(&ScriptParityCase {
+        name: "wma_10",
+        script_path: "tests/scripts/stdlib/ta/wma_10.pine",
+        golden_path: "tests/golden/wma_10.csv",
+        plots: &["WMA 10"],
+    })
+    .expect("wma_10 script parity failed");
+}
+
+#[test]
+fn test_script_parity_wpr_14() {
+    assert_script_parity(&ScriptParityCase {
+        name: "wpr_14",
+        script_path: "tests/scripts/stdlib/ta/wpr_14.pine",
+        golden_path: "tests/golden/wpr_14.csv",
+        plots: &["WPR 14"],
+    })
+    .expect("wpr_14 script parity failed");
+}

@@ -1,233 +1,110 @@
 # pine-stdlib Function Coverage
 
-This document tracks the implementation status of Pine Script v6 built-in functions in pine-rs.
+This document tracks the current built-in surface of pine-rs in a way that matches the codebase as it exists today.
 
-> Generated: 2026-04-04
-> Total functions: ~100+
+> Updated: 2026-04-05
+> Scope: functions registered in `crates/pine-stdlib` plus their current verification depth
 
-## Status Legend
+## How to read this file
 
-| Symbol | Meaning |
-|--------|---------|
-| ✅ | Fully implemented with tests |
-| 🟨 | Partially implemented or needs verification |
-| ⛔ | Not implemented |
-| 🔜 | Explicitly delayed (see AGENTS.md) |
+- This is not the official Pine Script total-function matrix.
+- This file answers a narrower question: what pine-rs currently registers, and how well it is verified.
+- For official-coverage comparison by namespace, use [API_COVERAGE.md](./API_COVERAGE.md) and `docs/api-coverage/*.md`.
+- For syntax and runtime alignment status, use [V6_ALIGNMENT.md](./V6_ALIGNMENT.md).
 
----
+## Verification levels
 
-## array.* (23 functions)
+| Level | Meaning |
+|-------|---------|
+| `golden` | Covered by golden script or equivalent end-to-end output check |
+| `script` | Covered by runnable script or integration test |
+| `unit` | Covered by unit test only |
+| `mixed` | Namespace contains a mix of golden, script, and unit coverage |
 
-| Function | Status | Notes |
-|----------|--------|-------|
-| `array.avg` | ✅ | Tested with golden script |
-| `array.clear` | ✅ | Unit tested |
-| `array.concat` | ✅ | Unit tested |
-| `array.copy` | ✅ | Unit tested |
-| `array.fill` | ✅ | Unit tested |
-| `array.first` | ✅ | Tested with golden script |
-| `array.from` | ✅ | Unit tested |
-| `array.get` | ✅ | Via method, tested |
-| `array.insert` | ✅ | Unit tested |
-| `array.last` | ✅ | Tested with golden script |
-| `array.max` | ✅ | Tested with golden script |
-| `array.min` | ✅ | Tested with golden script |
-| `array.new_bool` | ✅ | Unit tested |
-| `array.new_color` | ✅ | Unit tested |
-| `array.new_float` | ✅ | Tested with golden script |
-| `array.new_int` | ✅ | Unit tested |
-| `array.new_string` | ✅ | Unit tested |
-| `array.pop` | ✅ | Unit tested |
-| `array.push` | ✅ | Tested with golden script |
-| `array.remove` | ✅ | Unit tested |
-| `array.reverse` | ✅ | Unit tested |
-| `array.set` | ✅ | Via method, tested |
-| `array.size` | ✅ | Via method, tested |
-| `array.sort` | ✅ | Unit tested |
-| `array.sum` | ✅ | Tested with golden script |
+## Registry snapshot
 
-## color.* (13 functions)
+| Namespace | Registered in pine-rs | Verification | Notes |
+|-----------|------------------------|--------------|-------|
+| `array.*` | 42 | mixed | Large implemented subset; object arrays such as `array.new_box` remain out |
+| `color.*` | 13 | unit | Stable helper namespace |
+| `input.*` | 8 | unit | Common subset present |
+| `map.*` | 11 | mixed | Core CRUD present |
+| `math.*` | 32 | mixed | Broad subset; most covered by unit tests |
+| `plot*` | 7 | mixed | `plot` is end-to-end verified; shape and arrow outputs are lighter-weight than full TV behavior |
+| `str.*` | 22 | mixed | Larger than earlier docs claimed; includes alias forms such as `startswith` and `endswith` |
+| `strategy.*` | 6 | script | Signal-level subset only, not full TV strategy model |
+| `ta.*` | 46 | mixed | Core indicator subset with broad golden coverage |
+| **Total** | **187** | **mixed** | Registry count only, not official Pine total |
 
-| Function | Status | Notes |
-|----------|--------|-------|
-| `color.a` | ✅ | Unit tested |
-| `color.b` | ✅ | Unit tested |
-| `color.darken` | ✅ | Unit tested |
-| `color.from_hex` | ✅ | Unit tested |
-| `color.g` | ✅ | Unit tested |
-| `color.lighten` | ✅ | Unit tested |
-| `color.mix` | ✅ | Unit tested |
-| `color.new` | ✅ | Alias for color.new_transparency |
-| `color.new_transparency` | ✅ | Unit tested |
-| `color.r` | ✅ | Unit tested |
-| `color.rgb` | ✅ | Unit tested |
-| `color.rgba` | ✅ | Unit tested |
-| `color.transparency` | ✅ | Unit tested |
+## Namespace notes
 
-## input.* (8 functions)
+### `ta.*`
 
-| Function | Status | Notes |
-|----------|--------|-------|
-| `input.bool` | ✅ | Unit tested |
-| `input.color` | ✅ | Returns color value |
-| `input.float` | ✅ | Unit tested with min/max |
-| `input.int` | ✅ | Unit tested with min/max |
-| `input.source` | ✅ | Returns series value |
-| `input.string` | ✅ | Unit tested |
-| `input.symbol` | ✅ | Returns string |
-| `input.timeframe` | ✅ | Returns string |
+- Strongest end-to-end coverage today.
+- Golden coverage already includes representative core functions such as:
+  - `sma`, `ema`, `rsi`, `atr`, `bb`, `macd`, `stoch`
+  - `highest`, `lowest`, `highestbars`, `lowestbars`
+  - `linreg`, `mfi`, `supertrend`, `wpr`, `tsi`
+- This is still a subset of the full official TradingView `ta.*` matrix.
 
-## map.* (11 functions)
+### `array.*`
 
-| Function | Status | Notes |
-|----------|--------|-------|
-| `map.clear` | ✅ | Tested with script |
-| `map.contains` | ✅ | Tested with script |
-| `map.get` | ✅ | Tested with script |
-| `map.is_empty` | ✅ | Tested with script |
-| `map.keys` | ✅ | Unit tested |
-| `map.new` | ✅ | Tested with script |
-| `map.new_from_pair` | ✅ | Unit tested |
-| `map.put` | ✅ | Tested with script |
-| `map.remove` | ✅ | Tested with script |
-| `map.size` | ✅ | Tested with script |
-| `map.values` | ✅ | Unit tested |
+- Actual registered surface is much larger than older summaries suggested.
+- Implemented areas already include:
+  - creation and core CRUD
+  - search helpers
+  - statistical helpers such as `median`, `stdev`, `variance`, `range`, `percentrank`
+- Missing area is mainly object-oriented array families and deeper TV parity validation.
 
-## math.* (29 functions)
+### `str.*`
 
-| Function | Status | Notes |
-|----------|--------|-------|
-| `math.abs` | ✅ | |
-| `math.acos` | ✅ | |
-| `math.asin` | ✅ | |
-| `math.atan` | ✅ | |
-| `math.avg` | ✅ | Rolling average of series, unit tested |
-| `math.ceil` | ✅ | |
-| `math.cos` | ✅ | |
-| `math.cosh` | ✅ | |
-| `math.copysign` | ✅ | Unit tested |
-| `math.exp` | ✅ | |
-| `math.floor` | ✅ | |
-| `math.isna` | ✅ | |
-| `math.log` | ✅ | |
-| `math.log10` | ✅ | |
-| `math.max` | ✅ | |
-| `math.min` | ✅ | |
-| `math.nz` | ✅ | Unit tested |
-| `math.pow` | ✅ | Unit tested |
-| `math.round` | ✅ | |
-| `math.round_to_nearest` | ✅ | Unit tested |
-| `math.sign` | ✅ | |
-| `math.sin` | ✅ | |
-| `math.sinh` | ✅ | |
-| `math.sqrt` | ✅ | |
-| `math.sum` | ✅ | Rolling sum of series, unit tested |
-| `math.tan` | ✅ | |
-| `math.tanh` | ✅ | |
-| `math.tostring` | ✅ | |
-| `math.trunc` | ✅ | |
+- Current registry includes both canonical and compatibility-style names:
+  - `starts_with` and `ends_with`
+  - `startswith` and `endswith`
+  - `replace_all`, `format`, `match`, `pos`
+- This namespace is no longer "unknown" or "very small".
 
-## plot.* (1 function)
+### `plot*`
 
-| Function | Status | Notes |
-|----------|--------|-------|
-| `plot` | ✅ | Core plotting function |
+- Registered functions are:
+  - `plot`
+  - `hline`
+  - `bgcolor`
+  - `fill`
+  - `plotshape`
+  - `plotchar`
+  - `plotarrow`
+- Registration does not mean full TradingView-equivalent drawing behavior is complete.
 
-## strategy.* (6 functions)
+### `strategy.*`
 
-| Function | Status | Notes |
-|----------|--------|-------|
-| `strategy` | ✅ | Strategy declaration with title, overlay, capital |
-| `strategy.close` | ✅ | Close position by id |
-| `strategy.entry` | ✅ | Entry order with id, direction, qty |
-| `strategy.exit` | ✅ | Exit order with id, from_entry |
-| `strategy.long` | ✅ | Constant for long direction |
-| `strategy.short` | ✅ | Constant for short direction |
+- Current subset is:
+  - `strategy`
+  - `strategy.entry`
+  - `strategy.close`
+  - `strategy.exit`
+  - `strategy.long`
+  - `strategy.short`
+- This remains a signal-level subset, not a claim of full strategy parity.
 
-## str.* (16 functions)
+## What this file fixes
 
-| Function | Status | Notes |
-|----------|--------|-------|
-| `str.concat` | ✅ | Unit tested |
-| `str.contains` | ✅ | Unit tested |
-| `str.ends_with` | ✅ | Unit tested |
-| `str.join` | ✅ | Unit tested |
-| `str.length` | ✅ | Unit tested |
-| `str.lower` | ✅ | Unit tested |
-| `str.replace` | ✅ | Unit tested |
-| `str.split` | ✅ | Unit tested |
-| `str.starts_with` | ✅ | Unit tested |
-| `str.substring` | ✅ | Unit tested |
-| `str.tonumber` | ✅ | Unit tested |
-| `str.tostring` | ✅ | Unit tested |
-| `str.trim` | ✅ | Unit tested |
-| `str.trim_end` | ✅ | Unit tested |
-| `str.trim_start` | ✅ | Unit tested |
-| `str.upper` | ✅ | Unit tested |
+This file replaces the earlier misleading summary that implied:
 
-## ta.* (28 functions)
+- listed functions == full namespace coverage
+- `~132 complete / 0 missing`
 
-| Function | Status | Notes |
-|----------|--------|-------|
-| `ta.atr` | ✅ | Golden test: atr_14 |
-| `ta.barssince` | ✅ | |
-| `ta.bb` | ✅ | Golden test: bbands_20_2 |
-| `ta.cci` | ✅ | Golden test: cci_20 |
-| `ta.change` | ✅ | Golden test: change_2 |
-| `ta.cum` | ✅ | Golden test: cum_volume |
-| `ta.crossover` | ✅ | |
-| `ta.crossunder` | ✅ | |
-| `ta.dmi` | ✅ | Golden test: dmi_5_5 |
-| `ta.ema` | ✅ | Golden test: ema_12 |
-| `ta.highest` | ✅ | Golden test: highest_10 |
-| `ta.highestbars` | ✅ | Golden test: highestbars_10 |
-| `ta.lowest` | ✅ | Golden test: lowest_10 |
-| `ta.lowestbars` | ✅ | Golden test: lowestbars_10 |
-| `ta.macd` | ✅ | Golden test: macd_12_26_9 |
-| `ta.mfi` | ✅ | Golden test: mfi_14 |
-| `ta.mom` | ✅ | Golden test: mom_10 |
-| `ta.obv` | ✅ | Golden test: obv_basic (namespace variable) |
-| `ta.pvt` | ✅ | Golden test: pvt_basic (namespace variable) |
-| `ta.roc` | ✅ | Golden test: roc_10 |
-| `ta.rma` | ✅ | Unit tested, uses Wilder smoothing (alpha=1/N) |
-| `ta.rsi` | ✅ | Golden test: rsi_14 |
-| `ta.sma` | ✅ | Golden test: sma_14, sma_manual |
-| `ta.stoch` | ✅ | Golden test: stoch_14_3_3 |
-| `ta.supertrend` | ✅ | Golden test: supertrend_3_5 |
-| `ta.tr` | ✅ | Golden test: tr_basic |
-| `ta.vwma` | ✅ | Golden test: vwma_10 |
-| `ta.wma` | ✅ | Unit tested |
+That framing was inaccurate because several namespaces had already grown beyond the rows listed there.
 
----
+## Next work
 
-## Summary by Namespace
-
-| Namespace | Functions | ✅ Complete | 🟨 Partial | ⛔ Missing |
-|-----------|-----------|-------------|------------|------------|
-| array | 23 | 23 | 0 | 0 |
-| color | 13 | 13 | 0 | 0 |
-| input | 8 | 8 | 0 | 0 |
-| map | 11 | 11 | 0 | 0 |
-| math | 29 | 29 | 0 | 0 |
-| plot | 1 | 1 | 0 | 0 |
-| strategy | 6 | 6 | 0 | 0 |
-| str | 16 | 16 | 0 | 0 |
-| ta | 28 | 28 | 0 | 0 |
-| **Total** | **~132** | **~132** | **0** | **0** |
-
----
-
-## Next Steps (Phase 5)
-
-Per AGENTS.md Phase 5 goals:
-
-1. **P0: array.*** - Core data operations, high priority
-2. **P1: color.*, input.*** - Common functionality
-3. **P2: map.*, str.*** - Already have large subsets
-4. **Ongoing: math.*, ta.*** - Maintain and expand golden test coverage
-
-Each new function should include:
-- Implementation in `crates/pine-stdlib/src/`
-- Unit tests in the same file
-- Golden test script in `tests/scripts/stdlib/`
-- Entry in this coverage table
+1. Add a generated export so this registry snapshot can be refreshed automatically.
+2. Split verification further into:
+   - registered only
+   - unit-covered
+   - script-covered
+   - golden-covered
+3. Keep this file aligned with:
+   - [API_COVERAGE.md](./API_COVERAGE.md)
+   - [V6_ALIGNMENT.md](./V6_ALIGNMENT.md)
+   - `docs/api-coverage/*.md`

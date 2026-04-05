@@ -2,7 +2,7 @@
 //!
 //! This module compiles Pine Script AST into VM bytecode.
 
-use pine_parser::ast::{self, AssignOp, BinOp, Expr, Lit, Stmt, UnaryOp};
+use pine_parser::ast::{self, AssignOp, BinOp, Expr, Lit, Stmt, UnaryOp, VarKind};
 use pine_runtime::value::Value;
 
 use crate::compiler::{BinaryOp as VmBinOp, Compiler, UnaryOp as VmUnaryOp};
@@ -32,27 +32,58 @@ pub fn compile_script(script: &ast::Script) -> Result<Compiler, CompileError> {
 /// Compile a single statement
 fn compile_stmt(compiler: &mut Compiler, stmt: &Stmt) -> Result<(), CompileError> {
     match stmt {
-        Stmt::VarDecl { name, init, .. } => {
+        Stmt::VarDecl {
+            name, kind, init, ..
+        } => {
+            let is_persistent = matches!(kind, VarKind::Var | VarKind::Varip);
             let is_series_expr = init
                 .as_ref()
                 .map(|expr| contains_series_reference(compiler, expr))
                 .unwrap_or(false);
-            if is_series_expr {
+            let should_track_as_series = is_persistent || is_series_expr;
+            if should_track_as_series {
                 compiler.mark_series_var(&name.name);
             }
-            if let Some(init_expr) = init {
-                compile_expr(compiler, init_expr)?;
-                if is_series_expr {
+
+            let value_slot = compiler.declare_var(&name.name);
+
+            if is_persistent {
+                let init_slot = compiler.declare_var(format!(
+                    "__var_init_{}_{}",
+                    name.name,
+                    compiler.chunk().current_pos()
+                ));
+                compiler.compile_load_slot(init_slot);
+                let skip_init = compiler.compile_jump(crate::compiler::JumpOp::IfTrue);
+
+                if let Some(init_expr) = init {
+                    compile_expr(compiler, init_expr)?;
+                } else {
+                    compiler.compile_const(Value::Na);
+                }
+                if should_track_as_series {
                     compiler.compile_dup();
                 }
+                compiler.compile_store_slot(value_slot);
+                if should_track_as_series {
+                    compiler.compile_update_user_series(&name.name);
+                }
+                compiler.compile_const(Value::Bool(true));
+                compiler.compile_store_slot(init_slot);
+                compiler.patch_jump(skip_init);
             } else {
-                compiler.compile_const(Value::Na);
-            }
-            compiler.compile_var_decl(&name.name);
-            // If the variable is assigned a series expression, update it in context
-            // so that ta.* functions can access its history
-            if is_series_expr {
-                compiler.compile_update_user_series(&name.name);
+                if let Some(init_expr) = init {
+                    compile_expr(compiler, init_expr)?;
+                    if should_track_as_series {
+                        compiler.compile_dup();
+                    }
+                } else {
+                    compiler.compile_const(Value::Na);
+                }
+                compiler.compile_store_slot(value_slot);
+                if should_track_as_series {
+                    compiler.compile_update_user_series(&name.name);
+                }
             }
             Ok(())
         }
@@ -83,14 +114,16 @@ fn compile_stmt(compiler: &mut Compiler, stmt: &Stmt) -> Result<(), CompileError
                         compile_expr(compiler, value)?;
                     }
                     let is_series_expr = contains_series_reference(compiler, value);
-                    if is_series_expr {
+                    let should_update_series =
+                        is_series_expr || compiler.is_series_var(&ident.name);
+                    if should_update_series {
                         compiler.mark_series_var(&ident.name);
                         compiler.compile_dup();
                     }
                     if !compiler.compile_store_var(&ident.name) {
                         return Err(CompileError::UndefinedVariable(ident.name.clone()));
                     }
-                    if is_series_expr {
+                    if should_update_series {
                         compiler.compile_update_user_series(&ident.name);
                     }
                     Ok(())
@@ -463,7 +496,15 @@ fn compile_expr(compiler: &mut Compiler, expr: &Expr) -> Result<(), CompileError
                             }
                             _ => {}
                         }
-                        // For other namespaces (ta, math), push namespace value
+                        if base_ident.name == "ta" && matches!(field.name.as_str(), "obv" | "pvt") {
+                            compiler.compile_const(Value::SeriesRef("close".to_string()));
+                            compiler.compile_const(Value::SeriesRef("volume".to_string()));
+                            let func_idx = compiler.register_external_function(&full_name);
+                            compiler.compile_call(func_idx, 2);
+                            return Ok(());
+                        }
+
+                        // Preserve namespace values for unsupported bare references.
                         compiler.compile_const(Value::Namespace(full_name));
                         Ok(())
                     }
@@ -494,30 +535,11 @@ fn compile_expr(compiler: &mut Compiler, expr: &Expr) -> Result<(), CompileError
                 ) {
                     let full_name = format!("{}.{}", base_ident.name, method.name);
 
-                    // Handle special TA functions that need implicit high/low/close
-                    let needs_ohlc = matches!(method.name.as_str(), "tr" | "atr");
-
-                    // Inject implicit arguments for OHLC-dependent functions FIRST
-                    // (they become the first 3 arguments)
-                    if base_ident.name == "ta" && needs_ohlc {
-                        // Inject high, low, close as SeriesRef
-                        compiler.compile_const(Value::SeriesRef("high".to_string()));
-                        compiler.compile_const(Value::SeriesRef("low".to_string()));
-                        compiler.compile_const(Value::SeriesRef("close".to_string()));
-                    }
-
-                    for (idx, arg) in args.iter().enumerate() {
-                        let arg_index = idx + if needs_ohlc { 3 } else { 0 };
-                        if ta_method_needs_series_arg(&full_name, arg_index) {
-                            compile_series_function_arg(compiler, &arg.value)?;
-                        } else {
-                            compile_expr(compiler, &arg.value)?;
-                        }
-                    }
+                    let injected_args = compile_ta_method_call_args(compiler, &method.name, args)?;
 
                     // Call as external function
                     let func_idx = compiler.register_external_function(&full_name);
-                    let total_args = args.len() + if needs_ohlc { 3 } else { 0 };
+                    let total_args = args.len() + injected_args;
                     compiler.compile_call(func_idx, total_args);
                     return Ok(());
                 }
@@ -843,6 +865,9 @@ fn compile_fn_def(
     params: &[ast::Param],
     body: &ast::FnBody,
 ) -> Result<(), CompileError> {
+    // Skip over function bodies during top-level execution.
+    let skip_body_jump = compiler.compile_jump(crate::compiler::JumpOp::Unconditional);
+
     // Reserve a function slot first (for forward references)
     let func_idx = compiler.reserve_function_slot();
 
@@ -855,8 +880,8 @@ fn compile_fn_def(
     // Patch the function address
     compiler.patch_function_address(func_idx, body_start);
 
-    // Enter a new scope for the function body
-    compiler.enter_scope();
+    // Enter a function-local scope for the body
+    compiler.enter_function_scope();
 
     // Declare parameters as local variables
     for param in params {
@@ -871,19 +896,28 @@ fn compile_fn_def(
             compiler.compile_op(OpCode::Return);
         }
         ast::FnBody::Block(block) => {
-            // Block body: =>
-            //   ... statements ...
-            //   return expr (optional)
-            for stmt in &block.stmts {
-                compile_stmt(compiler, stmt)?;
+            for (idx, stmt) in block.stmts.iter().enumerate() {
+                let is_last = idx + 1 == block.stmts.len();
+                if is_last {
+                    if let Stmt::Expr(expr) = stmt {
+                        compile_expr(compiler, expr)?;
+                    } else {
+                        compile_stmt(compiler, stmt)?;
+                        compiler.compile_const(Value::Na);
+                    }
+                } else {
+                    compile_stmt(compiler, stmt)?;
+                }
             }
-            // If last statement wasn't a return, add one
             compiler.compile_op(OpCode::Return);
         }
     }
 
     // Exit the function scope
     compiler.exit_scope();
+
+    // Resume top-level execution after the function body.
+    compiler.patch_jump(skip_body_jump);
 
     Ok(())
 }
@@ -971,9 +1005,49 @@ fn ta_method_needs_series_arg(func_name: &str, arg_index: usize) -> bool {
         | "ta.lowest" | "ta.highestbars" | "ta.lowestbars" => arg_index == 0,
         "ta.macd" => arg_index == 0,
         "ta.stoch" => arg_index <= 2,
+        "ta.vwma" | "ta.mfi" => arg_index <= 1,
         "ta.crossover" | "ta.crossunder" => arg_index <= 1,
         "ta.barssince" => arg_index == 0,
         _ => false,
+    }
+}
+
+fn compile_ta_method_call_args(
+    compiler: &mut Compiler,
+    method_name: &str,
+    args: &[ast::Arg],
+) -> Result<usize, CompileError> {
+    match method_name {
+        "tr" | "atr" | "dmi" | "supertrend" => {
+            compiler.compile_const(Value::SeriesRef("high".to_string()));
+            compiler.compile_const(Value::SeriesRef("low".to_string()));
+            compiler.compile_const(Value::SeriesRef("close".to_string()));
+            for arg in args {
+                compile_expr(compiler, &arg.value)?;
+            }
+            Ok(3)
+        }
+        "vwma" | "mfi" => {
+            if let Some(first) = args.first() {
+                compile_series_function_arg(compiler, &first.value)?;
+            }
+            compiler.compile_const(Value::SeriesRef("volume".to_string()));
+            for arg in args.iter().skip(1) {
+                compile_expr(compiler, &arg.value)?;
+            }
+            Ok(1)
+        }
+        _ => {
+            let full_name = format!("ta.{method_name}");
+            for (idx, arg) in args.iter().enumerate() {
+                if ta_method_needs_series_arg(&full_name, idx) {
+                    compile_series_function_arg(compiler, &arg.value)?;
+                } else {
+                    compile_expr(compiler, &arg.value)?;
+                }
+            }
+            Ok(0)
+        }
     }
 }
 

@@ -1822,6 +1822,7 @@ dependencies = [
  "pine-runtime",
  "pine-sema",
  "pine-stdlib",
+ "pine-vm",
  "serde",
  "serde_json",
 ]

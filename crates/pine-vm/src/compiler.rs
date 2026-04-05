@@ -8,6 +8,9 @@ use crate::VmError;
 use pine_runtime::value::Value;
 use std::collections::HashSet;
 
+/// Sentinel offset used to encode external function calls in bytecode.
+pub const EXTERNAL_FUNCTION_BASE: usize = usize::MAX / 2;
+
 /// A bytecode instruction
 #[derive(Debug, Clone)]
 pub struct Instruction {
@@ -220,10 +223,18 @@ impl Compiler {
         self.scopes.push(Scope::with_parent(parent));
     }
 
+    /// Enter a function-local scope whose slots are relative to the call frame.
+    pub fn enter_function_scope(&mut self) {
+        self.scopes.push(Scope::new());
+    }
+
     /// Exit the current scope
     pub fn exit_scope(&mut self) {
         if self.scopes.len() > 1 {
-            self.scopes.pop();
+            let exited = self.scopes.pop().expect("No scope available");
+            if let Some(parent) = self.scopes.last_mut() {
+                parent.next_slot = parent.next_slot.max(exited.next_slot);
+            }
         }
     }
 
@@ -693,7 +704,8 @@ impl Compiler {
     }
 
     /// Register an external function and return its index
-    /// External function indices start after all user-defined functions
+    /// External function indices live in a dedicated range so later function
+    /// declarations do not change already-emitted call targets.
     pub fn register_external_function(&mut self, name: impl Into<String>) -> usize {
         let name = name.into();
         // Check if already registered
@@ -703,11 +715,11 @@ impl Compiler {
             .iter()
             .position(|n| n == &name)
         {
-            return self.chunk.function_addresses.len() + idx;
+            return EXTERNAL_FUNCTION_BASE + idx;
         }
         let idx = self.chunk.external_functions.len();
         self.chunk.external_functions.push(name);
-        self.chunk.function_addresses.len() + idx
+        EXTERNAL_FUNCTION_BASE + idx
     }
 
     /// Get the list of external functions (for VM registration)

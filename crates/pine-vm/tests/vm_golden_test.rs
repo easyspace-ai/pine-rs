@@ -500,3 +500,273 @@ fn test_vm_golden_for_na_math() {
     })
     .expect("for_na_math test failed");
 }
+
+#[test]
+fn test_vm_golden_while_loop() {
+    run_golden_test(&GoldenTestCase {
+        name: "while_loop",
+        golden_path: "tests/golden/while_loop.csv",
+        script_path: "tests/scripts/language/while_loop.pine",
+    })
+    .expect("while_loop test failed");
+}
+
+#[test]
+fn test_vm_golden_switch_basic() {
+    run_golden_test(&GoldenTestCase {
+        name: "switch_basic",
+        golden_path: "tests/golden/switch_basic.csv",
+        script_path: "tests/scripts/language/switch_basic.pine",
+    })
+    .expect("switch_basic test failed");
+}
+
+#[test]
+fn test_vm_golden_udf_basic() {
+    run_golden_test(&GoldenTestCase {
+        name: "udf_basic",
+        golden_path: "tests/golden/udf_basic.csv",
+        script_path: "tests/scripts/language/udf_basic.pine",
+    })
+    .expect("udf_basic test failed");
+}
+
+#[test]
+fn test_vm_golden_bbw_20_2() {
+    run_golden_test(&GoldenTestCase {
+        name: "bbw_20_2",
+        golden_path: "tests/golden/bbw_20_2.csv",
+        script_path: "tests/scripts/stdlib/ta/bbw_20_2.pine",
+    })
+    .expect("bbw_20_2 test failed");
+}
+
+#[test]
+fn test_vm_golden_change_2() {
+    run_golden_test(&GoldenTestCase {
+        name: "change_2",
+        golden_path: "tests/golden/change_2.csv",
+        script_path: "tests/scripts/stdlib/ta/change_2.pine",
+    })
+    .expect("change_2 test failed");
+}
+
+#[test]
+fn test_vm_golden_correlation_10() {
+    run_golden_test(&GoldenTestCase {
+        name: "correlation_10",
+        golden_path: "tests/golden/correlation_10.csv",
+        script_path: "tests/scripts/stdlib/ta/correlation_10.pine",
+    })
+    .expect("correlation_10 test failed");
+}
+
+#[test]
+fn test_vm_golden_cum_volume() {
+    run_golden_test(&GoldenTestCase {
+        name: "cum_volume",
+        golden_path: "tests/golden/cum_volume.csv",
+        script_path: "tests/scripts/stdlib/ta/cum_volume.pine",
+    })
+    .expect("cum_volume test failed");
+}
+
+#[test]
+fn test_vm_golden_dev_10() {
+    run_golden_test(&GoldenTestCase {
+        name: "dev_10",
+        golden_path: "tests/golden/dev_10.csv",
+        script_path: "tests/scripts/stdlib/ta/dev_10.pine",
+    })
+    .expect("dev_10 test failed");
+}
+
+#[test]
+fn test_vm_golden_dmi_5_5() {
+    run_golden_test(&GoldenTestCase {
+        name: "dmi_5_5",
+        golden_path: "tests/golden/dmi_5_5.csv",
+        script_path: "tests/scripts/stdlib/ta/dmi_5_5.pine",
+    })
+    .expect("dmi_5_5 test failed");
+}
+
+#[test]
+fn test_vm_golden_linreg_10() {
+    run_golden_test(&GoldenTestCase {
+        name: "linreg_10",
+        golden_path: "tests/golden/linreg_10.csv",
+        script_path: "tests/scripts/stdlib/ta/linreg_10.pine",
+    })
+    .expect("linreg_10 test failed");
+}
+
+#[test]
+fn test_vm_golden_median_10() {
+    run_golden_test(&GoldenTestCase {
+        name: "median_10",
+        golden_path: "tests/golden/median_10.csv",
+        script_path: "tests/scripts/stdlib/ta/median_10.pine",
+    })
+    .expect("median_10 test failed");
+}
+
+#[test]
+fn test_vm_golden_mfi_14() {
+    run_golden_test(&GoldenTestCase {
+        name: "mfi_14",
+        golden_path: "tests/golden/mfi_14.csv",
+        script_path: "tests/scripts/stdlib/ta/mfi_14.pine",
+    })
+    .expect("mfi_14 test failed");
+}
+
+#[test]
+fn test_vm_golden_obv_basic() {
+    run_golden_test(&GoldenTestCase {
+        name: "obv_basic",
+        golden_path: "tests/golden/obv_basic.csv",
+        script_path: "tests/scripts/stdlib/ta/obv_basic.pine",
+    })
+    .expect("obv_basic test failed");
+}
+
+#[test]
+fn test_vm_golden_percentrank_10() {
+    run_golden_test(&GoldenTestCase {
+        name: "percentrank_10",
+        golden_path: "tests/golden/percentrank_10.csv",
+        script_path: "tests/scripts/stdlib/ta/percentrank_10.pine",
+    })
+    .expect("percentrank_10 test failed");
+}
+
+#[test]
+fn test_vm_golden_pvt_basic() {
+    run_golden_test(&GoldenTestCase {
+        name: "pvt_basic",
+        golden_path: "tests/golden/pvt_basic.csv",
+        script_path: "tests/scripts/stdlib/ta/pvt_basic.pine",
+    })
+    .expect("pvt_basic test failed");
+}
+
+#[test]
+fn test_vm_golden_range_10() {
+    run_golden_test(&GoldenTestCase {
+        name: "range_10",
+        golden_path: "tests/golden/range_10.csv",
+        script_path: "tests/scripts/stdlib/ta/range_10.pine",
+    })
+    .expect("range_10 test failed");
+}
+
+#[test]
+fn test_vm_golden_rising_falling() {
+    run_golden_test(&GoldenTestCase {
+        name: "rising_falling",
+        golden_path: "tests/golden/rising_falling.csv",
+        script_path: "tests/scripts/stdlib/ta/rising_falling.pine",
+    })
+    .expect("rising_falling test failed");
+}
+
+#[test]
+fn test_vm_golden_rma_14() {
+    run_golden_test(&GoldenTestCase {
+        name: "rma_14",
+        golden_path: "tests/golden/rma_14.csv",
+        script_path: "tests/scripts/stdlib/ta/rma_14.pine",
+    })
+    .expect("rma_14 test failed");
+}
+
+#[test]
+fn test_vm_golden_roc_10() {
+    run_golden_test(&GoldenTestCase {
+        name: "roc_10",
+        golden_path: "tests/golden/roc_10.csv",
+        script_path: "tests/scripts/stdlib/ta/roc_10.pine",
+    })
+    .expect("roc_10 test failed");
+}
+
+#[test]
+fn test_vm_golden_stdev_10() {
+    run_golden_test(&GoldenTestCase {
+        name: "stdev_10",
+        golden_path: "tests/golden/stdev_10.csv",
+        script_path: "tests/scripts/stdlib/ta/stdev_10.pine",
+    })
+    .expect("stdev_10 test failed");
+}
+
+#[test]
+fn test_vm_golden_supertrend_3_5() {
+    run_golden_test(&GoldenTestCase {
+        name: "supertrend_3_5",
+        golden_path: "tests/golden/supertrend_3_5.csv",
+        script_path: "tests/scripts/stdlib/ta/supertrend_3_5.pine",
+    })
+    .expect("supertrend_3_5 test failed");
+}
+
+#[test]
+fn test_vm_golden_swma_basic() {
+    run_golden_test(&GoldenTestCase {
+        name: "swma_basic",
+        golden_path: "tests/golden/swma_basic.csv",
+        script_path: "tests/scripts/stdlib/ta/swma_basic.pine",
+    })
+    .expect("swma_basic test failed");
+}
+
+#[test]
+fn test_vm_golden_tsi_13_25() {
+    run_golden_test(&GoldenTestCase {
+        name: "tsi_13_25",
+        golden_path: "tests/golden/tsi_13_25.csv",
+        script_path: "tests/scripts/stdlib/ta/tsi_13_25.pine",
+    })
+    .expect("tsi_13_25 test failed");
+}
+
+#[test]
+fn test_vm_golden_variance_10() {
+    run_golden_test(&GoldenTestCase {
+        name: "variance_10",
+        golden_path: "tests/golden/variance_10.csv",
+        script_path: "tests/scripts/stdlib/ta/variance_10.pine",
+    })
+    .expect("variance_10 test failed");
+}
+
+#[test]
+fn test_vm_golden_vwma_10() {
+    run_golden_test(&GoldenTestCase {
+        name: "vwma_10",
+        golden_path: "tests/golden/vwma_10.csv",
+        script_path: "tests/scripts/stdlib/ta/vwma_10.pine",
+    })
+    .expect("vwma_10 test failed");
+}
+
+#[test]
+fn test_vm_golden_wma_10() {
+    run_golden_test(&GoldenTestCase {
+        name: "wma_10",
+        golden_path: "tests/golden/wma_10.csv",
+        script_path: "tests/scripts/stdlib/ta/wma_10.pine",
+    })
+    .expect("wma_10 test failed");
+}
+
+#[test]
+fn test_vm_golden_wpr_14() {
+    run_golden_test(&GoldenTestCase {
+        name: "wpr_14",
+        golden_path: "tests/golden/wpr_14.csv",
+        script_path: "tests/scripts/stdlib/ta/wpr_14.pine",
+    })
+    .expect("wpr_14 test failed");
+}
