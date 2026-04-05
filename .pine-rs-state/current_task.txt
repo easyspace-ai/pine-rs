@@ -1,48 +1,43 @@
 Phase 4 当前任务（2026-04-05）
 
 主任务
-- 保持内核与验证门禁稳定，同时把 strategy 回测结果补成 playground 可直接验收的完整能力
+- 恢复并维持 `./scripts/dev_verify.sh --full` 全绿
+- 在不放松门禁的前提下，把 `pine-vm` 提升到可替换标准
+- 按官方 Pine Script v6 口径继续完成语法与指标基建收敛
 
 当前口径
 - `pine-tv` 仍是验证壳，不作为阶段完成标准
-- 当前对 strategy 的投入以“验证内核结果是否可消费、可核对”为边界
-- 指标矩阵继续保留已完成批次，不暂停门禁，但短期主焦点切到 strategy 回测展示与结果正确性
+- strategy 仅保留已完成能力与必要回归，不再作为当前主焦点
+- VM 已不再只是实验后端；后续新增脚本与关键修复默认同时要求 eval / VM 一致
+- CLI / API 已默认走 VM；eval 保留为显式对照与回退路径
 
-本轮已完成
-- playground 右侧 `PINE SCRIPT` 已支持实时脚本会话、会跟随当前 `symbol/timeframe`
-- strategy 结果已包含：
-  - 策略报告
-  - 已完成交易清单
-  - 主图入场/出场标记
-- WebSocket 与前端消费链路已支持 strategy 结果持续更新
-- strategy 回测结果已继续补齐：
-  - closed-equity 曲线
-  - Long / Short 分侧统计
-  - 平均持有 bars
-  - 手续费与滑点成本
-  - playground Performance 面板展示权益曲线与分侧表现
-  - playground Trades 面板展示毛收益、手续费、滑点与净收益
-- 新增 playground 可直接运行的策略例子：
-  - `pine-tv/static/examples/strategy/bollinger_reversion.pine`
+本次核对后的事实
+- Phase 3 收尾项并非待做：黄金配对、`for` inclusive 回归、`ta.highest/lowest/highestbars/lowestbars` 黄金均已在仓库中
+- `ta.*`、`array.*`、`str.*`、`strategy.*` 的实际覆盖已明显高于旧估计
+- `pine-vm` 已通过同批黄金与 script parity：44 / 44 全绿
+- 当前剩余工作从“补明显错误”转为“在默认已切 VM 的前提下继续补覆盖厚度、对照验证与替换判定”
+- 覆盖文档与阶段文档仍未充分反映 VM 现状与后续切换门槛
 
 当前验收标准
-- 在 playground 运行 `strategy(...)` 脚本后，页面可直接看到：
-  - 回测报告
-  - 交易历史清单
-  - 主图入场/出场标记
-  - 权益曲线
-  - Long / Short 分侧统计
+- `./scripts/dev_verify.sh --full` 通过
+- `cargo test -p pine-vm --test vm_golden_test --test vm_script_parity` 通过
+- `docs/V6_ALIGNMENT.md`、`docs/API_COVERAGE.md`、`docs/FUNCTION_COVERAGE.md` 对当前能力描述一致
+- VM 可替换标准明确且可追溯
+- 入口层已具备“双路可切换、单路可回退”的验证基础
 
 下一批执行
-- Batch 1：补 strategy 成交规则细节，例如反手、部分平仓、pyramiding
-- Batch 2：补手续费、滑点与更真实的成交价模型
-- Batch 3：补更多策略样例与对应回归，确保 playground 验收可重复
+- Batch 1：把 VM 默认主路径与可替换标准写入任务与对齐文档
+- Batch 2：把新增关键脚本默认纳入 VM 回归，继续补厚默认切换后的覆盖
+- Batch 3：继续补语义或语法剩余缺口，优先 `type prefix`、对象类型名、脚本入口语义边界
+- Batch 4：在覆盖厚度满足后，评估进一步缩减 eval 仅保留为诊断回退路径
 
 当前最高优先级
-- strategy 回测结果可读性与正确性
-- 全量验证门禁持续稳定
+- 全量验证门禁恢复稳定
+- VM 黄金与 parity 不回退
+- 文档口径、状态文件、实际回归三者一致
+- 为 VM 成为主路径建立明确切换门槛
 
 参考文档
 - docs/V6_ALIGNMENT.md
+- docs/API_COVERAGE.md
 - docs/FUNCTION_COVERAGE.md
-- docs/EXECUTION_BOUNDARY.md

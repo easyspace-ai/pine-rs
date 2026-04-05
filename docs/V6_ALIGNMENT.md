@@ -52,7 +52,7 @@
 | S3 | **UDF 闭包 / 调用点隔离** | TV 规则 | 有调用点隔离实现；**与 TV 全语义仍有差距** | 🟨 |
 | S4 | **UDT / `method`** | 与官方对象模型一致 | 解析/执行 **未闭环** | 🟨 |
 | S5 | **`request.*`** | 多周期等 | AGENTS：Phase 5 前可 **na 占位**，与 TV **不等价** | 🔜 |
-| S6 | **`pine-vm` 相对 eval** | 可选加速 | parity 见 AGENTS §12.4 | 🟨 |
+| S6 | **`pine-vm` 相对 eval** | 对同批脚本与黄金结果一致，满足入口切换前提 | ✅ 已完成 44 组黄金 + 44 组 script parity；CLI / API 已默认走 VM，eval 保留显式切换与回退，下一步是继续补厚覆盖并验证是否足以替换 eval | ✅ |
 
 ---
 
@@ -106,7 +106,19 @@
 | **门禁** | `./scripts/dev_verify.sh --full` **永远不降级**（AGENTS §12.3） |
 | **语法** | TV 官方样例 / 社区片段 **parse + sema** 抽样集（待建目录或 fixtures） |
 | **数值** | **黄金** + 容差约定（`compare_golden.py`） |
-| **双路径** | eval / vm **parity**（AGENTS §12.4） |
+| **双路径** | eval / vm **parity**（AGENTS §12.4）；当前固定回归为 **44 组黄金 + 44 组 script parity** |
+
+### 6.1 `pine-vm` 可替换标准
+
+只有同时满足以下条件，才可把 VM 当作默认执行引擎推进：
+
+1. **同批黄金一致**：`cargo test -p pine-vm --test vm_golden_test` 全绿。
+2. **同批脚本一致**：`cargo test -p pine-vm --test vm_script_parity` 全绿，且基准是 `pine-eval`。
+3. **总门禁不退化**：`./scripts/dev_verify.sh --full` 全绿。
+4. **入口层可回退**：CLI / API 切换前保留 eval 对照或回退开关。
+5. **新增脚本不单走 eval**：后续新增关键黄金脚本默认同步纳入 VM 回归。
+
+**当前状态**：前 4 条已达到；第 5 条是默认切换前的剩余任务。
 
 ---
 
@@ -114,7 +126,7 @@
 
 | 阶段（建议命名） | 重点 | 与当前 AGENTS |
 |------------------|------|----------------|
-| **4 — Syntax-native 指标基建** | §1 **L1–L5**（UDF `=>`、`switch` TV 形、`for..in`、`else if`、import/export 形态）；已完成的指标语义必须与官方一致；VM parity 保持但不扩张 | 当前 Phase **4** |
+| **4 — Syntax-native 指标基建** | §1 **L1–L5**（UDF `=>`、`switch` TV 形、`for..in`、`else if`、import/export 形态）；已完成的指标语义必须与官方一致；VM 已完成当前批次 parity，下一步进入可替换标准收尾 | 当前 Phase **4** |
 | **5 — API sweep** | §3 按 namespace 扩函数 + **函数级 coverage 表** | 语法对齐后接续 |
 | **6 — Strategy subset** | 信号级 strategy、与 GUIDE 非目标 **显式修订** 后 | 长周期 |
 

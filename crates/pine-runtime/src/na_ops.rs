@@ -155,6 +155,8 @@ pub fn eq(lhs: &Value, rhs: &Value) -> Value {
     if lhs.is_na() || rhs.is_na() {
         // na == na is false, na == x is false
         Value::Bool(false)
+    } else if let (Some(a), Some(b)) = (lhs.as_float(), rhs.as_float()) {
+        Value::Bool(a == b)
     } else {
         Value::Bool(lhs == rhs)
     }
@@ -167,6 +169,8 @@ pub fn ne(lhs: &Value, rhs: &Value) -> Value {
     if lhs.is_na() || rhs.is_na() {
         // na != na is true, na != x is true
         Value::Bool(true)
+    } else if let (Some(a), Some(b)) = (lhs.as_float(), rhs.as_float()) {
+        Value::Bool(a != b)
     } else {
         Value::Bool(lhs != rhs)
     }

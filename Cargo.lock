@@ -1822,6 +1822,7 @@ dependencies = [
  "pine-runtime",
  "pine-sema",
  "pine-stdlib",
+ "pine-vm",
  "serde",
  "serde_json",
 ]
@@ -1972,6 +1973,7 @@ dependencies = [
  "pine-runtime",
  "pine-stdlib",
  "serde",
+ "serde_json",
  "smallvec",
  "thiserror",
 ]

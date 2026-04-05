@@ -73,8 +73,8 @@ async fn main() {
     tracing::info!(
         "Pine execution backend: {}",
         match mode {
-            ExecutionMode::Eval => "pine-eval (default; set PINE_TV_MODE=vm for VM)",
-            ExecutionMode::Vm => "pine-vm (PINE_TV_MODE=vm)",
+            ExecutionMode::Eval => "pine-eval (fallback; set PINE_TV_MODE=eval)",
+            ExecutionMode::Vm => "pine-vm (default; set PINE_TV_MODE=eval for fallback)",
         }
     );
     let data_loader = Arc::new(DataLoader::new(config.data_path));

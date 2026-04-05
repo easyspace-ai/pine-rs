@@ -1,6 +1,6 @@
 //! Tests for AST to Bytecode compiler
 
-use pine_parser::ast::{BinOp, Block, Expr, Ident, Lit, Stmt};
+use pine_parser::ast::{Arg, BinOp, Block, Expr, FnBody, Ident, Lit, Param, Stmt};
 use pine_runtime::value::Value;
 use pine_vm::ast_compiler::compile_script;
 use pine_vm::vm::execute_chunk;
@@ -26,6 +26,27 @@ fn bin_op(op: BinOp, lhs: Expr, rhs: Expr) -> Expr {
         lhs: Box::new(lhs),
         rhs: Box::new(rhs),
         span: Span::default(),
+    }
+}
+
+fn fn_call(name: &str, args: Vec<Expr>) -> Expr {
+    use pine_lexer::Span;
+    Expr::FnCall {
+        func: Box::new(ident(name)),
+        args: args
+            .into_iter()
+            .map(|value| Arg { name: None, value })
+            .collect(),
+        span: Span::default(),
+    }
+}
+
+fn param(name: &str) -> Param {
+    use pine_lexer::Span;
+    Param {
+        name: Ident::new(name, Span::default()),
+        type_ann: None,
+        default: None,
     }
 }
 
@@ -163,4 +184,40 @@ fn test_compile_while_loop() {
     let result = execute_chunk(chunk).expect("Execution failed");
 
     assert_eq!(result, Some(Value::Int(15)));
+}
+
+#[test]
+fn test_compile_udf_expression_and_block_body() {
+    let script = pine_parser::ast::Script {
+        stmts: vec![
+            Stmt::FnDef {
+                name: Ident::new("diff", pine_lexer::Span::default()),
+                params: vec![param("a"), param("b")],
+                ret_type: None,
+                body: FnBody::Expr(bin_op(BinOp::Sub, ident("a"), ident("b"))),
+                span: pine_lexer::Span::default(),
+            },
+            Stmt::FnDef {
+                name: Ident::new("scale", pine_lexer::Span::default()),
+                params: vec![param("src"), param("factor")],
+                ret_type: None,
+                body: FnBody::Block(make_block(vec![Stmt::Expr(bin_op(
+                    BinOp::Add,
+                    bin_op(BinOp::Mul, ident("src"), ident("factor")),
+                    int_lit(1),
+                ))])),
+                span: pine_lexer::Span::default(),
+            },
+            var_decl("x", fn_call("diff", vec![int_lit(10), int_lit(7)])),
+            var_decl("y", fn_call("scale", vec![int_lit(10), int_lit(2)])),
+            ret(bin_op(BinOp::Add, ident("x"), ident("y"))),
+        ],
+        span: pine_lexer::Span::default(),
+    };
+
+    let compiler = compile_script(&script).expect("Compile failed");
+    let chunk = compiler.finish();
+    let result = execute_chunk(chunk).expect("Execution failed");
+
+    assert_eq!(result, Some(Value::Int(24)));
 }

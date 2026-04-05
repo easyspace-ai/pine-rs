@@ -159,17 +159,17 @@ pub fn execute_script_with_vm(
     // Execute bar-by-bar
     let num_bars = series_data.len();
 
-    // Create a shared context that persists across bars
-    let mut context = ExecutionContext::default_with_config();
+    // Use a single VM so slots can persist across bars like Pine `var`.
+    let mut vm = VM::with_context(ExecutionContext::default_with_config());
+
+    for func_name in &external_functions {
+        vm.register_external_function(func_name);
+    }
+
+    vm.load_chunk(chunk);
 
     for bar_idx in 0..num_bars {
-        // Create VM for this bar, but share the context
-        let mut vm = VM::with_context(context);
-
-        // Register external functions
-        for func_name in &external_functions {
-            vm.register_external_function(func_name);
-        }
+        vm.rewind_for_next_bar();
 
         // Set bar index so series push works correctly
         vm.context_mut().set_bar_index(bar_idx as i64);
@@ -177,8 +177,7 @@ pub fn execute_script_with_vm(
         // Register series values for this bar
         register_series_for_bar(&mut vm, series_data, bar_idx);
 
-        // Load and execute
-        vm.load_chunk(chunk.clone());
+        // Execute the already-loaded script for this bar
         let result = vm.execute();
         if let Err(ref e) = result {
             vm_debug!("DEBUG: VM execution error at bar {}: {:?}", bar_idx, e);
@@ -202,9 +201,6 @@ pub fn execute_script_with_vm(
         }
 
         plot_outputs.next_bar();
-
-        // Extract context for next iteration
-        context = vm.into_context();
     }
 
     Ok(VmExecutionResult {
@@ -252,5 +248,35 @@ fn register_series_for_bar(vm: &mut VM, series_data: &SeriesData, bar_idx: usize
     if let Some(value) = series_data.time.get(bar_idx) {
         vm.context_mut()
             .push_to_series("time", call_site, Value::Int(*value));
+    }
+
+    if let (Some(high), Some(low)) = (series_data.high.get(bar_idx), series_data.low.get(bar_idx)) {
+        vm.context_mut()
+            .push_to_series("hl2", call_site, Value::Float((high + low) / 2.0));
+    }
+
+    if let (Some(high), Some(low), Some(close)) = (
+        series_data.high.get(bar_idx),
+        series_data.low.get(bar_idx),
+        series_data.close.get(bar_idx),
+    ) {
+        vm.context_mut().push_to_series(
+            "hlc3",
+            call_site,
+            Value::Float((high + low + close) / 3.0),
+        );
+    }
+
+    if let (Some(open), Some(high), Some(low), Some(close)) = (
+        series_data.open.get(bar_idx),
+        series_data.high.get(bar_idx),
+        series_data.low.get(bar_idx),
+        series_data.close.get(bar_idx),
+    ) {
+        vm.context_mut().push_to_series(
+            "ohlc4",
+            call_site,
+            Value::Float((open + high + low + close) / 4.0),
+        );
     }
 }

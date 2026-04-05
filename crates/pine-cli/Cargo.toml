@@ -12,6 +12,7 @@ pine-lexer = { path = "../pine-lexer" }
 pine-parser = { path = "../pine-parser" }
 pine-sema = { path = "../pine-sema" }
 pine-eval = { path = "../pine-eval" }
+pine-vm = { path = "../pine-vm" }
 pine-runtime = { path = "../pine-runtime" }
 pine-stdlib = { path = "../pine-stdlib" }
 pine-output = { path = "../pine-output" }

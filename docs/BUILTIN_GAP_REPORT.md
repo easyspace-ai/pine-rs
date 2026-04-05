@@ -4,7 +4,7 @@
 - pine-rs: `FunctionMeta::new` + `#[pine_builtin]` in `crates/pine-stdlib/src`
 
 - PineTS keys: 53
-- pine-rs names (approx): 125
+- pine-rs names (approx): 190
 
 ## In PineTS, not matched in pine-rs heuristic (first 250)
 
@@ -21,14 +21,12 @@
 - `dayofmonth`
 - `dayofweek`
 - `false`
-- `fill`
 - `fixnan`
 - `float`
 - `high`
 - `hl2`
 - `hlc3`
 - `hlcc4`
-- `hline`
 - `hour`
 - `indicator`
 - `input`
@@ -49,7 +47,6 @@
 - `open`
 - `runtime.error`
 - `second`
-- `strategy`
 - `string`
 - `table`
 - `time`
@@ -66,30 +63,48 @@
 
 - `add`
 - `array.avg`
+- `array.binary_search`
 - `array.clear`
 - `array.concat`
 - `array.copy`
+- `array.covariance`
+- `array.every`
 - `array.fill`
 - `array.first`
 - `array.from`
 - `array.get`
+- `array.includes`
+- `array.indexof`
 - `array.insert`
+- `array.join`
 - `array.last`
+- `array.lastindexof`
 - `array.max`
+- `array.median`
 - `array.min`
 - `array.new_bool`
 - `array.new_color`
 - `array.new_float`
 - `array.new_int`
 - `array.new_string`
+- `array.percentrank`
 - `array.pop`
 - `array.push`
+- `array.range`
 - `array.remove`
 - `array.reverse`
 - `array.set`
+- `array.shift`
 - `array.size`
+- `array.slice`
+- `array.some`
 - `array.sort`
+- `array.standardize`
+- `array.stdev`
 - `array.sum`
+- `array.unshift`
+- `array.variance`
+- `bgcolor`
 - `color.a`
 - `color.b`
 - `color.darken`
@@ -141,6 +156,7 @@
 - `math.min`
 - `math.nz`
 - `math.pow`
+- `math.random`
 - `math.round`
 - `math.round_to_nearest`
 - `math.sign`
@@ -150,38 +166,19 @@
 - `math.sum`
 - `math.tan`
 - `math.tanh`
+- `math.todegrees`
+- `math.toradians`
 - `math.tostring`
 - `math.trunc`
 - `plot`
+- `plotarrow`
+- `plotchar`
+- `plotshape`
 - `str.concat`
 - `str.contains`
 - `str.ends_with`
+- `str.endswith`
+- `str.format`
 - `str.join`
 - `str.length`
-- `str.lower`
-- `str.replace`
-- `str.split`
-- `str.starts_with`
-- `str.substring`
-- `str.tonumber`
-- `str.tostring`
-- `str.trim`
-- `str.trim_end`
-- `str.trim_start`
-- `str.upper`
-- `ta.atr`
-- `ta.barssince`
-- `ta.bb`
-- `ta.cci`
-- `ta.crossover`
-- `ta.crossunder`
-- `ta.ema`
-- `ta.highest`
-- `ta.highestbars`
-- `ta.lowest`
-- `ta.lowestbars`
-- `ta.macd`
-- `ta.mom`
-- `ta.rma`
-- `ta.rsi`
-- … 5 more
+- … 67 more

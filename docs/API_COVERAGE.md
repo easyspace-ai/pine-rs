@@ -21,8 +21,8 @@
 |----------------|------|----------------------|
 | **Input** | ✅ | `input.*` 常用子集在 [`pine-stdlib`](../crates/pine-stdlib/src/input.rs) 注册并单测覆盖（见 `FUNCTION_COVERAGE.md`） |
 | **Math** | ✅ | `math.*` 较大子集；含 `math.log` / `math.log10`（与下栏「Log」不同） |
-| **Technical Analysis** | ✔️ | `ta.*` **子集**；关键函数有黄金脚本；距官方 `ta` 全集仍有缺口 |
-| **Array** | ✔️ | 标量数组 CRUD 等已完备；`array.new_box` / `new_label` / `new_line` 等 **对象数组** 多未做（见 `V6_ALIGNMENT.md` §3） |
+| **Technical Analysis** | ✔️ | `ta.*` 已注册 46 个函数，核心指标已有较广黄金覆盖；距官方 `ta` 全集仍有缺口 |
+| **Array** | ✔️ | `array.*` 已注册 42 个函数；标量数组子集较完整，但 `array.new_box` / `new_label` / `new_line` 等对象数组仍未做 |
 | **Box** | ✔️ | [`pine-output`](../crates/pine-output/src/drawing.rs) 有 box 对象与更新语义；脚本侧 **`box.new` / `box.*` 未与 eval 全线贯通** |
 | **Chart** | ❌ | `chart.*` namespace **未实现** |
 | **Color** | ✅ | `color.*` 子集在 `pine-stdlib`，单测覆盖 |
@@ -30,12 +30,12 @@
 | **Line** | ✔️ | 同 Label：数据结构为主，**`line.new` / `line.set_*` 等未完整对外** |
 | **Linefill** | ❌ | **`linefill.*` 未实现** |
 | **Log** | ❌ | 手册中 **`log.*`（调试日志）** 未对齐（注意：**`math.log` 已实现**，归入 Math） |
-| **Map** | ✅ | `map.*` 基础 CRUD 与子集函数 |
+| **Map** | ✅ | `map.*` 已有 11 个基础函数，CRUD 主路径可用 |
 | **Matrix** | ❌ | 运行时或有矩阵相关 **Value 占位**；**`matrix.*` 标准库未注册** |
-| **Plot** | ✔️ | **`plot()`** 在 eval 中与 CLI / JSON outputs 打通并有黄金；`hline` / `bgcolor` / `plotshape` 等在 `pine-output` 中有实现，**eval 未与 `plot` 同等全线挂钩** |
+| **Plot** | ✔️ | 已注册 `plot` / `hline` / `bgcolor` / `fill` / `plotshape` / `plotchar` / `plotarrow`；其中 `plot()` 的端到端验证最完整 |
 | **Request** | ⏳ | 按 **`AGENTS.md`**：`request.*` **占位 / 与 TV 不等价**，Phase 5+ 再推进 |
-| **String** | ✅ | `str.*` 较大子集 |
-| **Strategy** | ✔️ | [`strategy.rs`](../crates/pine-stdlib/src/strategy.rs) 提供声明与部分 **`strategy.entry` / `exit` / `close`** 等信号级能力；**完整撮合与 TV 策略语义非当前目标** |
+| **String** | ✅ | `str.*` 已注册 22 个函数，已不是少量占位状态 |
+| **Strategy** | ✔️ | [`strategy.rs`](../crates/pine-stdlib/src/strategy.rs) 当前提供 6 个信号级函数与常量；**完整撮合与 TV 策略语义非当前目标** |
 | **Table** | ✔️ | `pine-output` 含 table 模型；**`table.new` / `table.cell` 等脚本 API 未完整** |
 | **Syminfo** | ❌ | **`syminfo.*` 无系统实现** |
 | **Runtime** | ✔️ | 如 **`bar_index`**、OHLCV 等随 runner 注入；**`runtime.error`、`timenow` 等与官方 runtime 命名空间仍大半未对齐** |
@@ -46,7 +46,7 @@
 
 ## 和 PineTS 文档站的关系
 
-- PineTS 在 `api-coverage/*.md` 里按 namespace **逐项勾函数**；本仓库镜像目录 **`docs/api-coverage/`** 保留 PineTS **Status** 列，并增加 **pine-rs** 列（由 `scripts/annotate_api_coverage_pinets.py` 生成，可手改纠错）。  
+- PineTS 在 `api-coverage/*.md` 里按 namespace **逐项勾函数**；本仓库镜像目录 **`docs/api-coverage/`** 保留 PineTS **Status** 列，并增加 **pine-rs** 列（由 `scripts/annotate_api_coverage_pinets.py` 生成，可手改纠错）。这些逐函数页偏向“和 PineTS 对照”，不等同于 registry 实时快照。  
 - 另一份 **仅 pine-rs 已实现项** 的清单：**`FUNCTION_COVERAGE.md`**；与 PineTS builtin 的启发式差异见 **`BUILTIN_GAP_REPORT.md`**。  
 - 本页 **只作维度总览**，细节以 **`docs/api-coverage/`** 与 **`FUNCTION_COVERAGE.md`** 为准。
 

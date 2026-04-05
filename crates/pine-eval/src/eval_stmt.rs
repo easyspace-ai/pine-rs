@@ -1147,7 +1147,6 @@ mod tests {
 
     #[test]
     fn test_udf_var_isolated_per_call_site() {
-        // Block body requires `fn` form; TV `name() =>` at stmt level is expr-only.
         let src = r#"fn f(x)
     var a = 0
     a := a + 1
@@ -1451,6 +1450,68 @@ export PI = 3.14159
 
         assert_eq!(sum, Value::Int(5));
         assert!(matches!(pi, Value::Float(v) if (v - 3.14159).abs() < 1e-10));
+
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn test_import_stmt_with_qualified_path_loads_module() {
+        let dir = temp_dir("import-qualified");
+        let module_dir = dir.join("user").join("lib");
+        fs::create_dir_all(&module_dir).unwrap();
+        let module_path = module_dir.join("1.pine");
+        fs::write(
+            &module_path,
+            r#"
+export add(x, y) => x + y
+export MAGIC = 9
+"#,
+        )
+        .unwrap();
+
+        let mut ctx = EvaluationContext::with_base_path(&dir);
+        let import_stmt = Stmt::Import {
+            path: ImportPath::Qualified(vec![
+                "user".to_string(),
+                "lib".to_string(),
+                "1".to_string(),
+            ]),
+            alias: Some(Ident::new("m", Span::default())),
+            span: Span::default(),
+        };
+
+        eval_stmt(&import_stmt, &mut ctx).unwrap();
+        let sum = eval_expr(
+            &ast::Expr::MethodCall {
+                base: Box::new(ast::Expr::Ident(Ident::new("m", Span::default()))),
+                method: Ident::new("add", Span::default()),
+                args: vec![
+                    ast::Arg {
+                        name: None,
+                        value: ast::Expr::Literal(Lit::Int(4), Span::default()),
+                    },
+                    ast::Arg {
+                        name: None,
+                        value: ast::Expr::Literal(Lit::Int(5), Span::default()),
+                    },
+                ],
+                span: Span::default(),
+            },
+            &mut ctx,
+        )
+        .unwrap();
+        let magic = eval_expr(
+            &ast::Expr::FieldAccess {
+                base: Box::new(ast::Expr::Ident(Ident::new("m", Span::default()))),
+                field: Ident::new("MAGIC", Span::default()),
+                span: Span::default(),
+            },
+            &mut ctx,
+        )
+        .unwrap();
+
+        assert_eq!(sum, Value::Int(9));
+        assert_eq!(magic, Value::Int(9));
 
         let _ = fs::remove_dir_all(dir);
     }
