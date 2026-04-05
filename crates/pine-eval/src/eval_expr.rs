@@ -483,6 +483,19 @@ fn eval_plot_call(args: &[ast::Arg], ctx: &mut EvaluationContext) -> Result<Valu
         "plot".to_string()
     };
 
+    // Extract pane from named arguments
+    let pane = args.iter().find_map(|arg| {
+        if arg.name.as_ref().map(|n| n.name.as_str()) == Some("pane") {
+            match eval_expr(&arg.value, ctx).ok()? {
+                Value::Int(i) => Some(i as i32),
+                Value::Float(f) => Some(f as i32),
+                _ => None,
+            }
+        } else {
+            None
+        }
+    });
+
     // Convert value to Option<f64>
     let plot_value = match value {
         Value::Float(f) => Some(f),
@@ -490,8 +503,8 @@ fn eval_plot_call(args: &[ast::Arg], ctx: &mut EvaluationContext) -> Result<Valu
         _ => None, // NA or other types = no value
     };
 
-    // Record the plot value
-    ctx.plot_outputs.record(title.clone(), plot_value);
+    // Record the plot value with pane info
+    ctx.plot_outputs.record_with_pane(title.clone(), plot_value, pane);
 
     // Return the plotted value
     Ok(match plot_value {

@@ -1015,7 +1015,13 @@ impl StmtParser {
                 return Ok(None);
             }
         }
-        let params = self.parse_params()?;
+        let params = match self.parse_params() {
+            Ok(p) => p,
+            Err(_) => {
+                self.pos = start_pos;
+                return Ok(None);
+            }
+        };
         if self.expect_token(Token::RParen, "expected ')'").is_err() {
             self.pos = start_pos;
             return Ok(None);

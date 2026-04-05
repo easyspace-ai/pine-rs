@@ -408,8 +408,8 @@ impl PineEngine {
         let result = execute_script_with_vm(ast, &series_data)
             .map_err(|e| vec![ApiError::simple(format!("VM execution error: {:?}", e))])?;
 
-        // Convert to API format
-        self.convert_plots_to_api(result.plot_outputs.get_plots(), bars, overlay)
+        // Convert to API format (VM does not support pane parameter yet)
+        self.convert_plots_map_to_api(result.plot_outputs.get_plots(), bars, overlay)
     }
 
     /// Execute using pine-eval
@@ -428,7 +428,7 @@ impl PineEngine {
             .map_err(|e| vec![ApiError::simple(format!("Eval execution error: {:?}", e))])?;
 
         // Convert plots to API format
-        let plots = self.convert_plots_to_api(ctx.plot_outputs.get_plots(), bars, overlay)?;
+        let plots = self.convert_plots_to_api(&ctx.plot_outputs, bars, overlay)?;
 
         // Convert strategy signals to API format
         let strategy_output = self.convert_strategy_signals(ast, &ctx, bars);
@@ -438,6 +438,41 @@ impl PineEngine {
 
     /// Convert PlotOutputs to API Plot format
     fn convert_plots_to_api(
+        &self,
+        plot_outputs: &pine_eval::PlotOutputs,
+        bars: &[OhlcvBar],
+        overlay: bool,
+    ) -> Result<Vec<Plot>, Vec<ApiError>> {
+        let times: Vec<i64> = bars.iter().map(|b| b.time).collect();
+        let mut plots = Vec::new();
+        let default_pane = if overlay { 0 } else { 1 };
+
+        for (title, values) in plot_outputs.get_plots() {
+            let plot_data: Vec<PlotData> = times
+                .iter()
+                .zip(values.iter())
+                .map(|(&time, &value)| PlotData { time, value })
+                .collect();
+
+            let pane = plot_outputs.get_pane(title).unwrap_or(default_pane);
+
+            let title = title.clone();
+            plots.push(Plot {
+                id: title.clone(),
+                title: title.clone(),
+                plot_type: "line".to_string(),
+                color: generate_color(&title),
+                linewidth: Some(2.0),
+                pane,
+                data: plot_data,
+            });
+        }
+
+        Ok(plots)
+    }
+
+    /// Convert a raw plots HashMap to API Plot format (used for VM path which has no pane info)
+    fn convert_plots_map_to_api(
         &self,
         plots_map: &std::collections::HashMap<String, Vec<Option<f64>>>,
         bars: &[OhlcvBar],

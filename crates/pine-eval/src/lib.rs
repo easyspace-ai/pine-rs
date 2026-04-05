@@ -144,6 +144,8 @@ pub struct PlotOutput {
 pub struct PlotOutputs {
     /// Map of plot title to series of values
     plots: HashMap<String, Vec<Option<f64>>>,
+    /// Map of plot title to pane index (default: None = use indicator default)
+    panes: HashMap<String, i32>,
     /// Current bar index
     current_bar: usize,
 }
@@ -259,16 +261,31 @@ impl PlotOutputs {
         Self::default()
     }
 
-    /// Record a plot value for the current bar
+    /// Record a plot value for the current bar with optional pane index
     pub fn record(&mut self, title: impl Into<String>, value: Option<f64>) {
+        self.record_with_pane(title, value, None);
+    }
+
+    /// Record a plot value for the current bar with explicit pane index
+    pub fn record_with_pane(
+        &mut self,
+        title: impl Into<String>,
+        value: Option<f64>,
+        pane: Option<i32>,
+    ) {
         let title = title.into();
-        let plot = self.plots.entry(title).or_default();
+        let plot = self.plots.entry(title.clone()).or_default();
 
         // Ensure the vector is long enough to hold values up to current_bar
         while plot.len() <= self.current_bar {
             plot.push(None);
         }
         plot[self.current_bar] = value;
+
+        // Store pane index if specified (first call wins, consistent across bars)
+        if let Some(p) = pane {
+            self.panes.entry(title).or_insert(p);
+        }
     }
 
     /// Advance to the next bar
@@ -284,6 +301,11 @@ impl PlotOutputs {
     /// Get plot values by title
     pub fn get_plot(&self, title: &str) -> Option<&Vec<Option<f64>>> {
         self.plots.get(title)
+    }
+
+    /// Get the pane index for a given plot title
+    pub fn get_pane(&self, title: &str) -> Option<i32> {
+        self.panes.get(title).copied()
     }
 }
 
