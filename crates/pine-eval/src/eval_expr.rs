@@ -504,7 +504,8 @@ fn eval_plot_call(args: &[ast::Arg], ctx: &mut EvaluationContext) -> Result<Valu
     };
 
     // Record the plot value with pane info
-    ctx.plot_outputs.record_with_pane(title.clone(), plot_value, pane);
+    ctx.plot_outputs
+        .record_with_pane(title.clone(), plot_value, pane);
 
     // Return the plotted value
     Ok(match plot_value {

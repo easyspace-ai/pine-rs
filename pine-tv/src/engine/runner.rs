@@ -471,7 +471,9 @@ impl PineEngine {
         Ok(plots)
     }
 
-    /// Convert a raw plots HashMap to API Plot format (used for VM path which has no pane info)
+    /// Convert a raw plots HashMap to API Plot format.
+    /// Used for the VM execution path which does not yet track per-plot pane indices
+    /// (VM pane support is deferred per AGENTS.md §12.4: VM parity is frozen at current coverage).
     fn convert_plots_map_to_api(
         &self,
         plots_map: &std::collections::HashMap<String, Vec<Option<f64>>>,

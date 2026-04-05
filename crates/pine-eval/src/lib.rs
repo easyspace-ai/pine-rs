@@ -266,7 +266,12 @@ impl PlotOutputs {
         self.record_with_pane(title, value, None);
     }
 
-    /// Record a plot value for the current bar with explicit pane index
+    /// Record a plot value for the current bar with explicit pane index.
+    ///
+    /// If a pane index is specified, the first call for a given title sets the pane;
+    /// subsequent calls for the same title on later bars do not override it.
+    /// This is consistent with Pine Script semantics where `plot()` is called once
+    /// per bar but the pane assignment is fixed at declaration time.
     pub fn record_with_pane(
         &mut self,
         title: impl Into<String>,
