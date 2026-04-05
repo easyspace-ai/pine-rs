@@ -55,7 +55,14 @@ pub(crate) fn invoke_user_function(
     arg_values: &[Value],
     span: pine_lexer::Span,
 ) -> Result<Value> {
-    if arg_values.len() != user_fn.params.len() {
+    // Count required parameters (those without defaults)
+    let required_count = user_fn
+        .params
+        .iter()
+        .filter(|p| p.default.is_none())
+        .count();
+
+    if arg_values.len() < required_count || arg_values.len() > user_fn.params.len() {
         return Err(EvalError::TypeError {
             message: format!(
                 "function expected {} arguments, got {}",
@@ -82,8 +89,20 @@ pub(crate) fn invoke_user_function(
         saved.push((name.clone(), ctx.get_var(&name).cloned()));
     }
 
+    // Bind provided arguments
     for (p, v) in user_fn.params.iter().zip(arg_values.iter()) {
         ctx.set_var(&p.name.name, v.clone());
+    }
+
+    // Bind default values for remaining parameters
+    for p in user_fn.params.iter().skip(arg_values.len()) {
+        let default_val = if let Some(ref default_expr) = p.default {
+            use crate::eval_expr::eval_expr;
+            eval_expr(default_expr, ctx).unwrap_or(Value::Na)
+        } else {
+            Value::Na
+        };
+        ctx.set_var(&p.name.name, default_val);
     }
 
     let result = eval_fn_body(&user_fn.body, ctx);
@@ -647,6 +666,11 @@ fn values_equal(a: &Value, b: &Value) -> bool {
         (Value::Color(x), Value::Color(y)) => x == y,
         _ => false,
     }
+}
+
+/// Public wrapper for value equality comparison (used by eval_expr for switch expressions)
+pub fn values_equal_public(a: &Value, b: &Value) -> bool {
+    values_equal(a, b)
 }
 
 /// Evaluate an assignment

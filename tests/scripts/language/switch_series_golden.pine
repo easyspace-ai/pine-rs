@@ -1,0 +1,19 @@
+//@version=6
+indicator("Switch Series Golden Test")
+
+// Switch with scrutinee — classify bar direction
+barDir = switch
+    close > open => 1.0
+    close < open => -1.0
+    => 0.0
+
+// Switch with scrutinee — classify by quartile of bar range
+range_pct = (close - low) / (high - low)
+quartile = switch
+    range_pct > 0.75 => 4.0
+    range_pct > 0.50 => 3.0
+    range_pct > 0.25 => 2.0
+    => 1.0
+
+plot(barDir, title="Bar Direction")
+plot(quartile, title="Range Quartile")

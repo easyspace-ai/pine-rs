@@ -386,6 +386,7 @@ pub fn infer_expr_type(expr: &pine_parser::ast::Expr) -> PineType {
             PineType::Map(Box::new(PineType::Unknown), Box::new(PineType::Unknown))
         }
         Expr::Lambda { .. } => PineType::Function(Vec::new(), Box::new(PineType::Unknown)),
+        Expr::SwitchExpr { .. } => PineType::Unknown,
     }
 }
 

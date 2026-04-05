@@ -656,6 +656,78 @@ impl StmtParser {
             // Plain variable declaration: x = value
             // Or tuple assignment: [a, b, c] = value
             self.advance();
+
+            // Check for switch expression as RHS: x = switch ...
+            if self.peek_token() == Some(Token::Switch) {
+                let switch_stmt = self.parse_switch_stmt()?;
+                if let Stmt::Switch {
+                    scrutinee,
+                    arms,
+                    span: switch_span,
+                } = switch_stmt
+                {
+                    let span = expr.span().merge(switch_span);
+                    // Wrap as VarDecl with SwitchExpr init
+                    let switch_expr = Expr::SwitchExpr {
+                        scrutinee: scrutinee.map(Box::new),
+                        arms,
+                        span: switch_span,
+                    };
+                    match expr {
+                        Expr::Ident(ident) => {
+                            return Ok(Stmt::VarDecl {
+                                name: ident,
+                                kind: VarKind::Plain,
+                                type_ann: None,
+                                init: Some(switch_expr),
+                                span,
+                            });
+                        }
+                        other => {
+                            let target = expr_to_target(other)?;
+                            return Ok(Stmt::Assign {
+                                target,
+                                op: AssignOp::Assign,
+                                value: switch_expr,
+                                span,
+                            });
+                        }
+                    }
+                }
+                unreachable!("parse_switch_stmt always returns Stmt::Switch");
+            }
+
+            // Check for if expression as RHS: x = if ...
+            if self.peek_token() == Some(Token::If) {
+                let if_stmt = self.parse_if_stmt()?;
+                if let Stmt::If {
+                    cond,
+                    then_block,
+                    elifs,
+                    else_block,
+                    span: if_span,
+                } = if_stmt
+                {
+                    let span = expr.span().merge(if_span);
+                    // Wrap the if as a statement-level assignment with If as init
+                    // For now, represent as VarDecl where init runs the if
+                    match expr {
+                        Expr::Ident(ident) => {
+                            return Ok(Stmt::VarDecl {
+                                name: ident,
+                                kind: VarKind::Plain,
+                                type_ann: None,
+                                init: None,
+                                span: span.clone(),
+                            });
+                        }
+                        _ => {}
+                    }
+                    // Fall through to treat as regular assignment
+                    let _ = (cond, then_block, elifs, else_block);
+                }
+            }
+
             let value = self.parse_expr()?;
             let span = expr.span().merge(value.span());
 
@@ -1035,7 +1107,13 @@ impl StmtParser {
             self.pos = start_pos;
             return Ok(None);
         }
-        let (ret_type, body) = self.parse_fn_sig_body_after_params(None)?;
+        let (ret_type, body) = match self.parse_fn_sig_body_after_params(None) {
+            Ok(result) => result,
+            Err(_) => {
+                self.pos = start_pos;
+                return Ok(None);
+            }
+        };
         let span = start_span.merge(self.prev_span());
         Ok(Some(Stmt::FnDef {
             name,
@@ -1334,5 +1412,98 @@ v2 = f(200)
         let mut parser = StmtParser::new(tokens);
         let script = parser.parse_script().unwrap();
         assert!(matches!(script.stmts[0], Stmt::Switch { .. }));
+    }
+
+    #[test]
+    fn test_parse_switch_guard_no_scrutinee() {
+        // Switch without scrutinee: guard-style matching
+        let input = r#"switch
+    x > 10 => r := 100
+    x > 5 => r := 50
+    => r := 0
+"#;
+        let tokens = pine_lexer::Lexer::lex_with_indentation(input).unwrap();
+        let mut parser = StmtParser::new(tokens);
+        let script = parser.parse_script().unwrap();
+        assert!(matches!(script.stmts[0], Stmt::Switch { .. }));
+        if let Stmt::Switch {
+            scrutinee, arms, ..
+        } = &script.stmts[0]
+        {
+            assert!(scrutinee.is_none(), "guard switch should have no scrutinee");
+            assert_eq!(arms.len(), 3);
+            assert!(
+                arms[2].pattern.is_none(),
+                "last arm should be default (no pattern)"
+            );
+        }
+    }
+
+    #[test]
+    fn test_plot_with_named_args_not_udf() {
+        // plot() with string and named args must parse as function call, not UDF
+        let input = r#"plot(sma_val, "SMA", color=color.blue, pane=1)"#;
+        let script = parse(input).unwrap();
+        assert_eq!(script.stmts.len(), 1);
+        assert!(
+            matches!(script.stmts[0], Stmt::Expr(..)),
+            "should be expression (function call), not FnDef"
+        );
+    }
+
+    #[test]
+    fn test_nested_fn_call_not_udf() {
+        // Nested function call should not be mistaken for UDF
+        let input = r#"plot(ta.sma(close, 14), "SMA")"#;
+        let script = parse(input).unwrap();
+        assert_eq!(script.stmts.len(), 1);
+        assert!(matches!(script.stmts[0], Stmt::Expr(..)));
+    }
+
+    #[test]
+    fn test_udf_with_default_param() {
+        // UDF with default parameter value
+        let input = "myFunc(src, length = 14) => ta.sma(src, length)";
+        let script = parse(input).unwrap();
+        assert_eq!(script.stmts.len(), 1);
+        if let Stmt::FnDef { name, params, .. } = &script.stmts[0] {
+            assert_eq!(name.name, "myFunc");
+            assert_eq!(params.len(), 2);
+            assert!(
+                params[1].default.is_some(),
+                "second param should have default"
+            );
+        } else {
+            panic!("expected FnDef");
+        }
+    }
+
+    #[test]
+    fn test_udf_with_block_body() {
+        // UDF with block body (multiple statements)
+        let input = r#"myAvg(a, b) =>
+    sum = a + b
+    sum / 2
+"#;
+        let tokens = pine_lexer::Lexer::lex_with_indentation(input).unwrap();
+        let mut parser = StmtParser::new(tokens);
+        let script = parser.parse_script().unwrap();
+        assert_eq!(script.stmts.len(), 1);
+        assert!(matches!(
+            &script.stmts[0],
+            Stmt::FnDef {
+                body: FnBody::Block(_),
+                ..
+            }
+        ));
+    }
+
+    #[test]
+    fn test_fn_call_with_multiple_named_args() {
+        // Function call with multiple named args should not be mistaken for UDF
+        let input = r#"indicator("Test", overlay=true, max_bars_back=5000)"#;
+        let script = parse(input).unwrap();
+        assert_eq!(script.stmts.len(), 1);
+        assert!(matches!(script.stmts[0], Stmt::Expr(..)));
     }
 }

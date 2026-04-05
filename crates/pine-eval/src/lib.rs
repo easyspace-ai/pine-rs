@@ -146,8 +146,27 @@ pub struct PlotOutputs {
     plots: HashMap<String, Vec<Option<f64>>>,
     /// Map of plot title to pane index (default: None = use indicator default)
     panes: HashMap<String, i32>,
+    /// Map of plot title to color hex string
+    colors: HashMap<String, String>,
+    /// Map of plot title to linewidth
+    linewidths: HashMap<String, f64>,
+    /// Horizontal lines: (title, price, color, linewidth)
+    hlines: Vec<HLineEntry>,
     /// Current bar index
     current_bar: usize,
+}
+
+/// Entry for a horizontal line (hline)
+#[derive(Debug, Clone)]
+pub struct HLineEntry {
+    /// Title/label
+    pub title: String,
+    /// Price level
+    pub price: f64,
+    /// Color hex string
+    pub color: Option<String>,
+    /// Line width
+    pub linewidth: Option<f64>,
 }
 
 /// Strategy signal entry
@@ -311,6 +330,44 @@ impl PlotOutputs {
     /// Get the pane index for a given plot title
     pub fn get_pane(&self, title: &str) -> Option<i32> {
         self.panes.get(title).copied()
+    }
+
+    /// Get the color for a given plot title
+    pub fn get_color(&self, title: &str) -> Option<&str> {
+        self.colors.get(title).map(|s| s.as_str())
+    }
+
+    /// Get the linewidth for a given plot title
+    pub fn get_linewidth(&self, title: &str) -> Option<f64> {
+        self.linewidths.get(title).copied()
+    }
+
+    /// Record plot metadata (color, linewidth) - first call per title wins
+    pub fn record_metadata(
+        &mut self,
+        title: &str,
+        color: Option<String>,
+        linewidth: Option<f64>,
+    ) {
+        if let Some(c) = color {
+            self.colors.entry(title.to_string()).or_insert(c);
+        }
+        if let Some(lw) = linewidth {
+            self.linewidths.entry(title.to_string()).or_insert(lw);
+        }
+    }
+
+    /// Record a horizontal line
+    pub fn record_hline(&mut self, entry: HLineEntry) {
+        // Avoid duplicates by title
+        if !self.hlines.iter().any(|h| h.title == entry.title) {
+            self.hlines.push(entry);
+        }
+    }
+
+    /// Get all horizontal lines
+    pub fn get_hlines(&self) -> &[HLineEntry] {
+        &self.hlines
     }
 }
 
