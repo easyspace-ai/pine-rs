@@ -11,6 +11,7 @@ pub mod color;
 pub mod input;
 pub mod map;
 pub mod math;
+pub mod plot;
 pub mod registry;
 pub mod str;
 pub mod strategy;
@@ -40,6 +41,7 @@ pub fn init(registry: &mut registry::FunctionRegistry) {
     color::register_functions(registry);
     input::register_functions(registry);
     strategy::register_functions(registry);
+    plot::register_functions(registry);
 }
 
 #[cfg(test)]

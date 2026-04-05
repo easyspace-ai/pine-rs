@@ -454,6 +454,14 @@ pub enum Expr {
         body: Box<Expr>,
         span: Span,
     },
+
+    /// Switch expression: switch [scrutinee] { pattern => expr, ... }
+    /// Returns the value of the first matching arm
+    SwitchExpr {
+        scrutinee: Option<Box<Expr>>,
+        arms: Vec<SwitchArm>,
+        span: Span,
+    },
 }
 
 impl Expr {
@@ -473,6 +481,7 @@ impl Expr {
             Expr::ArrayLit(_, span) => *span,
             Expr::MapLit(_, span) => *span,
             Expr::Lambda { span, .. } => *span,
+            Expr::SwitchExpr { span, .. } => *span,
         }
     }
 }

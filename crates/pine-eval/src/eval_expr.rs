@@ -1,6 +1,6 @@
 //! Expression evaluation
 
-use crate::{EvalError, EvaluationContext, Result};
+use crate::{EvalError, EvaluationContext, HLineEntry, Result};
 use pine_lexer::Span;
 use pine_parser::ast;
 use pine_runtime::value::Value;
@@ -63,6 +63,17 @@ pub fn eval_expr(expr: &ast::Expr, ctx: &mut EvaluationContext) -> Result<Value>
                 values.push(eval_expr(e, ctx)?);
             }
             Ok(Value::Array(values))
+        }
+        ast::Expr::SwitchExpr {
+            scrutinee, arms, ..
+        } => eval_switch_expr(scrutinee.as_deref(), arms, ctx),
+        ast::Expr::NaCoalesce { lhs, rhs, .. } => {
+            let left = eval_expr(lhs, ctx)?;
+            if left.is_na() {
+                eval_expr(rhs, ctx)
+            } else {
+                Ok(left)
+            }
         }
         _ => {
             // TODO: Implement other expression types (MapLit, Lambda, etc.)
@@ -427,6 +438,24 @@ fn eval_fn_call(
         if ident.name == "plot" {
             return eval_plot_call(args, ctx);
         }
+        if ident.name == "hline" {
+            return eval_hline_call(args, ctx);
+        }
+        if ident.name == "bgcolor" {
+            return eval_bgcolor_call(args, ctx);
+        }
+        if ident.name == "fill" {
+            return eval_fill_call(args, ctx);
+        }
+        if ident.name == "plotshape" {
+            return eval_plotshape_call(args, ctx);
+        }
+        if ident.name == "plotchar" {
+            return eval_plotchar_call(args, ctx);
+        }
+        if ident.name == "plotarrow" {
+            return eval_plotarrow_call(args, ctx);
+        }
 
         if let Some(user_fn) = ctx.get_user_fn(&ident.name).cloned() {
             let mut arg_values = Vec::with_capacity(args.len());
@@ -474,14 +503,12 @@ fn eval_plot_call(args: &[ast::Arg], ctx: &mut EvaluationContext) -> Result<Valu
     };
 
     // Second argument (optional) is the title
-    let title = if let Some(arg) = args.get(1) {
-        match eval_expr(&arg.value, ctx)? {
-            Value::String(s) => s.to_string(),
-            _ => "plot".to_string(),
-        }
-    } else {
-        "plot".to_string()
-    };
+    let title = extract_title_arg(args, ctx, 1, "plot");
+
+    // Extract named arguments
+    let pane = extract_named_int(args, ctx, "pane");
+    let color = extract_named_color(args, ctx, "color");
+    let linewidth = extract_named_float(args, ctx, "linewidth");
 
     // Convert value to Option<f64>
     let plot_value = match value {
@@ -490,14 +517,267 @@ fn eval_plot_call(args: &[ast::Arg], ctx: &mut EvaluationContext) -> Result<Valu
         _ => None, // NA or other types = no value
     };
 
-    // Record the plot value
-    ctx.plot_outputs.record(title.clone(), plot_value);
+    // Record the plot value with pane info
+    ctx.plot_outputs
+        .record_with_pane(title.clone(), plot_value, pane);
+
+    // Record metadata (color, linewidth)
+    ctx.plot_outputs.record_metadata(&title, color, linewidth);
 
     // Return the plotted value
     Ok(match plot_value {
         Some(f) => Value::Float(f),
         None => Value::Na,
     })
+}
+
+/// Evaluate a hline() function call
+fn eval_hline_call(args: &[ast::Arg], ctx: &mut EvaluationContext) -> Result<Value> {
+    // First argument: price level
+    let price = if let Some(arg) = args.first() {
+        match eval_expr(&arg.value, ctx)? {
+            Value::Float(f) => f,
+            Value::Int(i) => i as f64,
+            _ => return Ok(Value::Na),
+        }
+    } else {
+        return Ok(Value::Na);
+    };
+
+    let title = extract_title_arg(args, ctx, 1, "hline");
+    let color = extract_named_color(args, ctx, "color");
+    let linewidth = extract_named_float(args, ctx, "linewidth");
+
+    ctx.plot_outputs.record_hline(HLineEntry {
+        title,
+        price,
+        color,
+        linewidth,
+    });
+
+    Ok(Value::Na)
+}
+
+/// Evaluate a bgcolor() function call - records as a plot-like output
+fn eval_bgcolor_call(args: &[ast::Arg], ctx: &mut EvaluationContext) -> Result<Value> {
+    // bgcolor() accepts a color value; we record it as a special plot
+    let _color = if let Some(arg) = args.first() {
+        eval_expr(&arg.value, ctx)?
+    } else {
+        Value::Na
+    };
+    // bgcolor is a display-only function; no value return needed for eval
+    Ok(Value::Na)
+}
+
+/// Evaluate a fill() function call
+fn eval_fill_call(args: &[ast::Arg], ctx: &mut EvaluationContext) -> Result<Value> {
+    // fill() takes two plot references and a color; display-only
+    for arg in args {
+        let _ = eval_expr(&arg.value, ctx)?;
+    }
+    Ok(Value::Na)
+}
+
+/// Evaluate a plotshape() function call
+fn eval_plotshape_call(args: &[ast::Arg], ctx: &mut EvaluationContext) -> Result<Value> {
+    // First argument: series (condition)
+    let value = if let Some(arg) = args.first() {
+        eval_expr(&arg.value, ctx)?
+    } else {
+        return Ok(Value::Na);
+    };
+
+    let title = extract_title_arg(args, ctx, 1, "plotshape");
+
+    // Record as a plot (the condition value)
+    let plot_value = match value {
+        Value::Float(f) => Some(f),
+        Value::Int(i) => Some(i as f64),
+        Value::Bool(true) => Some(1.0),
+        Value::Bool(false) => Some(0.0),
+        _ => None,
+    };
+
+    ctx.plot_outputs.record(title, plot_value);
+    Ok(Value::Na)
+}
+
+/// Evaluate a plotchar() function call
+fn eval_plotchar_call(args: &[ast::Arg], ctx: &mut EvaluationContext) -> Result<Value> {
+    let value = if let Some(arg) = args.first() {
+        eval_expr(&arg.value, ctx)?
+    } else {
+        return Ok(Value::Na);
+    };
+
+    let title = extract_title_arg(args, ctx, 1, "plotchar");
+
+    let plot_value = match value {
+        Value::Float(f) => Some(f),
+        Value::Int(i) => Some(i as f64),
+        Value::Bool(true) => Some(1.0),
+        Value::Bool(false) => Some(0.0),
+        _ => None,
+    };
+
+    ctx.plot_outputs.record(title, plot_value);
+    Ok(Value::Na)
+}
+
+/// Evaluate a plotarrow() function call
+fn eval_plotarrow_call(args: &[ast::Arg], ctx: &mut EvaluationContext) -> Result<Value> {
+    let value = if let Some(arg) = args.first() {
+        eval_expr(&arg.value, ctx)?
+    } else {
+        return Ok(Value::Na);
+    };
+
+    let title = extract_title_arg(args, ctx, 1, "plotarrow");
+
+    let plot_value = match value {
+        Value::Float(f) => Some(f),
+        Value::Int(i) => Some(i as f64),
+        _ => None,
+    };
+
+    ctx.plot_outputs.record(title, plot_value);
+    Ok(Value::Na)
+}
+
+// ── Helper functions for extracting named arguments from function calls ──
+
+/// Extract a title from the second positional argument or "title" named argument
+fn extract_title_arg(
+    args: &[ast::Arg],
+    ctx: &mut EvaluationContext,
+    pos: usize,
+    default: &str,
+) -> String {
+    // Check named arg first
+    if let Some(title) = args.iter().find_map(|arg| {
+        if arg.name.as_ref().map(|n| n.name.as_str()) == Some("title") {
+            match eval_expr(&arg.value, ctx).ok()? {
+                Value::String(s) => Some(s.to_string()),
+                _ => None,
+            }
+        } else {
+            None
+        }
+    }) {
+        return title;
+    }
+    // Fall back to positional arg
+    if let Some(arg) = args.get(pos) {
+        if arg.name.is_none() {
+            if let Ok(Value::String(s)) = eval_expr(&arg.value, ctx) {
+                return s.to_string();
+            }
+        }
+    }
+    default.to_string()
+}
+
+/// Extract an integer named argument
+fn extract_named_int(args: &[ast::Arg], ctx: &mut EvaluationContext, name: &str) -> Option<i32> {
+    args.iter().find_map(|arg| {
+        if arg.name.as_ref().map(|n| n.name.as_str()) == Some(name) {
+            match eval_expr(&arg.value, ctx).ok()? {
+                Value::Int(i) => Some(i as i32),
+                Value::Float(f) => Some(f as i32),
+                _ => None,
+            }
+        } else {
+            None
+        }
+    })
+}
+
+/// Extract a color named argument as hex string
+fn extract_named_color(
+    args: &[ast::Arg],
+    ctx: &mut EvaluationContext,
+    name: &str,
+) -> Option<String> {
+    args.iter().find_map(|arg| {
+        if arg.name.as_ref().map(|n| n.name.as_str()) == Some(name) {
+            match eval_expr(&arg.value, ctx).ok()? {
+                Value::Color(c) => Some(c.to_hex()),
+                Value::String(s) => Some(s.to_string()),
+                _ => None,
+            }
+        } else {
+            None
+        }
+    })
+}
+
+/// Extract a float named argument
+fn extract_named_float(args: &[ast::Arg], ctx: &mut EvaluationContext, name: &str) -> Option<f64> {
+    args.iter().find_map(|arg| {
+        if arg.name.as_ref().map(|n| n.name.as_str()) == Some(name) {
+            match eval_expr(&arg.value, ctx).ok()? {
+                Value::Float(f) => Some(f),
+                Value::Int(i) => Some(i as f64),
+                _ => None,
+            }
+        } else {
+            None
+        }
+    })
+}
+
+/// Evaluate a switch expression — returns the value of the first matching arm
+fn eval_switch_expr(
+    scrutinee: Option<&ast::Expr>,
+    arms: &[ast::SwitchArm],
+    ctx: &mut EvaluationContext,
+) -> Result<Value> {
+    let disc = scrutinee.map(|e| eval_expr(e, ctx)).transpose()?;
+
+    for arm in arms {
+        match &arm.pattern {
+            Some(pat) => {
+                let branch_matches = if let Some(ref sv) = disc {
+                    let pv = eval_expr(pat, ctx)?;
+                    crate::eval_stmt::values_equal_public(sv, &pv)
+                } else {
+                    eval_expr(pat, ctx)?.is_truthy()
+                };
+                if branch_matches {
+                    return eval_switch_arm_body_value(&arm.body, ctx);
+                }
+            }
+            None => {
+                return eval_switch_arm_body_value(&arm.body, ctx);
+            }
+        }
+    }
+    Ok(Value::Na)
+}
+
+/// Evaluate a switch arm body and return the last expression value
+fn eval_switch_arm_body_value(
+    body: &ast::SwitchArmBody,
+    ctx: &mut EvaluationContext,
+) -> Result<Value> {
+    match body {
+        ast::SwitchArmBody::Expr(e) => eval_expr(e, ctx),
+        ast::SwitchArmBody::Block(block) => {
+            let mut last = Value::Na;
+            for stmt in &block.stmts {
+                match stmt {
+                    ast::Stmt::Expr(e) => {
+                        last = eval_expr(e, ctx)?;
+                    }
+                    other => {
+                        crate::eval_stmt::eval_stmt(other, ctx)?;
+                    }
+                }
+            }
+            Ok(last)
+        }
+    }
 }
 
 /// Evaluate index access (e.g., close[1])

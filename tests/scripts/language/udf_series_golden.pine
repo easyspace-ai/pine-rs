@@ -1,0 +1,14 @@
+//@version=6
+indicator("UDF Series Golden Test")
+
+// UDF that computes a ratio of close/open
+myRatio(c, o) => c / o
+
+// UDF with default parameter
+myScale(src, factor = 100.0) => src * factor
+
+ratio_result = myRatio(close, open)
+scaled_result = myScale(close - open)
+
+plot(ratio_result, title="Ratio")
+plot(scaled_result, title="Scaled Diff")
