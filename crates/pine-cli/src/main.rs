@@ -514,7 +514,14 @@ fn check_script(script_path: &str) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use serde::Deserialize;
     use std::path::PathBuf;
+
+    #[derive(Debug, Deserialize)]
+    struct VmParityCase {
+        script_path: String,
+        golden_path: String,
+    }
 
     fn with_temp_env_var<T>(key: &str, value: Option<&str>, f: impl FnOnce() -> T) -> T {
         let previous = std::env::var(key).ok();
@@ -532,6 +539,13 @@ mod tests {
 
     fn workspace_root() -> PathBuf {
         PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..")
+    }
+
+    fn load_vm_parity_cases() -> Vec<VmParityCase> {
+        let root = workspace_root();
+        let content = fs::read_to_string(root.join("tests/vm_parity_cases.json"))
+            .expect("read VM parity manifest");
+        serde_json::from_str(&content).expect("parse VM parity manifest")
     }
 
     #[test]
@@ -682,189 +696,13 @@ if close > open
 
     #[test]
     fn test_execute_script_vm_matches_eval_for_regression_scripts() {
-        let cases = [
-            (
-                "tests/scripts/series/sma_manual.pine",
-                "tests/golden/sma_manual.csv",
-            ),
-            (
-                "tests/scripts/stdlib/ta/atr_14.pine",
-                "tests/golden/atr_14.csv",
-            ),
-            (
-                "tests/scripts/stdlib/ta/bbands_20_2.pine",
-                "tests/golden/bbands_20_2.csv",
-            ),
-            (
-                "tests/scripts/stdlib/ta/bbw_20_2.pine",
-                "tests/golden/bbw_20_2.csv",
-            ),
-            (
-                "tests/scripts/stdlib/ta/cci_20.pine",
-                "tests/golden/cci_20.csv",
-            ),
-            (
-                "tests/scripts/stdlib/ta/change_2.pine",
-                "tests/golden/change_2.csv",
-            ),
-            (
-                "tests/scripts/stdlib/ta/correlation_10.pine",
-                "tests/golden/correlation_10.csv",
-            ),
-            (
-                "tests/scripts/stdlib/ta/cross_events.pine",
-                "tests/golden/cross_events.csv",
-            ),
-            (
-                "tests/scripts/stdlib/ta/cum_volume.pine",
-                "tests/golden/cum_volume.csv",
-            ),
-            (
-                "tests/scripts/stdlib/ta/dev_10.pine",
-                "tests/golden/dev_10.csv",
-            ),
-            (
-                "tests/scripts/stdlib/ta/dmi_5_5.pine",
-                "tests/golden/dmi_5_5.csv",
-            ),
-            (
-                "tests/scripts/stdlib/ta/ema_12.pine",
-                "tests/golden/ema_12.csv",
-            ),
-            (
-                "tests/scripts/stdlib/ta/highest_10.pine",
-                "tests/golden/highest_10.csv",
-            ),
-            (
-                "tests/scripts/stdlib/ta/highestbars_10.pine",
-                "tests/golden/highestbars_10.csv",
-            ),
-            (
-                "tests/scripts/stdlib/ta/linreg_10.pine",
-                "tests/golden/linreg_10.csv",
-            ),
-            (
-                "tests/scripts/stdlib/ta/lowest_10.pine",
-                "tests/golden/lowest_10.csv",
-            ),
-            (
-                "tests/scripts/stdlib/ta/lowestbars_10.pine",
-                "tests/golden/lowestbars_10.csv",
-            ),
-            (
-                "tests/scripts/stdlib/ta/macd_12_26_9.pine",
-                "tests/golden/macd_12_26_9.csv",
-            ),
-            (
-                "tests/scripts/stdlib/ta/median_10.pine",
-                "tests/golden/median_10.csv",
-            ),
-            (
-                "tests/scripts/stdlib/ta/mfi_14.pine",
-                "tests/golden/mfi_14.csv",
-            ),
-            (
-                "tests/scripts/stdlib/ta/mom_10.pine",
-                "tests/golden/mom_10.csv",
-            ),
-            (
-                "tests/scripts/stdlib/ta/obv_basic.pine",
-                "tests/golden/obv_basic.csv",
-            ),
-            (
-                "tests/scripts/stdlib/ta/percentrank_10.pine",
-                "tests/golden/percentrank_10.csv",
-            ),
-            (
-                "tests/scripts/stdlib/ta/pvt_basic.pine",
-                "tests/golden/pvt_basic.csv",
-            ),
-            (
-                "tests/scripts/stdlib/ta/range_10.pine",
-                "tests/golden/range_10.csv",
-            ),
-            (
-                "tests/scripts/stdlib/ta/rising_falling.pine",
-                "tests/golden/rising_falling.csv",
-            ),
-            (
-                "tests/scripts/stdlib/ta/rma_14.pine",
-                "tests/golden/rma_14.csv",
-            ),
-            (
-                "tests/scripts/stdlib/ta/roc_10.pine",
-                "tests/golden/roc_10.csv",
-            ),
-            (
-                "tests/scripts/stdlib/ta/rsi_14.pine",
-                "tests/golden/rsi_14.csv",
-            ),
-            (
-                "tests/scripts/stdlib/ta/sma_14.pine",
-                "tests/golden/sma_14.csv",
-            ),
-            (
-                "tests/scripts/stdlib/ta/stdev_10.pine",
-                "tests/golden/stdev_10.csv",
-            ),
-            (
-                "tests/scripts/stdlib/ta/stoch_14_3_3.pine",
-                "tests/golden/stoch_14_3_3.csv",
-            ),
-            (
-                "tests/scripts/stdlib/ta/supertrend_3_5.pine",
-                "tests/golden/supertrend_3_5.csv",
-            ),
-            (
-                "tests/scripts/stdlib/ta/swma_basic.pine",
-                "tests/golden/swma_basic.csv",
-            ),
-            (
-                "tests/scripts/stdlib/ta/tr_basic.pine",
-                "tests/golden/tr_basic.csv",
-            ),
-            (
-                "tests/scripts/stdlib/ta/tsi_13_25.pine",
-                "tests/golden/tsi_13_25.csv",
-            ),
-            (
-                "tests/scripts/stdlib/ta/variance_10.pine",
-                "tests/golden/variance_10.csv",
-            ),
-            (
-                "tests/scripts/stdlib/ta/vwma_10.pine",
-                "tests/golden/vwma_10.csv",
-            ),
-            (
-                "tests/scripts/stdlib/ta/wma_10.pine",
-                "tests/golden/wma_10.csv",
-            ),
-            (
-                "tests/scripts/stdlib/ta/wpr_14.pine",
-                "tests/golden/wpr_14.csv",
-            ),
-            (
-                "tests/scripts/language/for_na_math.pine",
-                "tests/golden/for_na_math.csv",
-            ),
-            (
-                "tests/scripts/language/switch_basic.pine",
-                "tests/golden/switch_basic.csv",
-            ),
-            (
-                "tests/scripts/language/udf_basic.pine",
-                "tests/golden/udf_basic.csv",
-            ),
-            (
-                "tests/scripts/language/while_loop.pine",
-                "tests/golden/while_loop.csv",
-            ),
-        ];
-
         let root = workspace_root();
-        for (script_path, data_path) in cases {
-            let script = fs::read_to_string(root.join(script_path)).expect("read script");
-            let feed = CsvDataFeed::new(root.join(data_path).display().to_string());
+        let cases = load_vm_parity_cases();
+        assert_eq!(cases.len(), 44, "unexpected VM parity manifest size");
+
+        for case in cases {
+            let script = fs::read_to_string(root.join(&case.script_path)).expect("read script");
+            let feed = CsvDataFeed::new(root.join(&case.golden_path).display().to_string());
             let data = feed.load().expect("load golden csv as input");
 
             let eval_result =
@@ -872,16 +710,18 @@ if close > open
             let vm_result =
                 execute_script(&script, Some(&data), CliExecutionEngine::Vm).expect("vm run");
 
-            assert!(eval_result.success, "eval failed for {script_path}");
-            assert!(vm_result.success, "vm failed for {script_path}");
-            assert_output_maps_match(&eval_result.outputs, &vm_result.outputs, script_path);
+            assert!(eval_result.success, "eval failed for {}", case.script_path);
+            assert!(vm_result.success, "vm failed for {}", case.script_path);
+            assert_output_maps_match(&eval_result.outputs, &vm_result.outputs, &case.script_path);
             assert_eq!(
                 eval_result.plots, vm_result.plots,
-                "plot mismatch for {script_path}"
+                "plot mismatch for {}",
+                case.script_path
             );
             assert_eq!(
                 eval_result.bars_processed, vm_result.bars_processed,
-                "bars mismatch for {script_path}"
+                "bars mismatch for {}",
+                case.script_path
             );
         }
     }

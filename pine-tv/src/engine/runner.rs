@@ -248,13 +248,12 @@ pub enum ExecutionMode {
 impl ExecutionMode {
     /// Get execution mode from environment variable `PINE_TV_MODE`.
     ///
-    /// - Default **`eval`**: pine-tv `/api/run` uses `pine-eval` + `run_bar_by_bar` so JSON
-    ///   `plots` match interpreter semantics.
-    /// - Set `PINE_TV_MODE=vm` to use the bytecode VM instead.
+    /// - Default **`vm`**: pine-tv `/api/run` uses the bytecode VM.
+    /// - Set `PINE_TV_MODE=eval` to force the tree-walking interpreter as a fallback path.
     pub fn from_env() -> Self {
         match std::env::var("PINE_TV_MODE").as_deref() {
-            Ok("vm") => Self::Vm,
-            _ => Self::Eval,
+            Ok("eval") => Self::Eval,
+            _ => Self::Vm,
         }
     }
 }
@@ -1041,11 +1040,38 @@ impl Default for PineEngine {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::ffi::OsString;
+
+    struct EnvVarGuard {
+        key: &'static str,
+        original: Option<OsString>,
+    }
+
+    impl EnvVarGuard {
+        fn set(key: &'static str, value: Option<&str>) -> Self {
+            let original = std::env::var_os(key);
+            match value {
+                Some(value) => unsafe { std::env::set_var(key, value) },
+                None => unsafe { std::env::remove_var(key) },
+            }
+
+            Self { key, original }
+        }
+    }
+
+    impl Drop for EnvVarGuard {
+        fn drop(&mut self) {
+            match &self.original {
+                Some(value) => unsafe { std::env::set_var(self.key, value) },
+                None => unsafe { std::env::remove_var(self.key) },
+            }
+        }
+    }
 
     #[test]
     fn test_engine_creation() {
         let engine = PineEngine::new();
-        let _ = engine.execution_mode();
+        assert_eq!(engine.execution_mode(), ExecutionMode::Vm);
     }
 
     #[test]
@@ -1055,6 +1081,18 @@ mod tests {
 
         let engine_eval = PineEngine::with_mode(ExecutionMode::Eval);
         assert_eq!(engine_eval.execution_mode(), ExecutionMode::Eval);
+    }
+
+    #[test]
+    fn test_execution_mode_defaults_to_vm() {
+        let _guard = EnvVarGuard::set("PINE_TV_MODE", None);
+        assert_eq!(ExecutionMode::from_env(), ExecutionMode::Vm);
+    }
+
+    #[test]
+    fn test_execution_mode_respects_eval_override() {
+        let _guard = EnvVarGuard::set("PINE_TV_MODE", Some("eval"));
+        assert_eq!(ExecutionMode::from_env(), ExecutionMode::Eval);
     }
 
     #[test]

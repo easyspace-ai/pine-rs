@@ -1,124 +1,38 @@
-//! VM Golden Tests - Execute golden scripts using VM and compare outputs
+//! VM Golden Tests - Execute golden scripts using VM and compare outputs.
 
 use pine_vm::executor::{execute_script_with_vm, SeriesData};
+use serde::Deserialize;
 use std::collections::HashMap;
 use std::fs;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
-/// Test case for a golden file pair
-#[derive(Debug)]
+#[derive(Debug, Clone, Deserialize)]
 struct GoldenTestCase {
-    name: &'static str,
-    golden_path: &'static str,
-    script_path: &'static str,
+    name: String,
+    golden_path: String,
+    script_path: String,
 }
 
-/// Get workspace root path
-fn workspace_root() -> std::path::PathBuf {
-    // CARGO_MANIFEST_DIR is set to crates/pine-vm when running tests
-    // We need to go up two levels to reach workspace root
+fn workspace_root() -> PathBuf {
     std::env::var("CARGO_MANIFEST_DIR")
-        .map(|d| std::path::PathBuf::from(d).join("../.."))
-        .unwrap_or_else(|_| std::path::PathBuf::from("."))
+        .map(|d| PathBuf::from(d).join("../.."))
+        .unwrap_or_else(|_| PathBuf::from("."))
 }
 
-/// All golden test cases
-#[allow(dead_code)]
-const GOLDEN_TESTS: &[GoldenTestCase] = &[
-    GoldenTestCase {
-        name: "sma_14",
-        golden_path: "tests/golden/sma_14.csv",
-        script_path: "tests/scripts/stdlib/ta/sma_14.pine",
-    },
-    GoldenTestCase {
-        name: "ema_12",
-        golden_path: "tests/golden/ema_12.csv",
-        script_path: "tests/scripts/stdlib/ta/ema_12.pine",
-    },
-    GoldenTestCase {
-        name: "rsi_14",
-        golden_path: "tests/golden/rsi_14.csv",
-        script_path: "tests/scripts/stdlib/ta/rsi_14.pine",
-    },
-    GoldenTestCase {
-        name: "macd_12_26_9",
-        golden_path: "tests/golden/macd_12_26_9.csv",
-        script_path: "tests/scripts/stdlib/ta/macd_12_26_9.pine",
-    },
-    GoldenTestCase {
-        name: "bbands_20_2",
-        golden_path: "tests/golden/bbands_20_2.csv",
-        script_path: "tests/scripts/stdlib/ta/bbands_20_2.pine",
-    },
-    GoldenTestCase {
-        name: "stoch_14_3_3",
-        golden_path: "tests/golden/stoch_14_3_3.csv",
-        script_path: "tests/scripts/stdlib/ta/stoch_14_3_3.pine",
-    },
-    GoldenTestCase {
-        name: "atr_14",
-        golden_path: "tests/golden/atr_14.csv",
-        script_path: "tests/scripts/stdlib/ta/atr_14.pine",
-    },
-    GoldenTestCase {
-        name: "cci_20",
-        golden_path: "tests/golden/cci_20.csv",
-        script_path: "tests/scripts/stdlib/ta/cci_20.pine",
-    },
-    GoldenTestCase {
-        name: "cross_events",
-        golden_path: "tests/golden/cross_events.csv",
-        script_path: "tests/scripts/stdlib/ta/cross_events.pine",
-    },
-    GoldenTestCase {
-        name: "highest_10",
-        golden_path: "tests/golden/highest_10.csv",
-        script_path: "tests/scripts/stdlib/ta/highest_10.pine",
-    },
-    GoldenTestCase {
-        name: "lowest_10",
-        golden_path: "tests/golden/lowest_10.csv",
-        script_path: "tests/scripts/stdlib/ta/lowest_10.pine",
-    },
-    GoldenTestCase {
-        name: "highestbars_10",
-        golden_path: "tests/golden/highestbars_10.csv",
-        script_path: "tests/scripts/stdlib/ta/highestbars_10.pine",
-    },
-    GoldenTestCase {
-        name: "lowestbars_10",
-        golden_path: "tests/golden/lowestbars_10.csv",
-        script_path: "tests/scripts/stdlib/ta/lowestbars_10.pine",
-    },
-    GoldenTestCase {
-        name: "mom_10",
-        golden_path: "tests/golden/mom_10.csv",
-        script_path: "tests/scripts/stdlib/ta/mom_10.pine",
-    },
-    GoldenTestCase {
-        name: "tr_basic",
-        golden_path: "tests/golden/tr_basic.csv",
-        script_path: "tests/scripts/stdlib/ta/tr_basic.pine",
-    },
-    GoldenTestCase {
-        name: "sma_manual",
-        golden_path: "tests/golden/sma_manual.csv",
-        script_path: "tests/scripts/series/sma_manual.pine",
-    },
-];
+fn load_manifest() -> Result<Vec<GoldenTestCase>, Box<dyn std::error::Error>> {
+    let manifest_path = workspace_root().join("tests/vm_parity_cases.json");
+    let content = fs::read_to_string(manifest_path)?;
+    Ok(serde_json::from_str(&content)?)
+}
 
-/// Load input series data and expected outputs from golden CSV
 fn load_golden_csv(
     path: &Path,
 ) -> Result<(SeriesData, HashMap<String, Vec<Option<f64>>>), Box<dyn std::error::Error>> {
     let content = fs::read_to_string(path)?;
     let mut lines = content.lines();
-
-    // Parse header
     let header = lines.next().ok_or("Empty CSV")?;
     let columns: Vec<&str> = header.split(',').collect();
 
-    // Find column indices for OHLCV
     let get_idx = |name: &str| columns.iter().position(|&c| c == name);
 
     let time_idx = get_idx("time").unwrap_or(0);
@@ -127,9 +41,7 @@ fn load_golden_csv(
     let low_idx = get_idx("low");
     let close_idx = get_idx("close").unwrap_or(1);
     let volume_idx = get_idx("volume");
-
-    // Output columns start after volume (index 5) or after close if no volume
-    let output_start = 6; // time, open, high, low, close, volume
+    let output_start = 6;
 
     let mut open = Vec::new();
     let mut high = Vec::new();
@@ -137,8 +49,6 @@ fn load_golden_csv(
     let mut close = Vec::new();
     let mut volume = Vec::new();
     let mut time = Vec::new();
-
-    // Expected outputs: column name -> series of values
     let mut expected: HashMap<String, Vec<Option<f64>>> = HashMap::new();
 
     for line in lines {
@@ -147,40 +57,35 @@ fn load_golden_csv(
             continue;
         }
 
-        // Parse time
-        let t: i64 = fields[time_idx].parse()?;
-        time.push(t);
+        time.push(fields[time_idx].parse()?);
+        let close_value: f64 = fields[close_idx].parse()?;
+        close.push(close_value);
 
-        // Parse close (required)
-        let c: f64 = fields[close_idx].parse()?;
-        close.push(c);
+        open.push(
+            open_idx
+                .and_then(|i| fields.get(i))
+                .and_then(|v| v.parse().ok())
+                .unwrap_or(close_value),
+        );
+        high.push(
+            high_idx
+                .and_then(|i| fields.get(i))
+                .and_then(|v| v.parse().ok())
+                .unwrap_or(close_value),
+        );
+        low.push(
+            low_idx
+                .and_then(|i| fields.get(i))
+                .and_then(|v| v.parse().ok())
+                .unwrap_or(close_value),
+        );
+        volume.push(
+            volume_idx
+                .and_then(|i| fields.get(i))
+                .and_then(|v| v.parse().ok())
+                .unwrap_or(0.0),
+        );
 
-        // Parse optional OHLCV fields
-        let o = open_idx
-            .and_then(|i| fields.get(i))
-            .and_then(|v| v.parse().ok())
-            .unwrap_or(c);
-        open.push(o);
-
-        let h = high_idx
-            .and_then(|i| fields.get(i))
-            .and_then(|v| v.parse().ok())
-            .unwrap_or(c);
-        high.push(h);
-
-        let l = low_idx
-            .and_then(|i| fields.get(i))
-            .and_then(|v| v.parse().ok())
-            .unwrap_or(c);
-        low.push(l);
-
-        let v = volume_idx
-            .and_then(|i| fields.get(i))
-            .and_then(|v| v.parse().ok())
-            .unwrap_or(0.0);
-        volume.push(v);
-
-        // Parse expected outputs
         for (col_idx, col_name) in columns.iter().enumerate() {
             if col_idx >= output_start {
                 let value =
@@ -201,20 +106,14 @@ fn load_golden_csv(
     ))
 }
 
-/// Parse a Pine Script file
 fn parse_script(path: &Path) -> Result<pine_parser::ast::Script, Box<dyn std::error::Error>> {
     let content = fs::read_to_string(path)?;
-
     let tokens = pine_lexer::Lexer::lex_with_indentation(&content)
         .map_err(|e| format!("Lex error: {:?}", e))?;
-
     let ast = pine_parser::parser::parse(tokens).map_err(|e| format!("Parse error: {:?}", e))?;
-
     Ok(ast)
 }
 
-/// Compare VM plot outputs with expected values
-/// Returns (all_match, max_error)
 fn compare_outputs(
     plot_outputs: &pine_vm::executor::PlotOutputs,
     expected: &HashMap<String, Vec<Option<f64>>>,
@@ -240,7 +139,7 @@ fn compare_outputs(
                             all_match = false;
                         }
                     }
-                    (None, None) => {} // Both NA, OK
+                    (None, None) => {}
                     (Some(exp), None) => {
                         eprintln!(
                             "Mismatch at bar {} for '{}': expected {}, got NA",
@@ -266,11 +165,10 @@ fn compare_outputs(
     (all_match, max_error)
 }
 
-/// Run a single golden test
 fn run_golden_test(test: &GoldenTestCase) -> Result<(), Box<dyn std::error::Error>> {
     let root = workspace_root();
-    let golden_path = root.join(test.golden_path);
-    let script_path = root.join(test.script_path);
+    let golden_path = root.join(&test.golden_path);
+    let script_path = root.join(&test.script_path);
 
     if !golden_path.exists() {
         return Err(format!(
@@ -289,13 +187,8 @@ fn run_golden_test(test: &GoldenTestCase) -> Result<(), Box<dyn std::error::Erro
         .into());
     }
 
-    // Load golden data
     let (series_data, expected) = load_golden_csv(&golden_path)?;
-
-    // Parse script
     let script = parse_script(&script_path)?;
-
-    // Execute with VM
     let result = execute_script_with_vm(&script, &series_data)?;
 
     if !result.success {
@@ -312,7 +205,6 @@ fn run_golden_test(test: &GoldenTestCase) -> Result<(), Box<dyn std::error::Erro
         .into());
     }
 
-    // Compare outputs
     let tolerance = 1e-8;
     let (matches, max_error) = compare_outputs(&result.plot_outputs, &expected, tolerance);
 
@@ -332,441 +224,12 @@ fn run_golden_test(test: &GoldenTestCase) -> Result<(), Box<dyn std::error::Erro
 }
 
 #[test]
-fn test_vm_golden_sma_14() {
-    run_golden_test(&GoldenTestCase {
-        name: "sma_14",
-        golden_path: "tests/golden/sma_14.csv",
-        script_path: "tests/scripts/stdlib/ta/sma_14.pine",
-    })
-    .expect("sma_14 test failed");
-}
+fn test_vm_golden_manifest_cases() {
+    let cases = load_manifest().expect("load VM parity manifest");
+    assert_eq!(cases.len(), 44, "unexpected VM parity manifest size");
 
-#[test]
-fn test_vm_golden_ema_12() {
-    run_golden_test(&GoldenTestCase {
-        name: "ema_12",
-        golden_path: "tests/golden/ema_12.csv",
-        script_path: "tests/scripts/stdlib/ta/ema_12.pine",
-    })
-    .expect("ema_12 test failed");
-}
-
-#[test]
-fn test_vm_golden_rsi_14() {
-    run_golden_test(&GoldenTestCase {
-        name: "rsi_14",
-        golden_path: "tests/golden/rsi_14.csv",
-        script_path: "tests/scripts/stdlib/ta/rsi_14.pine",
-    })
-    .expect("rsi_14 test failed");
-}
-
-#[test]
-fn test_vm_golden_macd() {
-    run_golden_test(&GoldenTestCase {
-        name: "macd_12_26_9",
-        golden_path: "tests/golden/macd_12_26_9.csv",
-        script_path: "tests/scripts/stdlib/ta/macd_12_26_9.pine",
-    })
-    .expect("macd_12_26_9 test failed");
-}
-
-#[test]
-fn test_vm_golden_bbands() {
-    run_golden_test(&GoldenTestCase {
-        name: "bbands_20_2",
-        golden_path: "tests/golden/bbands_20_2.csv",
-        script_path: "tests/scripts/stdlib/ta/bbands_20_2.pine",
-    })
-    .expect("bbands_20_2 test failed");
-}
-
-#[test]
-fn test_vm_golden_stoch() {
-    run_golden_test(&GoldenTestCase {
-        name: "stoch_14_3_3",
-        golden_path: "tests/golden/stoch_14_3_3.csv",
-        script_path: "tests/scripts/stdlib/ta/stoch_14_3_3.pine",
-    })
-    .expect("stoch_14_3_3 test failed");
-}
-
-#[test]
-fn test_vm_golden_atr_14() {
-    run_golden_test(&GoldenTestCase {
-        name: "atr_14",
-        golden_path: "tests/golden/atr_14.csv",
-        script_path: "tests/scripts/stdlib/ta/atr_14.pine",
-    })
-    .expect("atr_14 test failed");
-}
-
-#[test]
-fn test_vm_golden_cci_20() {
-    run_golden_test(&GoldenTestCase {
-        name: "cci_20",
-        golden_path: "tests/golden/cci_20.csv",
-        script_path: "tests/scripts/stdlib/ta/cci_20.pine",
-    })
-    .expect("cci_20 test failed");
-}
-
-#[test]
-fn test_vm_golden_cross_events() {
-    run_golden_test(&GoldenTestCase {
-        name: "cross_events",
-        golden_path: "tests/golden/cross_events.csv",
-        script_path: "tests/scripts/stdlib/ta/cross_events.pine",
-    })
-    .expect("cross_events test failed");
-}
-
-#[test]
-fn test_vm_golden_highest_10() {
-    run_golden_test(&GoldenTestCase {
-        name: "highest_10",
-        golden_path: "tests/golden/highest_10.csv",
-        script_path: "tests/scripts/stdlib/ta/highest_10.pine",
-    })
-    .expect("highest_10 test failed");
-}
-
-#[test]
-fn test_vm_golden_lowest_10() {
-    run_golden_test(&GoldenTestCase {
-        name: "lowest_10",
-        golden_path: "tests/golden/lowest_10.csv",
-        script_path: "tests/scripts/stdlib/ta/lowest_10.pine",
-    })
-    .expect("lowest_10 test failed");
-}
-
-#[test]
-fn test_vm_golden_highestbars_10() {
-    run_golden_test(&GoldenTestCase {
-        name: "highestbars_10",
-        golden_path: "tests/golden/highestbars_10.csv",
-        script_path: "tests/scripts/stdlib/ta/highestbars_10.pine",
-    })
-    .expect("highestbars_10 test failed");
-}
-
-#[test]
-fn test_vm_golden_lowestbars_10() {
-    run_golden_test(&GoldenTestCase {
-        name: "lowestbars_10",
-        golden_path: "tests/golden/lowestbars_10.csv",
-        script_path: "tests/scripts/stdlib/ta/lowestbars_10.pine",
-    })
-    .expect("lowestbars_10 test failed");
-}
-
-#[test]
-fn test_vm_golden_mom_10() {
-    run_golden_test(&GoldenTestCase {
-        name: "mom_10",
-        golden_path: "tests/golden/mom_10.csv",
-        script_path: "tests/scripts/stdlib/ta/mom_10.pine",
-    })
-    .expect("mom_10 test failed");
-}
-
-#[test]
-fn test_vm_golden_tr_basic() {
-    run_golden_test(&GoldenTestCase {
-        name: "tr_basic",
-        golden_path: "tests/golden/tr_basic.csv",
-        script_path: "tests/scripts/stdlib/ta/tr_basic.pine",
-    })
-    .expect("tr_basic test failed");
-}
-
-#[test]
-fn test_vm_golden_sma_manual() {
-    run_golden_test(&GoldenTestCase {
-        name: "sma_manual",
-        golden_path: "tests/golden/sma_manual.csv",
-        script_path: "tests/scripts/series/sma_manual.pine",
-    })
-    .expect("sma_manual test failed");
-}
-
-#[test]
-fn test_vm_golden_for_na_math() {
-    run_golden_test(&GoldenTestCase {
-        name: "for_na_math",
-        golden_path: "tests/golden/for_na_math.csv",
-        script_path: "tests/scripts/language/for_na_math.pine",
-    })
-    .expect("for_na_math test failed");
-}
-
-#[test]
-fn test_vm_golden_while_loop() {
-    run_golden_test(&GoldenTestCase {
-        name: "while_loop",
-        golden_path: "tests/golden/while_loop.csv",
-        script_path: "tests/scripts/language/while_loop.pine",
-    })
-    .expect("while_loop test failed");
-}
-
-#[test]
-fn test_vm_golden_switch_basic() {
-    run_golden_test(&GoldenTestCase {
-        name: "switch_basic",
-        golden_path: "tests/golden/switch_basic.csv",
-        script_path: "tests/scripts/language/switch_basic.pine",
-    })
-    .expect("switch_basic test failed");
-}
-
-#[test]
-fn test_vm_golden_udf_basic() {
-    run_golden_test(&GoldenTestCase {
-        name: "udf_basic",
-        golden_path: "tests/golden/udf_basic.csv",
-        script_path: "tests/scripts/language/udf_basic.pine",
-    })
-    .expect("udf_basic test failed");
-}
-
-#[test]
-fn test_vm_golden_bbw_20_2() {
-    run_golden_test(&GoldenTestCase {
-        name: "bbw_20_2",
-        golden_path: "tests/golden/bbw_20_2.csv",
-        script_path: "tests/scripts/stdlib/ta/bbw_20_2.pine",
-    })
-    .expect("bbw_20_2 test failed");
-}
-
-#[test]
-fn test_vm_golden_change_2() {
-    run_golden_test(&GoldenTestCase {
-        name: "change_2",
-        golden_path: "tests/golden/change_2.csv",
-        script_path: "tests/scripts/stdlib/ta/change_2.pine",
-    })
-    .expect("change_2 test failed");
-}
-
-#[test]
-fn test_vm_golden_correlation_10() {
-    run_golden_test(&GoldenTestCase {
-        name: "correlation_10",
-        golden_path: "tests/golden/correlation_10.csv",
-        script_path: "tests/scripts/stdlib/ta/correlation_10.pine",
-    })
-    .expect("correlation_10 test failed");
-}
-
-#[test]
-fn test_vm_golden_cum_volume() {
-    run_golden_test(&GoldenTestCase {
-        name: "cum_volume",
-        golden_path: "tests/golden/cum_volume.csv",
-        script_path: "tests/scripts/stdlib/ta/cum_volume.pine",
-    })
-    .expect("cum_volume test failed");
-}
-
-#[test]
-fn test_vm_golden_dev_10() {
-    run_golden_test(&GoldenTestCase {
-        name: "dev_10",
-        golden_path: "tests/golden/dev_10.csv",
-        script_path: "tests/scripts/stdlib/ta/dev_10.pine",
-    })
-    .expect("dev_10 test failed");
-}
-
-#[test]
-fn test_vm_golden_dmi_5_5() {
-    run_golden_test(&GoldenTestCase {
-        name: "dmi_5_5",
-        golden_path: "tests/golden/dmi_5_5.csv",
-        script_path: "tests/scripts/stdlib/ta/dmi_5_5.pine",
-    })
-    .expect("dmi_5_5 test failed");
-}
-
-#[test]
-fn test_vm_golden_linreg_10() {
-    run_golden_test(&GoldenTestCase {
-        name: "linreg_10",
-        golden_path: "tests/golden/linreg_10.csv",
-        script_path: "tests/scripts/stdlib/ta/linreg_10.pine",
-    })
-    .expect("linreg_10 test failed");
-}
-
-#[test]
-fn test_vm_golden_median_10() {
-    run_golden_test(&GoldenTestCase {
-        name: "median_10",
-        golden_path: "tests/golden/median_10.csv",
-        script_path: "tests/scripts/stdlib/ta/median_10.pine",
-    })
-    .expect("median_10 test failed");
-}
-
-#[test]
-fn test_vm_golden_mfi_14() {
-    run_golden_test(&GoldenTestCase {
-        name: "mfi_14",
-        golden_path: "tests/golden/mfi_14.csv",
-        script_path: "tests/scripts/stdlib/ta/mfi_14.pine",
-    })
-    .expect("mfi_14 test failed");
-}
-
-#[test]
-fn test_vm_golden_obv_basic() {
-    run_golden_test(&GoldenTestCase {
-        name: "obv_basic",
-        golden_path: "tests/golden/obv_basic.csv",
-        script_path: "tests/scripts/stdlib/ta/obv_basic.pine",
-    })
-    .expect("obv_basic test failed");
-}
-
-#[test]
-fn test_vm_golden_percentrank_10() {
-    run_golden_test(&GoldenTestCase {
-        name: "percentrank_10",
-        golden_path: "tests/golden/percentrank_10.csv",
-        script_path: "tests/scripts/stdlib/ta/percentrank_10.pine",
-    })
-    .expect("percentrank_10 test failed");
-}
-
-#[test]
-fn test_vm_golden_pvt_basic() {
-    run_golden_test(&GoldenTestCase {
-        name: "pvt_basic",
-        golden_path: "tests/golden/pvt_basic.csv",
-        script_path: "tests/scripts/stdlib/ta/pvt_basic.pine",
-    })
-    .expect("pvt_basic test failed");
-}
-
-#[test]
-fn test_vm_golden_range_10() {
-    run_golden_test(&GoldenTestCase {
-        name: "range_10",
-        golden_path: "tests/golden/range_10.csv",
-        script_path: "tests/scripts/stdlib/ta/range_10.pine",
-    })
-    .expect("range_10 test failed");
-}
-
-#[test]
-fn test_vm_golden_rising_falling() {
-    run_golden_test(&GoldenTestCase {
-        name: "rising_falling",
-        golden_path: "tests/golden/rising_falling.csv",
-        script_path: "tests/scripts/stdlib/ta/rising_falling.pine",
-    })
-    .expect("rising_falling test failed");
-}
-
-#[test]
-fn test_vm_golden_rma_14() {
-    run_golden_test(&GoldenTestCase {
-        name: "rma_14",
-        golden_path: "tests/golden/rma_14.csv",
-        script_path: "tests/scripts/stdlib/ta/rma_14.pine",
-    })
-    .expect("rma_14 test failed");
-}
-
-#[test]
-fn test_vm_golden_roc_10() {
-    run_golden_test(&GoldenTestCase {
-        name: "roc_10",
-        golden_path: "tests/golden/roc_10.csv",
-        script_path: "tests/scripts/stdlib/ta/roc_10.pine",
-    })
-    .expect("roc_10 test failed");
-}
-
-#[test]
-fn test_vm_golden_stdev_10() {
-    run_golden_test(&GoldenTestCase {
-        name: "stdev_10",
-        golden_path: "tests/golden/stdev_10.csv",
-        script_path: "tests/scripts/stdlib/ta/stdev_10.pine",
-    })
-    .expect("stdev_10 test failed");
-}
-
-#[test]
-fn test_vm_golden_supertrend_3_5() {
-    run_golden_test(&GoldenTestCase {
-        name: "supertrend_3_5",
-        golden_path: "tests/golden/supertrend_3_5.csv",
-        script_path: "tests/scripts/stdlib/ta/supertrend_3_5.pine",
-    })
-    .expect("supertrend_3_5 test failed");
-}
-
-#[test]
-fn test_vm_golden_swma_basic() {
-    run_golden_test(&GoldenTestCase {
-        name: "swma_basic",
-        golden_path: "tests/golden/swma_basic.csv",
-        script_path: "tests/scripts/stdlib/ta/swma_basic.pine",
-    })
-    .expect("swma_basic test failed");
-}
-
-#[test]
-fn test_vm_golden_tsi_13_25() {
-    run_golden_test(&GoldenTestCase {
-        name: "tsi_13_25",
-        golden_path: "tests/golden/tsi_13_25.csv",
-        script_path: "tests/scripts/stdlib/ta/tsi_13_25.pine",
-    })
-    .expect("tsi_13_25 test failed");
-}
-
-#[test]
-fn test_vm_golden_variance_10() {
-    run_golden_test(&GoldenTestCase {
-        name: "variance_10",
-        golden_path: "tests/golden/variance_10.csv",
-        script_path: "tests/scripts/stdlib/ta/variance_10.pine",
-    })
-    .expect("variance_10 test failed");
-}
-
-#[test]
-fn test_vm_golden_vwma_10() {
-    run_golden_test(&GoldenTestCase {
-        name: "vwma_10",
-        golden_path: "tests/golden/vwma_10.csv",
-        script_path: "tests/scripts/stdlib/ta/vwma_10.pine",
-    })
-    .expect("vwma_10 test failed");
-}
-
-#[test]
-fn test_vm_golden_wma_10() {
-    run_golden_test(&GoldenTestCase {
-        name: "wma_10",
-        golden_path: "tests/golden/wma_10.csv",
-        script_path: "tests/scripts/stdlib/ta/wma_10.pine",
-    })
-    .expect("wma_10 test failed");
-}
-
-#[test]
-fn test_vm_golden_wpr_14() {
-    run_golden_test(&GoldenTestCase {
-        name: "wpr_14",
-        golden_path: "tests/golden/wpr_14.csv",
-        script_path: "tests/scripts/stdlib/ta/wpr_14.pine",
-    })
-    .expect("wpr_14 test failed");
+    for case in &cases {
+        run_golden_test(case)
+            .unwrap_or_else(|e| panic!("{} VM golden test failed: {e}", case.name));
+    }
 }

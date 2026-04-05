@@ -16,3 +16,4 @@ serde = { workspace = true }
 insta = { workspace = true }
 pine-eval = { path = "../pine-eval" }
 pine-lexer = { path = "../pine-lexer" }
+serde_json = { workspace = true }

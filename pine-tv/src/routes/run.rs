@@ -1,7 +1,7 @@
 //! POST /api/run endpoint
 //!
-//! Runs the script via [`crate::engine::runner::PineEngine`] (default **pine-eval** bar-by-bar;
-//! set `PINE_TV_MODE=vm` for the bytecode VM). Response `plots` are built from interpreter plot
+//! Runs the script via [`crate::engine::runner::PineEngine`] (default **pine-vm**; set
+//! `PINE_TV_MODE=eval` for the interpreter fallback). Response `plots` are built from execution
 //! outputs aligned to request bars.
 
 use axum::{extract::State, http::StatusCode, response::IntoResponse, Json};

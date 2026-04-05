@@ -3,22 +3,29 @@
 use pine_eval::runner::{run_bar_by_bar, BarData};
 use pine_eval::EvaluationContext;
 use pine_vm::executor::{execute_script_with_vm, PlotOutputs, SeriesData};
+use serde::Deserialize;
 use std::collections::{BTreeSet, HashMap};
 use std::fs;
 use std::path::{Path, PathBuf};
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Deserialize)]
 struct ScriptParityCase {
-    name: &'static str,
-    script_path: &'static str,
-    golden_path: &'static str,
-    plots: &'static [&'static str],
+    name: String,
+    script_path: String,
+    golden_path: String,
+    plots: Vec<String>,
 }
 
 fn workspace_root() -> PathBuf {
     std::env::var("CARGO_MANIFEST_DIR")
         .map(|d| PathBuf::from(d).join("../.."))
         .unwrap_or_else(|_| PathBuf::from("."))
+}
+
+fn load_manifest() -> Result<Vec<ScriptParityCase>, Box<dyn std::error::Error>> {
+    let manifest_path = workspace_root().join("tests/vm_parity_cases.json");
+    let content = fs::read_to_string(manifest_path)?;
+    Ok(serde_json::from_str(&content)?)
 }
 
 fn parse_script(path: &Path) -> Result<pine_parser::ast::Script, Box<dyn std::error::Error>> {
@@ -160,8 +167,8 @@ fn assert_plot_series_close(
 
 fn assert_script_parity(case: &ScriptParityCase) -> Result<(), Box<dyn std::error::Error>> {
     let root = workspace_root();
-    let script = parse_script(&root.join(case.script_path))?;
-    let series = load_series_data(&root.join(case.golden_path))?;
+    let script = parse_script(&root.join(&case.script_path))?;
+    let series = load_series_data(&root.join(&case.golden_path))?;
 
     let vm_result = execute_script_with_vm(&script, &series)?;
     assert!(
@@ -179,7 +186,7 @@ fn assert_script_parity(case: &ScriptParityCase) -> Result<(), Box<dyn std::erro
     let vm_outputs = plot_outputs_to_map(&vm_result.plot_outputs);
     let eval_outputs = eval_outputs_for_script(&script, &series)?;
 
-    let expected_plots: BTreeSet<&str> = case.plots.iter().copied().collect();
+    let expected_plots: BTreeSet<&str> = case.plots.iter().map(String::as_str).collect();
     let vm_plot_names: BTreeSet<&str> = vm_outputs.keys().map(String::as_str).collect();
     let eval_plot_names: BTreeSet<&str> = eval_outputs.keys().map(String::as_str).collect();
 
@@ -195,499 +202,26 @@ fn assert_script_parity(case: &ScriptParityCase) -> Result<(), Box<dyn std::erro
     );
 
     let tolerance = 1e-8;
-    for plot_name in case.plots {
+    for plot_name in &case.plots {
         let vm_values = vm_outputs
-            .get(*plot_name)
+            .get(plot_name)
             .unwrap_or_else(|| panic!("{}: missing VM plot '{}'", case.name, plot_name));
         let eval_values = eval_outputs
-            .get(*plot_name)
+            .get(plot_name)
             .unwrap_or_else(|| panic!("{}: missing eval plot '{}'", case.name, plot_name));
-        assert_plot_series_close(case.name, plot_name, vm_values, eval_values, tolerance);
+        assert_plot_series_close(&case.name, plot_name, vm_values, eval_values, tolerance);
     }
 
     Ok(())
 }
 
 #[test]
-fn test_script_parity_sma_manual() {
-    assert_script_parity(&ScriptParityCase {
-        name: "sma_manual",
-        script_path: "tests/scripts/series/sma_manual.pine",
-        golden_path: "tests/golden/sma_manual.csv",
-        plots: &["Manual SMA", "Close", "manualSma"],
-    })
-    .expect("sma_manual script parity failed");
-}
+fn test_script_parity_manifest_cases() {
+    let cases = load_manifest().expect("load VM parity manifest");
+    assert_eq!(cases.len(), 44, "unexpected VM parity manifest size");
 
-#[test]
-fn test_script_parity_cross_events() {
-    assert_script_parity(&ScriptParityCase {
-        name: "cross_events",
-        script_path: "tests/scripts/stdlib/ta/cross_events.pine",
-        golden_path: "tests/golden/cross_events.csv",
-        plots: &["Cross Up", "Cross Down", "Bars Since Up"],
-    })
-    .expect("cross_events script parity failed");
-}
-
-#[test]
-fn test_script_parity_macd() {
-    assert_script_parity(&ScriptParityCase {
-        name: "macd_12_26_9",
-        script_path: "tests/scripts/stdlib/ta/macd_12_26_9.pine",
-        golden_path: "tests/golden/macd_12_26_9.csv",
-        plots: &["MACD Line", "Signal Line", "Histogram"],
-    })
-    .expect("macd_12_26_9 script parity failed");
-}
-
-#[test]
-fn test_script_parity_bbands() {
-    assert_script_parity(&ScriptParityCase {
-        name: "bbands_20_2",
-        script_path: "tests/scripts/stdlib/ta/bbands_20_2.pine",
-        golden_path: "tests/golden/bbands_20_2.csv",
-        plots: &["Basis (SMA 20)", "Upper Band", "Lower Band"],
-    })
-    .expect("bbands_20_2 script parity failed");
-}
-
-#[test]
-fn test_script_parity_rsi() {
-    assert_script_parity(&ScriptParityCase {
-        name: "rsi_14",
-        script_path: "tests/scripts/stdlib/ta/rsi_14.pine",
-        golden_path: "tests/golden/rsi_14.csv",
-        plots: &["RSI 14"],
-    })
-    .expect("rsi_14 script parity failed");
-}
-
-#[test]
-fn test_script_parity_stoch() {
-    assert_script_parity(&ScriptParityCase {
-        name: "stoch_14_3_3",
-        script_path: "tests/scripts/stdlib/ta/stoch_14_3_3.pine",
-        golden_path: "tests/golden/stoch_14_3_3.csv",
-        plots: &["%K"],
-    })
-    .expect("stoch_14_3_3 script parity failed");
-}
-
-#[test]
-fn test_script_parity_atr() {
-    assert_script_parity(&ScriptParityCase {
-        name: "atr_14",
-        script_path: "tests/scripts/stdlib/ta/atr_14.pine",
-        golden_path: "tests/golden/atr_14.csv",
-        plots: &["ATR 14"],
-    })
-    .expect("atr_14 script parity failed");
-}
-
-#[test]
-fn test_script_parity_sma_14() {
-    assert_script_parity(&ScriptParityCase {
-        name: "sma_14",
-        script_path: "tests/scripts/stdlib/ta/sma_14.pine",
-        golden_path: "tests/golden/sma_14.csv",
-        plots: &["SMA 14"],
-    })
-    .expect("sma_14 script parity failed");
-}
-
-#[test]
-fn test_script_parity_ema_12() {
-    assert_script_parity(&ScriptParityCase {
-        name: "ema_12",
-        script_path: "tests/scripts/stdlib/ta/ema_12.pine",
-        golden_path: "tests/golden/ema_12.csv",
-        plots: &["EMA 12"],
-    })
-    .expect("ema_12 script parity failed");
-}
-
-#[test]
-fn test_script_parity_highest_10() {
-    assert_script_parity(&ScriptParityCase {
-        name: "highest_10",
-        script_path: "tests/scripts/stdlib/ta/highest_10.pine",
-        golden_path: "tests/golden/highest_10.csv",
-        plots: &["Highest 10"],
-    })
-    .expect("highest_10 script parity failed");
-}
-
-#[test]
-fn test_script_parity_lowest_10() {
-    assert_script_parity(&ScriptParityCase {
-        name: "lowest_10",
-        script_path: "tests/scripts/stdlib/ta/lowest_10.pine",
-        golden_path: "tests/golden/lowest_10.csv",
-        plots: &["Lowest 10"],
-    })
-    .expect("lowest_10 script parity failed");
-}
-
-#[test]
-fn test_script_parity_highestbars_10() {
-    assert_script_parity(&ScriptParityCase {
-        name: "highestbars_10",
-        script_path: "tests/scripts/stdlib/ta/highestbars_10.pine",
-        golden_path: "tests/golden/highestbars_10.csv",
-        plots: &["Highest Bars 10"],
-    })
-    .expect("highestbars_10 script parity failed");
-}
-
-#[test]
-fn test_script_parity_lowestbars_10() {
-    assert_script_parity(&ScriptParityCase {
-        name: "lowestbars_10",
-        script_path: "tests/scripts/stdlib/ta/lowestbars_10.pine",
-        golden_path: "tests/golden/lowestbars_10.csv",
-        plots: &["Lowest Bars 10"],
-    })
-    .expect("lowestbars_10 script parity failed");
-}
-
-#[test]
-fn test_script_parity_mom_10() {
-    assert_script_parity(&ScriptParityCase {
-        name: "mom_10",
-        script_path: "tests/scripts/stdlib/ta/mom_10.pine",
-        golden_path: "tests/golden/mom_10.csv",
-        plots: &["Momentum 10"],
-    })
-    .expect("mom_10 script parity failed");
-}
-
-#[test]
-fn test_script_parity_cci_20() {
-    assert_script_parity(&ScriptParityCase {
-        name: "cci_20",
-        script_path: "tests/scripts/stdlib/ta/cci_20.pine",
-        golden_path: "tests/golden/cci_20.csv",
-        plots: &["CCI 20"],
-    })
-    .expect("cci_20 script parity failed");
-}
-
-#[test]
-fn test_script_parity_tr_basic() {
-    assert_script_parity(&ScriptParityCase {
-        name: "tr_basic",
-        script_path: "tests/scripts/stdlib/ta/tr_basic.pine",
-        golden_path: "tests/golden/tr_basic.csv",
-        plots: &["TR"],
-    })
-    .expect("tr_basic script parity failed");
-}
-
-#[test]
-fn test_script_parity_for_na_math() {
-    assert_script_parity(&ScriptParityCase {
-        name: "for_na_math",
-        script_path: "tests/scripts/language/for_na_math.pine",
-        golden_path: "tests/golden/for_na_math.csv",
-        plots: &["For Math Result"],
-    })
-    .expect("for_na_math script parity failed");
-}
-
-#[test]
-fn test_script_parity_while_loop() {
-    assert_script_parity(&ScriptParityCase {
-        name: "while_loop",
-        script_path: "tests/scripts/language/while_loop.pine",
-        golden_path: "tests/golden/while_loop.csv",
-        plots: &["While Avg 5"],
-    })
-    .expect("while_loop script parity failed");
-}
-
-#[test]
-fn test_script_parity_switch_basic() {
-    assert_script_parity(&ScriptParityCase {
-        name: "switch_basic",
-        script_path: "tests/scripts/language/switch_basic.pine",
-        golden_path: "tests/golden/switch_basic.csv",
-        plots: &["Switch Result"],
-    })
-    .expect("switch_basic script parity failed");
-}
-
-#[test]
-fn test_script_parity_udf_basic() {
-    assert_script_parity(&ScriptParityCase {
-        name: "udf_basic",
-        script_path: "tests/scripts/language/udf_basic.pine",
-        golden_path: "tests/golden/udf_basic.csv",
-        plots: &["UDF Diff", "UDF Scale"],
-    })
-    .expect("udf_basic script parity failed");
-}
-
-#[test]
-fn test_script_parity_bbw_20_2() {
-    assert_script_parity(&ScriptParityCase {
-        name: "bbw_20_2",
-        script_path: "tests/scripts/stdlib/ta/bbw_20_2.pine",
-        golden_path: "tests/golden/bbw_20_2.csv",
-        plots: &["BBW 20 2"],
-    })
-    .expect("bbw_20_2 script parity failed");
-}
-
-#[test]
-fn test_script_parity_change_2() {
-    assert_script_parity(&ScriptParityCase {
-        name: "change_2",
-        script_path: "tests/scripts/stdlib/ta/change_2.pine",
-        golden_path: "tests/golden/change_2.csv",
-        plots: &["Change 2"],
-    })
-    .expect("change_2 script parity failed");
-}
-
-#[test]
-fn test_script_parity_correlation_10() {
-    assert_script_parity(&ScriptParityCase {
-        name: "correlation_10",
-        script_path: "tests/scripts/stdlib/ta/correlation_10.pine",
-        golden_path: "tests/golden/correlation_10.csv",
-        plots: &["Corr 10"],
-    })
-    .expect("correlation_10 script parity failed");
-}
-
-#[test]
-fn test_script_parity_cum_volume() {
-    assert_script_parity(&ScriptParityCase {
-        name: "cum_volume",
-        script_path: "tests/scripts/stdlib/ta/cum_volume.pine",
-        golden_path: "tests/golden/cum_volume.csv",
-        plots: &["Cum Volume"],
-    })
-    .expect("cum_volume script parity failed");
-}
-
-#[test]
-fn test_script_parity_dev_10() {
-    assert_script_parity(&ScriptParityCase {
-        name: "dev_10",
-        script_path: "tests/scripts/stdlib/ta/dev_10.pine",
-        golden_path: "tests/golden/dev_10.csv",
-        plots: &["Dev 10"],
-    })
-    .expect("dev_10 script parity failed");
-}
-
-#[test]
-fn test_script_parity_dmi_5_5() {
-    assert_script_parity(&ScriptParityCase {
-        name: "dmi_5_5",
-        script_path: "tests/scripts/stdlib/ta/dmi_5_5.pine",
-        golden_path: "tests/golden/dmi_5_5.csv",
-        plots: &["DI Plus", "DI Minus", "ADX"],
-    })
-    .expect("dmi_5_5 script parity failed");
-}
-
-#[test]
-fn test_script_parity_linreg_10() {
-    assert_script_parity(&ScriptParityCase {
-        name: "linreg_10",
-        script_path: "tests/scripts/stdlib/ta/linreg_10.pine",
-        golden_path: "tests/golden/linreg_10.csv",
-        plots: &["LinReg 10"],
-    })
-    .expect("linreg_10 script parity failed");
-}
-
-#[test]
-fn test_script_parity_median_10() {
-    assert_script_parity(&ScriptParityCase {
-        name: "median_10",
-        script_path: "tests/scripts/stdlib/ta/median_10.pine",
-        golden_path: "tests/golden/median_10.csv",
-        plots: &["Median 10"],
-    })
-    .expect("median_10 script parity failed");
-}
-
-#[test]
-fn test_script_parity_mfi_14() {
-    assert_script_parity(&ScriptParityCase {
-        name: "mfi_14",
-        script_path: "tests/scripts/stdlib/ta/mfi_14.pine",
-        golden_path: "tests/golden/mfi_14.csv",
-        plots: &["MFI 14"],
-    })
-    .expect("mfi_14 script parity failed");
-}
-
-#[test]
-fn test_script_parity_obv_basic() {
-    assert_script_parity(&ScriptParityCase {
-        name: "obv_basic",
-        script_path: "tests/scripts/stdlib/ta/obv_basic.pine",
-        golden_path: "tests/golden/obv_basic.csv",
-        plots: &["OBV"],
-    })
-    .expect("obv_basic script parity failed");
-}
-
-#[test]
-fn test_script_parity_percentrank_10() {
-    assert_script_parity(&ScriptParityCase {
-        name: "percentrank_10",
-        script_path: "tests/scripts/stdlib/ta/percentrank_10.pine",
-        golden_path: "tests/golden/percentrank_10.csv",
-        plots: &["PctRank 10"],
-    })
-    .expect("percentrank_10 script parity failed");
-}
-
-#[test]
-fn test_script_parity_pvt_basic() {
-    assert_script_parity(&ScriptParityCase {
-        name: "pvt_basic",
-        script_path: "tests/scripts/stdlib/ta/pvt_basic.pine",
-        golden_path: "tests/golden/pvt_basic.csv",
-        plots: &["PVT"],
-    })
-    .expect("pvt_basic script parity failed");
-}
-
-#[test]
-fn test_script_parity_range_10() {
-    assert_script_parity(&ScriptParityCase {
-        name: "range_10",
-        script_path: "tests/scripts/stdlib/ta/range_10.pine",
-        golden_path: "tests/golden/range_10.csv",
-        plots: &["Range 10"],
-    })
-    .expect("range_10 script parity failed");
-}
-
-#[test]
-fn test_script_parity_rising_falling() {
-    assert_script_parity(&ScriptParityCase {
-        name: "rising_falling",
-        script_path: "tests/scripts/stdlib/ta/rising_falling.pine",
-        golden_path: "tests/golden/rising_falling.csv",
-        plots: &["Rising 3", "Falling 3"],
-    })
-    .expect("rising_falling script parity failed");
-}
-
-#[test]
-fn test_script_parity_rma_14() {
-    assert_script_parity(&ScriptParityCase {
-        name: "rma_14",
-        script_path: "tests/scripts/stdlib/ta/rma_14.pine",
-        golden_path: "tests/golden/rma_14.csv",
-        plots: &["RMA 14"],
-    })
-    .expect("rma_14 script parity failed");
-}
-
-#[test]
-fn test_script_parity_roc_10() {
-    assert_script_parity(&ScriptParityCase {
-        name: "roc_10",
-        script_path: "tests/scripts/stdlib/ta/roc_10.pine",
-        golden_path: "tests/golden/roc_10.csv",
-        plots: &["ROC 10"],
-    })
-    .expect("roc_10 script parity failed");
-}
-
-#[test]
-fn test_script_parity_stdev_10() {
-    assert_script_parity(&ScriptParityCase {
-        name: "stdev_10",
-        script_path: "tests/scripts/stdlib/ta/stdev_10.pine",
-        golden_path: "tests/golden/stdev_10.csv",
-        plots: &["StDev 10"],
-    })
-    .expect("stdev_10 script parity failed");
-}
-
-#[test]
-fn test_script_parity_supertrend_3_5() {
-    assert_script_parity(&ScriptParityCase {
-        name: "supertrend_3_5",
-        script_path: "tests/scripts/stdlib/ta/supertrend_3_5.pine",
-        golden_path: "tests/golden/supertrend_3_5.csv",
-        plots: &["Supertrend", "Direction"],
-    })
-    .expect("supertrend_3_5 script parity failed");
-}
-
-#[test]
-fn test_script_parity_swma_basic() {
-    assert_script_parity(&ScriptParityCase {
-        name: "swma_basic",
-        script_path: "tests/scripts/stdlib/ta/swma_basic.pine",
-        golden_path: "tests/golden/swma_basic.csv",
-        plots: &["SWMA"],
-    })
-    .expect("swma_basic script parity failed");
-}
-
-#[test]
-fn test_script_parity_tsi_13_25() {
-    assert_script_parity(&ScriptParityCase {
-        name: "tsi_13_25",
-        script_path: "tests/scripts/stdlib/ta/tsi_13_25.pine",
-        golden_path: "tests/golden/tsi_13_25.csv",
-        plots: &["TSI"],
-    })
-    .expect("tsi_13_25 script parity failed");
-}
-
-#[test]
-fn test_script_parity_variance_10() {
-    assert_script_parity(&ScriptParityCase {
-        name: "variance_10",
-        script_path: "tests/scripts/stdlib/ta/variance_10.pine",
-        golden_path: "tests/golden/variance_10.csv",
-        plots: &["Variance 10"],
-    })
-    .expect("variance_10 script parity failed");
-}
-
-#[test]
-fn test_script_parity_vwma_10() {
-    assert_script_parity(&ScriptParityCase {
-        name: "vwma_10",
-        script_path: "tests/scripts/stdlib/ta/vwma_10.pine",
-        golden_path: "tests/golden/vwma_10.csv",
-        plots: &["VWMA 10"],
-    })
-    .expect("vwma_10 script parity failed");
-}
-
-#[test]
-fn test_script_parity_wma_10() {
-    assert_script_parity(&ScriptParityCase {
-        name: "wma_10",
-        script_path: "tests/scripts/stdlib/ta/wma_10.pine",
-        golden_path: "tests/golden/wma_10.csv",
-        plots: &["WMA 10"],
-    })
-    .expect("wma_10 script parity failed");
-}
-
-#[test]
-fn test_script_parity_wpr_14() {
-    assert_script_parity(&ScriptParityCase {
-        name: "wpr_14",
-        script_path: "tests/scripts/stdlib/ta/wpr_14.pine",
-        golden_path: "tests/golden/wpr_14.csv",
-        plots: &["WPR 14"],
-    })
-    .expect("wpr_14 script parity failed");
+    for case in &cases {
+        assert_script_parity(case)
+            .unwrap_or_else(|e| panic!("{} script parity failed: {e}", case.name));
+    }
 }
