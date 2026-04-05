@@ -1,0 +1,8 @@
+// Golden test: ta.percentrank(close, 10)
+// Percent rank of current value in lookback window
+
+indicator("PercentRank Golden Test")
+
+pr = ta.percentrank(close, 10)
+
+plot(pr, title="PctRank 10", color=color.blue)

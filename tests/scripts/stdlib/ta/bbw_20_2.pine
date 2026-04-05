@@ -1,0 +1,8 @@
+// Golden test: ta.bbw(close, 20, 2.0)
+// Bollinger Band Width with SMA 20 and 2x standard deviation
+
+indicator("BBW Golden Test")
+
+bw = ta.bbw(close, 20, 2.0)
+
+plot(bw, title="BBW 20 2", color=color.blue)

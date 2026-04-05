@@ -1,0 +1,8 @@
+// Golden test: ta.linreg(close, 10, 0)
+// Linear regression of close price over 10 bars
+
+indicator("LinReg Golden Test")
+
+lr = ta.linreg(close, 10, 0)
+
+plot(lr, title="LinReg 10", color=color.blue)

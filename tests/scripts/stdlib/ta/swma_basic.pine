@@ -1,0 +1,8 @@
+// Golden test: ta.swma(close)
+// Symmetrically Weighted Moving Average (4-bar: 1/6, 2/6, 2/6, 1/6)
+
+indicator("SWMA Golden Test")
+
+s = ta.swma(close)
+
+plot(s, title="SWMA", color=color.blue)

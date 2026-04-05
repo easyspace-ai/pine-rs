@@ -1,0 +1,8 @@
+// Golden test: ta.variance(close, 10)
+// Statistical variance of close price over 10 bars
+
+indicator("Variance Golden Test")
+
+v = ta.variance(close, 10)
+
+plot(v, title="Variance 10", color=color.blue)

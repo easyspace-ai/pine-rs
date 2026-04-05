@@ -1,0 +1,8 @@
+// Golden test: ta.median(close, 10)
+// Median of close price over 10 bars
+
+indicator("Median Golden Test")
+
+med = ta.median(close, 10)
+
+plot(med, title="Median 10", color=color.blue)
