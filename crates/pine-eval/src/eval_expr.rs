@@ -679,11 +679,7 @@ fn extract_title_arg(
 }
 
 /// Extract an integer named argument
-fn extract_named_int(
-    args: &[ast::Arg],
-    ctx: &mut EvaluationContext,
-    name: &str,
-) -> Option<i32> {
+fn extract_named_int(args: &[ast::Arg], ctx: &mut EvaluationContext, name: &str) -> Option<i32> {
     args.iter().find_map(|arg| {
         if arg.name.as_ref().map(|n| n.name.as_str()) == Some(name) {
             match eval_expr(&arg.value, ctx).ok()? {
@@ -717,11 +713,7 @@ fn extract_named_color(
 }
 
 /// Extract a float named argument
-fn extract_named_float(
-    args: &[ast::Arg],
-    ctx: &mut EvaluationContext,
-    name: &str,
-) -> Option<f64> {
+fn extract_named_float(args: &[ast::Arg], ctx: &mut EvaluationContext, name: &str) -> Option<f64> {
     args.iter().find_map(|arg| {
         if arg.name.as_ref().map(|n| n.name.as_str()) == Some(name) {
             match eval_expr(&arg.value, ctx).ok()? {

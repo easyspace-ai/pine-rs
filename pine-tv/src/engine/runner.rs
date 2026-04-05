@@ -455,14 +455,19 @@ impl PineEngine {
                 .collect();
 
             let pane = plot_outputs.get_pane(title).unwrap_or(default_pane);
+            let color = plot_outputs
+                .get_color(title)
+                .map(|s| s.to_string())
+                .unwrap_or_else(|| generate_color(title));
+            let linewidth = plot_outputs.get_linewidth(title).unwrap_or(2.0);
 
             let title = title.clone();
             plots.push(Plot {
                 id: title.clone(),
                 title: title.clone(),
                 plot_type: "line".to_string(),
-                color: generate_color(&title),
-                linewidth: Some(2.0),
+                color,
+                linewidth: Some(linewidth),
                 pane,
                 data: plot_data,
             });

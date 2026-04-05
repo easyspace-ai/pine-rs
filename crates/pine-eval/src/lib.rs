@@ -343,12 +343,7 @@ impl PlotOutputs {
     }
 
     /// Record plot metadata (color, linewidth) - first call per title wins
-    pub fn record_metadata(
-        &mut self,
-        title: &str,
-        color: Option<String>,
-        linewidth: Option<f64>,
-    ) {
+    pub fn record_metadata(&mut self, title: &str, color: Option<String>, linewidth: Option<f64>) {
         if let Some(c) = color {
             self.colors.entry(title.to_string()).or_insert(c);
         }

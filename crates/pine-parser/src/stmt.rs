@@ -697,37 +697,6 @@ impl StmtParser {
                 unreachable!("parse_switch_stmt always returns Stmt::Switch");
             }
 
-            // Check for if expression as RHS: x = if ...
-            if self.peek_token() == Some(Token::If) {
-                let if_stmt = self.parse_if_stmt()?;
-                if let Stmt::If {
-                    cond,
-                    then_block,
-                    elifs,
-                    else_block,
-                    span: if_span,
-                } = if_stmt
-                {
-                    let span = expr.span().merge(if_span);
-                    // Wrap the if as a statement-level assignment with If as init
-                    // For now, represent as VarDecl where init runs the if
-                    match expr {
-                        Expr::Ident(ident) => {
-                            return Ok(Stmt::VarDecl {
-                                name: ident,
-                                kind: VarKind::Plain,
-                                type_ann: None,
-                                init: None,
-                                span: span.clone(),
-                            });
-                        }
-                        _ => {}
-                    }
-                    // Fall through to treat as regular assignment
-                    let _ = (cond, then_block, elifs, else_block);
-                }
-            }
-
             let value = self.parse_expr()?;
             let span = expr.span().merge(value.span());
 
@@ -1276,10 +1245,7 @@ else
         let script = parser.parse_script().unwrap();
         assert_eq!(script.stmts.len(), 1);
         if let Stmt::If {
-            cond,
-            elifs,
-            else_block,
-            ..
+            elifs, else_block, ..
         } = &script.stmts[0]
         {
             assert!(!elifs.is_empty(), "should have elifs");
