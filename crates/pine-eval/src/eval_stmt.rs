@@ -98,7 +98,7 @@ pub(crate) fn invoke_user_function(
     for p in user_fn.params.iter().skip(arg_values.len()) {
         let default_val = if let Some(ref default_expr) = p.default {
             use crate::eval_expr::eval_expr;
-            eval_expr(default_expr, ctx).unwrap_or(Value::Na)
+            eval_expr(default_expr, ctx)?
         } else {
             Value::Na
         };

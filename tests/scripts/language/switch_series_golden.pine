@@ -8,7 +8,8 @@ barDir = switch
     => 0.0
 
 // Switch with scrutinee — classify by quartile of bar range
-range_pct = (close - low) / (high - low)
+bar_range = high - low
+range_pct = bar_range > 0 ? (close - low) / bar_range : 0.5
 quartile = switch
     range_pct > 0.75 => 4.0
     range_pct > 0.50 => 3.0
