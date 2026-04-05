@@ -569,6 +569,30 @@ impl VM {
                                     .get_series_history_oldest_first(&series_name, call_site)
                                     .unwrap_or_default();
                                 self.stack.push(Value::Array(series_data));
+                            } else if func_name == "__array_size" {
+                                let arr = args.first().cloned().unwrap_or(Value::Na);
+                                let size = match arr {
+                                    Value::Array(ref v) => v.len() as i64,
+                                    _ => 0,
+                                };
+                                self.stack.push(Value::Int(size));
+                            } else if func_name == "__array_get" {
+                                let arr = args.first().cloned().unwrap_or(Value::Na);
+                                let index = args
+                                    .get(1)
+                                    .and_then(|v| match v {
+                                        Value::Int(i) => usize::try_from(*i).ok(),
+                                        Value::Float(f) if *f >= 0.0 => Some(*f as usize),
+                                        _ => None,
+                                    })
+                                    .unwrap_or(0);
+                                let item = match arr {
+                                    Value::Array(ref values) => {
+                                        values.get(index).cloned().unwrap_or(Value::Na)
+                                    }
+                                    _ => Value::Na,
+                                };
+                                self.stack.push(item);
                             } else if func_name == "__tuple_get" {
                                 let tuple_value = args.first().cloned().unwrap_or(Value::Na);
                                 let index = args

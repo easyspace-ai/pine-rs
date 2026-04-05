@@ -2,7 +2,7 @@
 //!
 //! This module compiles Pine Script AST into VM bytecode.
 
-use pine_parser::ast::{self, BinOp, Expr, Lit, Stmt, UnaryOp};
+use pine_parser::ast::{self, AssignOp, BinOp, Expr, Lit, Stmt, UnaryOp};
 use pine_runtime::value::Value;
 
 use crate::compiler::{BinaryOp as VmBinOp, Compiler, UnaryOp as VmUnaryOp};
@@ -56,11 +56,33 @@ fn compile_stmt(compiler: &mut Compiler, stmt: &Stmt) -> Result<(), CompileError
             }
             Ok(())
         }
-        Stmt::Assign { target, value, .. } => {
-            let is_series_expr = contains_series_reference(compiler, value);
-            compile_expr(compiler, value)?;
+        Stmt::Assign {
+            target, op, value, ..
+        } => {
+            // For compound assignment (+=, -=, etc.), first load current value,
+            // compile the RHS, apply the operation, then store.
+            let compound_op = match op {
+                AssignOp::PlusEq => Some(VmBinOp::Add),
+                AssignOp::MinusEq => Some(VmBinOp::Sub),
+                AssignOp::StarEq => Some(VmBinOp::Mul),
+                AssignOp::SlashEq => Some(VmBinOp::Div),
+                AssignOp::PercentEq => Some(VmBinOp::Mod),
+                AssignOp::Assign | AssignOp::ColonEq => None,
+            };
+
             match target {
                 ast::AssignTarget::Var(ident) => {
+                    if let Some(bin_op) = compound_op {
+                        // Load current value, compile RHS, apply op
+                        if !compiler.compile_load_var(&ident.name) {
+                            return Err(CompileError::UndefinedVariable(ident.name.clone()));
+                        }
+                        compile_expr(compiler, value)?;
+                        compiler.compile_binary(bin_op);
+                    } else {
+                        compile_expr(compiler, value)?;
+                    }
+                    let is_series_expr = contains_series_reference(compiler, value);
                     if is_series_expr {
                         compiler.mark_series_var(&ident.name);
                         compiler.compile_dup();
@@ -68,13 +90,13 @@ fn compile_stmt(compiler: &mut Compiler, stmt: &Stmt) -> Result<(), CompileError
                     if !compiler.compile_store_var(&ident.name) {
                         return Err(CompileError::UndefinedVariable(ident.name.clone()));
                     }
-                    // If the variable is assigned a series expression, update it in context
                     if is_series_expr {
                         compiler.compile_update_user_series(&ident.name);
                     }
                     Ok(())
                 }
                 ast::AssignTarget::Tuple(idents) => {
+                    compile_expr(compiler, value)?;
                     let tuple_slot = compiler
                         .declare_var(format!("__tuple_tmp_{}", compiler.chunk().current_pos()));
                     compiler.compile_store_slot(tuple_slot);
@@ -143,6 +165,31 @@ fn compile_stmt(compiler: &mut Compiler, stmt: &Stmt) -> Result<(), CompileError
         Stmt::FnDef {
             name, params, body, ..
         } => compile_fn_def(compiler, name, params, body),
+        Stmt::Switch {
+            scrutinee,
+            arms,
+            span: _,
+        } => {
+            compile_switch_stmt(compiler, scrutinee.as_ref(), arms)?;
+            Ok(())
+        }
+        Stmt::ForIn {
+            pattern,
+            iterable,
+            body,
+            ..
+        } => {
+            compile_for_in_loop(compiler, pattern, iterable, body)?;
+            Ok(())
+        }
+        Stmt::Break { .. } => {
+            compiler.compile_break();
+            Ok(())
+        }
+        Stmt::Continue { .. } => {
+            compiler.compile_continue();
+            Ok(())
+        }
         _ => Err(CompileError::Unsupported(
             "Statement type not yet supported",
         )),
@@ -485,6 +532,11 @@ fn compile_expr(compiler: &mut Compiler, expr: &Expr) -> Result<(), CompileError
             compiler.compile_call(func_idx, args.len() + 1); // +1 for self
             Ok(())
         }
+        Expr::SwitchExpr {
+            scrutinee,
+            arms,
+            span: _,
+        } => compile_switch_expr(compiler, scrutinee.as_deref(), arms),
         _ => Err(CompileError::Unsupported("Expression type")),
     }
 }
@@ -530,6 +582,258 @@ fn compile_fn_call(
     } else {
         Err(CompileError::Unsupported("Non-identifier function call"))
     }
+}
+
+/// Compile a switch statement (no value left on stack)
+fn compile_switch_stmt(
+    compiler: &mut Compiler,
+    scrutinee: Option<&Expr>,
+    arms: &[ast::SwitchArm],
+) -> Result<(), CompileError> {
+    // If there's a scrutinee, evaluate it once and store in a temp slot.
+    let scrutinee_slot = if let Some(scr) = scrutinee {
+        compile_expr(compiler, scr)?;
+        let slot = compiler.declare_var(format!("__switch_scr_{}", compiler.chunk().current_pos()));
+        compiler.compile_store_slot(slot);
+        Some(slot)
+    } else {
+        None
+    };
+
+    // Collect end-jump positions so we can patch them all to the end.
+    let mut end_jumps: Vec<usize> = Vec::new();
+
+    // Separate default arm from patterned arms.
+    let (patterned, default_arm): (Vec<_>, Vec<_>) =
+        arms.iter().partition(|arm| arm.pattern.is_some());
+
+    for arm in &patterned {
+        // Compile condition
+        if let Some(scr_slot) = scrutinee_slot {
+            // scrutinee == pattern
+            compiler.compile_load_slot(scr_slot);
+            compile_expr(compiler, arm.pattern.as_ref().unwrap())?;
+            compiler.compile_binary(VmBinOp::Eq);
+        } else {
+            // No scrutinee: the pattern itself is the boolean condition
+            compile_expr(compiler, arm.pattern.as_ref().unwrap())?;
+        }
+        let skip_jump = compiler.compile_jump(crate::compiler::JumpOp::IfFalse);
+
+        // Compile arm body
+        compile_switch_arm_body_stmt(compiler, &arm.body)?;
+
+        // Jump to end of switch
+        end_jumps.push(compiler.compile_jump(crate::compiler::JumpOp::Unconditional));
+
+        // Patch the skip_jump to here (next arm)
+        compiler.patch_jump(skip_jump);
+    }
+
+    // Default arm (always taken if reached)
+    if let Some(arm) = default_arm.first() {
+        compile_switch_arm_body_stmt(compiler, &arm.body)?;
+    }
+
+    // Patch all end jumps
+    for j in end_jumps {
+        compiler.patch_jump(j);
+    }
+
+    Ok(())
+}
+
+/// Compile a switch arm body as a statement (pop value if Expr body)
+fn compile_switch_arm_body_stmt(
+    compiler: &mut Compiler,
+    body: &ast::SwitchArmBody,
+) -> Result<(), CompileError> {
+    match body {
+        ast::SwitchArmBody::Expr(expr) => {
+            compile_expr(compiler, expr)?;
+            compiler.compile_pop();
+        }
+        ast::SwitchArmBody::Block(block) => {
+            for stmt in &block.stmts {
+                compile_stmt(compiler, stmt)?;
+            }
+        }
+    }
+    Ok(())
+}
+
+/// Compile a switch expression (leaves a value on the stack)
+fn compile_switch_expr(
+    compiler: &mut Compiler,
+    scrutinee: Option<&Expr>,
+    arms: &[ast::SwitchArm],
+) -> Result<(), CompileError> {
+    let scrutinee_slot = if let Some(scr) = scrutinee {
+        compile_expr(compiler, scr)?;
+        let slot = compiler.declare_var(format!("__switch_scr_{}", compiler.chunk().current_pos()));
+        compiler.compile_store_slot(slot);
+        Some(slot)
+    } else {
+        None
+    };
+
+    let mut end_jumps: Vec<usize> = Vec::new();
+    let (patterned, default_arm): (Vec<_>, Vec<_>) =
+        arms.iter().partition(|arm| arm.pattern.is_some());
+
+    for arm in &patterned {
+        if let Some(scr_slot) = scrutinee_slot {
+            compiler.compile_load_slot(scr_slot);
+            compile_expr(compiler, arm.pattern.as_ref().unwrap())?;
+            compiler.compile_binary(VmBinOp::Eq);
+        } else {
+            compile_expr(compiler, arm.pattern.as_ref().unwrap())?;
+        }
+        let skip_jump = compiler.compile_jump(crate::compiler::JumpOp::IfFalse);
+
+        // Compile arm body – must leave a value on the stack
+        compile_switch_arm_body_expr(compiler, &arm.body)?;
+
+        end_jumps.push(compiler.compile_jump(crate::compiler::JumpOp::Unconditional));
+        compiler.patch_jump(skip_jump);
+    }
+
+    // Default arm
+    if let Some(arm) = default_arm.first() {
+        compile_switch_arm_body_expr(compiler, &arm.body)?;
+    } else {
+        // No default – push na
+        compiler.compile_const(Value::Na);
+    }
+
+    for j in end_jumps {
+        compiler.patch_jump(j);
+    }
+
+    Ok(())
+}
+
+/// Compile a switch arm body as an expression (leaves value on stack)
+fn compile_switch_arm_body_expr(
+    compiler: &mut Compiler,
+    body: &ast::SwitchArmBody,
+) -> Result<(), CompileError> {
+    match body {
+        ast::SwitchArmBody::Expr(expr) => {
+            compile_expr(compiler, expr)?;
+        }
+        ast::SwitchArmBody::Block(block) => {
+            // Compile all statements; last expression result stays on stack.
+            // For blocks used as expressions, the last statement should be an Expr.
+            for (i, stmt) in block.stmts.iter().enumerate() {
+                if i == block.stmts.len() - 1 {
+                    // If last stmt is an Expr, compile without popping
+                    if let Stmt::Expr(expr) = stmt {
+                        compile_expr(compiler, expr)?;
+                    } else {
+                        compile_stmt(compiler, stmt)?;
+                        compiler.compile_const(Value::Na);
+                    }
+                } else {
+                    compile_stmt(compiler, stmt)?;
+                }
+            }
+            if block.stmts.is_empty() {
+                compiler.compile_const(Value::Na);
+            }
+        }
+    }
+    Ok(())
+}
+
+/// Compile a for-in loop: for x in iterable / for [i, v] in iterable
+fn compile_for_in_loop(
+    compiler: &mut Compiler,
+    pattern: &ast::ForInPattern,
+    iterable: &Expr,
+    body: &ast::Block,
+) -> Result<(), CompileError> {
+    compiler.enter_scope();
+
+    // Compile iterable and store in temp
+    compile_expr(compiler, iterable)?;
+    let arr_slot = compiler.declare_var(format!("__forin_arr_{}", compiler.chunk().current_pos()));
+    compiler.compile_store_slot(arr_slot);
+
+    // Get array size and store
+    compiler.compile_load_slot(arr_slot);
+    let size_fn = compiler.register_external_function("__array_size");
+    compiler.compile_call(size_fn, 1);
+    let len_slot = compiler.declare_var(format!("__forin_len_{}", compiler.chunk().current_pos()));
+    compiler.compile_store_slot(len_slot);
+
+    // Index variable = 0
+    let idx_slot = compiler.declare_var(format!("__forin_idx_{}", compiler.chunk().current_pos()));
+    compiler.compile_const(Value::Int(0));
+    compiler.compile_store_slot(idx_slot);
+
+    // Declare loop binding variables
+    match pattern {
+        ast::ForInPattern::Single(ident) => {
+            compiler.declare_var(&ident.name);
+        }
+        ast::ForInPattern::Tuple(idx_ident, val_ident) => {
+            compiler.declare_var(&idx_ident.name);
+            compiler.declare_var(&val_ident.name);
+        }
+    }
+
+    // Loop start
+    let start_pos = compiler.chunk().current_pos();
+    compiler.push_loop(start_pos);
+
+    // Condition: idx < len
+    compiler.compile_load_slot(idx_slot);
+    compiler.compile_load_slot(len_slot);
+    compiler.compile_binary(VmBinOp::Lt);
+    let end_jump = compiler.compile_jump(crate::compiler::JumpOp::IfFalse);
+
+    // Get element: __array_get(arr, idx)
+    compiler.compile_load_slot(arr_slot);
+    compiler.compile_load_slot(idx_slot);
+    let get_fn = compiler.register_external_function("__array_get");
+    compiler.compile_call(get_fn, 2);
+
+    // Store into pattern variable(s)
+    match pattern {
+        ast::ForInPattern::Single(ident) => {
+            compiler.compile_store_var(&ident.name);
+        }
+        ast::ForInPattern::Tuple(idx_ident, val_ident) => {
+            // Store value
+            compiler.compile_store_var(&val_ident.name);
+            // Store index
+            compiler.compile_load_slot(idx_slot);
+            compiler.compile_store_var(&idx_ident.name);
+        }
+    }
+
+    // Compile body
+    for stmt in &body.stmts {
+        compile_stmt(compiler, stmt)?;
+    }
+
+    // Increment index
+    compiler.compile_load_slot(idx_slot);
+    compiler.compile_const(Value::Int(1));
+    compiler.compile_binary(VmBinOp::Add);
+    compiler.compile_store_slot(idx_slot);
+
+    // Jump back to start
+    let loop_jump = compiler.compile_jump(crate::compiler::JumpOp::Unconditional);
+    compiler.patch_jump_to(loop_jump, start_pos);
+
+    // Patch end jump
+    compiler.patch_jump(end_jump);
+
+    compiler.pop_loop();
+    compiler.exit_scope();
+    Ok(())
 }
 
 /// Compile function definition
