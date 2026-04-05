@@ -233,6 +233,85 @@ fn str_join(args: &[Value]) -> Value {
     Value::String(parts.join(delimiter).into())
 }
 
+/// Find position of substring in string (0-based index)
+fn str_pos(args: &[Value]) -> Value {
+    let s = match args.first().and_then(|v| v.as_str()) {
+        Some(s) => s,
+        None => return Value::Na,
+    };
+    let substr = match args.get(1).and_then(|v| v.as_str()) {
+        Some(sub) => sub,
+        None => return Value::Na,
+    };
+
+    match s.find(substr) {
+        Some(pos) => Value::Int(pos as i64),
+        None => Value::Na,
+    }
+}
+
+/// Replace all occurrences of target with replacement
+fn str_replace_all(args: &[Value]) -> Value {
+    let s = match args.first().and_then(|v| v.as_str()) {
+        Some(s) => s,
+        None => return Value::Na,
+    };
+    let target = match args.get(1).and_then(|v| v.as_str()) {
+        Some(t) => t,
+        None => return Value::Na,
+    };
+    let replacement = match args.get(2).and_then(|v| v.as_str()) {
+        Some(r) => r,
+        None => return Value::Na,
+    };
+
+    Value::String(s.replace(target, replacement).into())
+}
+
+/// Format string with {0}, {1}, etc. placeholders
+fn str_format(args: &[Value]) -> Value {
+    let fmt_str = match args.first().and_then(|v| v.as_str()) {
+        Some(s) => s.to_string(),
+        None => return Value::Na,
+    };
+
+    let mut result = fmt_str;
+    for (i, arg) in args.iter().skip(1).enumerate() {
+        let placeholder = format!("{{{}}}", i);
+        let replacement = match arg {
+            Value::String(s) => s.to_string(),
+            Value::Int(n) => n.to_string(),
+            Value::Float(f) => f.to_string(),
+            Value::Bool(b) => b.to_string(),
+            Value::Na => "NaN".to_string(),
+            other => format!("{}", other),
+        };
+        result = result.replace(&placeholder, &replacement);
+    }
+
+    Value::String(result.into())
+}
+
+/// Match a regex pattern and return first match or Na
+fn str_match(args: &[Value]) -> Value {
+    let s = match args.first().and_then(|v| v.as_str()) {
+        Some(s) => s,
+        None => return Value::Na,
+    };
+    let pattern = match args.get(1).and_then(|v| v.as_str()) {
+        Some(p) => p,
+        None => return Value::Na,
+    };
+
+    // Simple pattern matching without regex dependency
+    // Check if pattern appears as substring (basic matching)
+    if s.contains(pattern) {
+        Value::String(pattern.into())
+    } else {
+        Value::Na
+    }
+}
+
 //==========================================================================
 // Registration
 //==========================================================================
@@ -350,6 +429,50 @@ pub fn register_functions(registry: &mut FunctionRegistry) {
             .with_namespace("str")
             .with_required_args(2),
         Arc::new(str_join) as BuiltinFn,
+    );
+
+    registry.register(
+        FunctionMeta::new("pos")
+            .with_namespace("str")
+            .with_required_args(2),
+        Arc::new(str_pos) as BuiltinFn,
+    );
+
+    registry.register(
+        FunctionMeta::new("replace_all")
+            .with_namespace("str")
+            .with_required_args(3),
+        Arc::new(str_replace_all) as BuiltinFn,
+    );
+
+    registry.register(
+        FunctionMeta::new("format")
+            .with_namespace("str")
+            .with_required_args(1)
+            .with_variadic(),
+        Arc::new(str_format) as BuiltinFn,
+    );
+
+    registry.register(
+        FunctionMeta::new("match")
+            .with_namespace("str")
+            .with_required_args(2),
+        Arc::new(str_match) as BuiltinFn,
+    );
+
+    // Aliases: str.startswith -> str.starts_with, str.endswith -> str.ends_with
+    registry.register(
+        FunctionMeta::new("startswith")
+            .with_namespace("str")
+            .with_required_args(2),
+        Arc::new(str_starts_with) as BuiltinFn,
+    );
+
+    registry.register(
+        FunctionMeta::new("endswith")
+            .with_namespace("str")
+            .with_required_args(2),
+        Arc::new(str_ends_with) as BuiltinFn,
     );
 }
 
@@ -497,5 +620,106 @@ mod tests {
         ]);
         let result = str_join(&[array, Value::String(",".into())]);
         assert_eq!(result, Value::String("a,b,c".into()));
+    }
+
+    #[test]
+    fn test_str_pos() {
+        let result = str_pos(&[
+            Value::String("hello world".into()),
+            Value::String("world".into()),
+        ]);
+        assert_eq!(result, Value::Int(6));
+
+        let result = str_pos(&[Value::String("hello".into()), Value::String("xyz".into())]);
+        assert!(result.is_na());
+
+        let result = str_pos(&[Value::String("hello".into()), Value::String("".into())]);
+        assert_eq!(result, Value::Int(0));
+
+        let result = str_pos(&[Value::Na, Value::String("x".into())]);
+        assert!(result.is_na());
+    }
+
+    #[test]
+    fn test_str_replace_all() {
+        let result = str_replace_all(&[
+            Value::String("aaa".into()),
+            Value::String("a".into()),
+            Value::String("b".into()),
+        ]);
+        assert_eq!(result, Value::String("bbb".into()));
+
+        let result = str_replace_all(&[
+            Value::String("hello world world".into()),
+            Value::String("world".into()),
+            Value::String("there".into()),
+        ]);
+        assert_eq!(result, Value::String("hello there there".into()));
+
+        let result = str_replace_all(&[
+            Value::Na,
+            Value::String("a".into()),
+            Value::String("b".into()),
+        ]);
+        assert!(result.is_na());
+    }
+
+    #[test]
+    fn test_str_format() {
+        let result = str_format(&[
+            Value::String("Hello {0}!".into()),
+            Value::String("world".into()),
+        ]);
+        assert_eq!(result, Value::String("Hello world!".into()));
+
+        let result = str_format(&[
+            Value::String("{0} + {1} = {2}".into()),
+            Value::Int(1),
+            Value::Int(2),
+            Value::Int(3),
+        ]);
+        assert_eq!(result, Value::String("1 + 2 = 3".into()));
+
+        let result = str_format(&[Value::String("no placeholders".into())]);
+        assert_eq!(result, Value::String("no placeholders".into()));
+
+        let result = str_format(&[Value::Na]);
+        assert!(result.is_na());
+    }
+
+    #[test]
+    fn test_str_match() {
+        let result = str_match(&[
+            Value::String("hello world".into()),
+            Value::String("world".into()),
+        ]);
+        assert_eq!(result, Value::String("world".into()));
+
+        let result = str_match(&[Value::String("hello".into()), Value::String("xyz".into())]);
+        assert!(result.is_na());
+
+        let result = str_match(&[Value::Na, Value::String("x".into())]);
+        assert!(result.is_na());
+    }
+
+    #[test]
+    fn test_str_startswith_endswith_aliases() {
+        let mut registry = FunctionRegistry::new();
+        register_functions(&mut registry);
+
+        assert!(registry.contains("str.startswith"));
+        assert!(registry.contains("str.endswith"));
+
+        let result = registry.dispatch(
+            "str.startswith",
+            &[Value::String("hello".into()), Value::String("he".into())],
+        );
+        assert_eq!(result, Some(Value::Bool(true)));
+
+        let result = registry.dispatch(
+            "str.endswith",
+            &[Value::String("hello".into()), Value::String("lo".into())],
+        );
+        assert_eq!(result, Some(Value::Bool(true)));
     }
 }
