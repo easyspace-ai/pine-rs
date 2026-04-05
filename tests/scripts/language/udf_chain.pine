@@ -1,0 +1,17 @@
+//@version=6
+indicator("UDF Chain Call Test")
+
+// Multiple UDFs calling each other
+doubleVal(x) => x * 2.0
+
+addTen(x) => x + 10.0
+
+// Chain UDF calls
+result = addTen(doubleVal(close))
+
+// Simple UDF
+myDiff(a, b) => a - b
+diff_val = myDiff(close, open)
+
+plot(result, title="Chained UDF")
+plot(diff_val, title="UDF Diff")

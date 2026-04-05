@@ -1985,6 +1985,7 @@ dependencies = [
  "pine-eval",
  "pine-lexer",
  "pine-parser",
+ "pine-vm",
  "serde",
  "serde_json",
  "wasm-bindgen",

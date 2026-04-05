@@ -1,0 +1,17 @@
+//@version=6
+indicator("Math Operations Test")
+
+// Basic math
+sum_val = close + open
+diff_val = close - open
+prod_val = close * 2.0
+div_val = close / open
+
+// Math functions
+abs_val = math.abs(close - open)
+max_val = math.max(close, open)
+min_val = math.min(close, open)
+
+plot(abs_val, title="Abs Diff")
+plot(max_val, title="Max CO")
+plot(min_val, title="Min CO")

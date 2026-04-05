@@ -1,0 +1,17 @@
+//@version=6
+indicator("TA Combo EMA Cross")
+
+// Fast and slow EMA
+ema_fast = ta.ema(close, 9)
+ema_slow = ta.ema(close, 21)
+
+// Difference
+ema_diff = ema_fast - ema_slow
+
+// Crossover detection
+cross_up = ta.crossover(ema_fast, ema_slow) ? 1.0 : 0.0
+cross_dn = ta.crossunder(ema_fast, ema_slow) ? 1.0 : 0.0
+
+plot(ema_diff, title="EMA Diff")
+plot(cross_up, title="Cross Up")
+plot(cross_dn, title="Cross Down")

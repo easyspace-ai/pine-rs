@@ -1,0 +1,15 @@
+//@version=6
+indicator("UDF Default Params Test")
+
+// UDF with default parameter value
+myEma(src, len = 14) =>
+    ta.ema(src, len)
+
+// Call with and without default
+ema_default = myEma(close)
+ema_custom = myEma(close, 9)
+ema_diff = ema_default - ema_custom
+
+plot(ema_default, title="EMA Default")
+plot(ema_custom, title="EMA Custom")
+plot(ema_diff, title="EMA Diff")

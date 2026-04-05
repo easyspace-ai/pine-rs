@@ -1,0 +1,17 @@
+//@version=6
+indicator("Var Varip Test")
+
+// var: persists across bars (initialized once)
+var float cum_close = 0.0
+cum_close := cum_close + close
+
+// Regular variable (re-initialized each bar)
+bar_close = close + 0.0
+
+// varip: persists across bars including intrabar updates
+varip float varip_count = 0.0
+varip_count := varip_count + 1.0
+
+plot(cum_close, title="Cumulative Close")
+plot(bar_close, title="Bar Close")
+plot(varip_count, title="Varip Count")

@@ -226,7 +226,7 @@ fn run_golden_test(test: &GoldenTestCase) -> Result<(), Box<dyn std::error::Erro
 #[test]
 fn test_vm_golden_manifest_cases() {
     let cases = load_manifest().expect("load VM parity manifest");
-    assert_eq!(cases.len(), 44, "unexpected VM parity manifest size");
+    assert_eq!(cases.len(), 59, "unexpected VM parity manifest size");
 
     for case in &cases {
         run_golden_test(case)

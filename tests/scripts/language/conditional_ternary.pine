@@ -1,0 +1,16 @@
+//@version=6
+indicator("Conditional Ternary Test")
+
+// Ternary expression
+dir = close > open ? 1.0 : -1.0
+
+// Nested ternary
+strength = close > open ? (close - open > 100 ? 2.0 : 1.0) : (open - close > 100 ? -2.0 : -1.0)
+
+// Ternary with na
+prev_close = close[1]
+change_pct = prev_close != 0 ? (close - prev_close) / prev_close * 100 : na
+
+plot(dir, title="Direction")
+plot(strength, title="Strength")
+plot(change_pct, title="Change Pct")

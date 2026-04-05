@@ -1,0 +1,15 @@
+//@version=6
+indicator("Multi Output Test")
+
+// Multiple different plot outputs to test complex output handling
+sma_5 = ta.sma(close, 5)
+sma_10 = ta.sma(close, 10)
+sma_20 = ta.sma(close, 20)
+rsi_14 = ta.rsi(close, 14)
+atr_14 = ta.atr(14)
+
+plot(sma_5, title="SMA 5")
+plot(sma_10, title="SMA 10")
+plot(sma_20, title="SMA 20")
+plot(rsi_14, title="RSI")
+plot(atr_14, title="ATR")
