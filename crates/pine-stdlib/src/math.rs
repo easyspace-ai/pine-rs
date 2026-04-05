@@ -52,6 +52,13 @@ pub fn register_functions(registry: &mut FunctionRegistry) {
     register_isna(registry);
     register_nz(registry);
     register_tostring(registry);
+
+    // Conversion functions
+    register_todegrees(registry);
+    register_toradians(registry);
+
+    // Random
+    register_random(registry);
 }
 
 // ============================================================================
@@ -494,6 +501,59 @@ fn builtin_math_tostring(args: &[Value]) -> Value {
         _ => return Value::Na,
     };
     Value::String(s.into())
+}
+
+// ============================================================================
+// Conversion Functions
+// ============================================================================
+
+#[pine_builtin(name = "todegrees", namespace = "math", required_args = 1)]
+fn builtin_math_todegrees(args: &[Value]) -> Value {
+    match args.first().and_then(get_float) {
+        Some(v) => Value::Float(v * 180.0 / std::f64::consts::PI),
+        None => Value::Na,
+    }
+}
+
+#[pine_builtin(name = "toradians", namespace = "math", required_args = 1)]
+fn builtin_math_toradians(args: &[Value]) -> Value {
+    match args.first().and_then(get_float) {
+        Some(v) => Value::Float(v * std::f64::consts::PI / 180.0),
+        None => Value::Na,
+    }
+}
+
+// ============================================================================
+// Random Function
+// ============================================================================
+
+/// Register math.random - Random number between min and max (default 0.0 to 1.0)
+fn register_random(registry: &mut FunctionRegistry) {
+    let meta = FunctionMeta::new("random")
+        .with_namespace("math")
+        .with_required_args(0)
+        .with_optional_args(2);
+
+    let func: crate::registry::BuiltinFn = Arc::new(|args| {
+        let min = args.first().and_then(get_float).unwrap_or(0.0);
+        let max = args.get(1).and_then(get_float).unwrap_or(1.0);
+        if min >= max {
+            return Value::Na;
+        }
+        // Simple deterministic pseudo-random for reproducibility
+        // Uses a basic hash of the current time
+        let seed = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_nanos())
+            .unwrap_or(0);
+        let hash = (seed
+            .wrapping_mul(6364136223846793005)
+            .wrapping_add(1442695040888963407)) as f64;
+        let normalized = (hash.abs() % 1_000_000.0) / 1_000_000.0;
+        Value::Float(min + normalized * (max - min))
+    });
+
+    registry.register(meta, func);
 }
 
 #[cfg(test)]
@@ -947,5 +1007,74 @@ mod tests {
             registry.dispatch("math.round_to_nearest", &[Value::Int(23), Value::Int(10)]),
             Some(Value::Float(20.0))
         );
+    }
+
+    #[test]
+    fn test_random() {
+        let registry = test_registry();
+
+        // Default (no args) should return float between 0.0 and 1.0
+        let result = registry.dispatch("math.random", &[]);
+        match result {
+            Some(Value::Float(f)) => {
+                assert!(
+                    f >= 0.0 && f < 1.0,
+                    "random() should be in [0.0, 1.0), got {}",
+                    f
+                );
+            }
+            _ => panic!("math.random() should return Float"),
+        }
+
+        // With min/max args
+        let result = registry.dispatch("math.random", &[Value::Float(10.0), Value::Float(20.0)]);
+        match result {
+            Some(Value::Float(f)) => {
+                assert!(
+                    f >= 10.0 && f < 20.0,
+                    "random(10,20) should be in [10.0, 20.0), got {}",
+                    f
+                );
+            }
+            _ => panic!("math.random(10, 20) should return Float"),
+        }
+
+        // min >= max should return Na
+        let result = registry.dispatch("math.random", &[Value::Float(5.0), Value::Float(5.0)]);
+        assert_eq!(result, Some(Value::Na));
+    }
+
+    #[test]
+    fn test_todegrees() {
+        let registry = test_registry();
+
+        let result = registry.dispatch("math.todegrees", &[Value::Float(std::f64::consts::PI)]);
+        match result {
+            Some(Value::Float(f)) => assert!((f - 180.0).abs() < 1e-10),
+            _ => panic!("Expected Float"),
+        }
+
+        let result = registry.dispatch("math.todegrees", &[Value::Float(0.0)]);
+        assert_eq!(result, Some(Value::Float(0.0)));
+
+        let result = registry.dispatch("math.todegrees", &[Value::Na]);
+        assert_eq!(result, Some(Value::Na));
+    }
+
+    #[test]
+    fn test_toradians() {
+        let registry = test_registry();
+
+        let result = registry.dispatch("math.toradians", &[Value::Float(180.0)]);
+        match result {
+            Some(Value::Float(f)) => assert!((f - std::f64::consts::PI).abs() < 1e-10),
+            _ => panic!("Expected Float"),
+        }
+
+        let result = registry.dispatch("math.toradians", &[Value::Float(0.0)]);
+        assert_eq!(result, Some(Value::Float(0.0)));
+
+        let result = registry.dispatch("math.toradians", &[Value::Na]);
+        assert_eq!(result, Some(Value::Na));
     }
 }

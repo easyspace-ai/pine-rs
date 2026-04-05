@@ -95,6 +95,30 @@ pub fn register_functions(registry: &mut FunctionRegistry) {
     register_crossover(registry);
     register_crossunder(registry);
     register_barssince(registry);
+
+    // Statistical functions
+    register_stdev(registry);
+    register_variance(registry);
+    register_correlation(registry);
+    register_linreg(registry);
+    register_median(registry);
+    register_percentrank(registry);
+    register_percentile_linear_interpolation(registry);
+    register_percentile_nearest_rank(registry);
+    register_dev(registry);
+    register_range(registry);
+
+    // Additional cross/signal functions
+    register_rising(registry);
+    register_falling(registry);
+    register_cross(registry);
+    register_valuewhen(registry);
+
+    // Additional indicators
+    register_bbw(registry);
+    register_swma(registry);
+    register_wpr(registry);
+    register_tsi(registry);
 }
 
 // ============================================================================
@@ -1712,6 +1736,668 @@ fn register_barssince(registry: &mut FunctionRegistry) {
     registry.register(meta, func);
 }
 
+// ============================================================================
+// Statistical functions
+// ============================================================================
+
+fn register_stdev(registry: &mut FunctionRegistry) {
+    let meta = FunctionMeta::new("stdev")
+        .with_namespace("ta")
+        .with_required_args(2)
+        .with_series_return();
+
+    let func: crate::registry::BuiltinFn = Arc::new(|args| {
+        let series = match args.first().and_then(extract_array) {
+            Some(s) => s,
+            None => return Value::Na,
+        };
+        let length = match extract_length_required(args, 1) {
+            Some(len) => len,
+            None => return Value::Na,
+        };
+        let values = value_slice_to_f64(series);
+        if values.len() < length {
+            return Value::Na;
+        }
+        let window = &values[values.len() - length..];
+        let mean = window.iter().sum::<f64>() / length as f64;
+        let variance = window.iter().map(|x| (x - mean).powi(2)).sum::<f64>() / length as f64;
+        Value::Float(variance.sqrt())
+    });
+
+    registry.register(meta, func);
+}
+
+fn register_variance(registry: &mut FunctionRegistry) {
+    let meta = FunctionMeta::new("variance")
+        .with_namespace("ta")
+        .with_required_args(2)
+        .with_series_return();
+
+    let func: crate::registry::BuiltinFn = Arc::new(|args| {
+        let series = match args.first().and_then(extract_array) {
+            Some(s) => s,
+            None => return Value::Na,
+        };
+        let length = match extract_length_required(args, 1) {
+            Some(len) => len,
+            None => return Value::Na,
+        };
+        let values = value_slice_to_f64(series);
+        if values.len() < length {
+            return Value::Na;
+        }
+        let window = &values[values.len() - length..];
+        let mean = window.iter().sum::<f64>() / length as f64;
+        let variance = window.iter().map(|x| (x - mean).powi(2)).sum::<f64>() / length as f64;
+        Value::Float(variance)
+    });
+
+    registry.register(meta, func);
+}
+
+fn register_correlation(registry: &mut FunctionRegistry) {
+    let meta = FunctionMeta::new("correlation")
+        .with_namespace("ta")
+        .with_required_args(3)
+        .with_series_return();
+
+    let func: crate::registry::BuiltinFn = Arc::new(|args| {
+        let series1 = match args.first().and_then(extract_array) {
+            Some(s) => s,
+            None => return Value::Na,
+        };
+        let series2 = match args.get(1).and_then(extract_array) {
+            Some(s) => s,
+            None => return Value::Na,
+        };
+        let length = match extract_length_required(args, 2) {
+            Some(len) => len,
+            None => return Value::Na,
+        };
+        let v1 = value_slice_to_f64(series1);
+        let v2 = value_slice_to_f64(series2);
+        if v1.len() < length || v2.len() < length {
+            return Value::Na;
+        }
+        let w1 = &v1[v1.len() - length..];
+        let w2 = &v2[v2.len() - length..];
+        let m1 = w1.iter().sum::<f64>() / length as f64;
+        let m2 = w2.iter().sum::<f64>() / length as f64;
+        let mut sum_xy = 0.0;
+        let mut sum_x2 = 0.0;
+        let mut sum_y2 = 0.0;
+        for i in 0..length {
+            let dx = w1[i] - m1;
+            let dy = w2[i] - m2;
+            sum_xy += dx * dy;
+            sum_x2 += dx * dx;
+            sum_y2 += dy * dy;
+        }
+        let denom = (sum_x2 * sum_y2).sqrt();
+        if denom == 0.0 {
+            return Value::Na;
+        }
+        Value::Float(sum_xy / denom)
+    });
+
+    registry.register(meta, func);
+}
+
+fn register_linreg(registry: &mut FunctionRegistry) {
+    let meta = FunctionMeta::new("linreg")
+        .with_namespace("ta")
+        .with_required_args(2)
+        .with_optional_args(1)
+        .with_series_return();
+
+    let func: crate::registry::BuiltinFn = Arc::new(|args| {
+        let series = match args.first().and_then(extract_array) {
+            Some(s) => s,
+            None => return Value::Na,
+        };
+        let length = match extract_length_required(args, 1) {
+            Some(len) => len,
+            None => return Value::Na,
+        };
+        let offset = args.get(2).and_then(|v| v.as_int()).unwrap_or(0);
+        let values = value_slice_to_f64(series);
+        if values.len() < length {
+            return Value::Na;
+        }
+        let window = &values[values.len() - length..];
+        let n = length as f64;
+        let mut sum_x = 0.0;
+        let mut sum_y = 0.0;
+        let mut sum_xy = 0.0;
+        let mut sum_x2 = 0.0;
+        for (i, &y) in window.iter().enumerate() {
+            let x = i as f64;
+            sum_x += x;
+            sum_y += y;
+            sum_xy += x * y;
+            sum_x2 += x * x;
+        }
+        let denom = n * sum_x2 - sum_x * sum_x;
+        if denom == 0.0 {
+            return Value::Na;
+        }
+        let m = (n * sum_xy - sum_x * sum_y) / denom;
+        let b = (sum_y - m * sum_x) / n;
+        let target_x = (length as i64 - 1 + offset) as f64;
+        Value::Float(m * target_x + b)
+    });
+
+    registry.register(meta, func);
+}
+
+fn register_median(registry: &mut FunctionRegistry) {
+    let meta = FunctionMeta::new("median")
+        .with_namespace("ta")
+        .with_required_args(2)
+        .with_series_return();
+
+    let func: crate::registry::BuiltinFn = Arc::new(|args| {
+        let series = match args.first().and_then(extract_array) {
+            Some(s) => s,
+            None => return Value::Na,
+        };
+        let length = match extract_length_required(args, 1) {
+            Some(len) => len,
+            None => return Value::Na,
+        };
+        let values = value_slice_to_f64(series);
+        if values.len() < length {
+            return Value::Na;
+        }
+        let mut window: Vec<f64> = values[values.len() - length..].to_vec();
+        window.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+        if length % 2 == 1 {
+            Value::Float(window[length / 2])
+        } else {
+            Value::Float((window[length / 2 - 1] + window[length / 2]) / 2.0)
+        }
+    });
+
+    registry.register(meta, func);
+}
+
+fn register_percentrank(registry: &mut FunctionRegistry) {
+    let meta = FunctionMeta::new("percentrank")
+        .with_namespace("ta")
+        .with_required_args(2)
+        .with_series_return();
+
+    let func: crate::registry::BuiltinFn = Arc::new(|args| {
+        let series = match args.first().and_then(extract_array) {
+            Some(s) => s,
+            None => return Value::Na,
+        };
+        let length = match extract_length_required(args, 1) {
+            Some(len) => len,
+            None => return Value::Na,
+        };
+        let values = value_slice_to_f64(series);
+        if values.len() < length {
+            return Value::Na;
+        }
+        let window = &values[values.len() - length..];
+        let current = *window.last().unwrap();
+        let count = window.iter().filter(|&&x| x <= current).count();
+        Value::Float(count as f64 / length as f64 * 100.0)
+    });
+
+    registry.register(meta, func);
+}
+
+fn register_percentile_linear_interpolation(registry: &mut FunctionRegistry) {
+    let meta = FunctionMeta::new("percentile_linear_interpolation")
+        .with_namespace("ta")
+        .with_required_args(3)
+        .with_series_return();
+
+    let func: crate::registry::BuiltinFn = Arc::new(|args| {
+        let series = match args.first().and_then(extract_array) {
+            Some(s) => s,
+            None => return Value::Na,
+        };
+        let length = match extract_length_required(args, 1) {
+            Some(len) => len,
+            None => return Value::Na,
+        };
+        let percentage = match args.get(2).and_then(|v| v.as_float()) {
+            Some(p) => p,
+            None => return Value::Na,
+        };
+        let values = value_slice_to_f64(series);
+        if values.len() < length {
+            return Value::Na;
+        }
+        let mut window: Vec<f64> = values[values.len() - length..].to_vec();
+        window.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+        let rank = (percentage / 100.0) * (length as f64 - 1.0);
+        let lower = rank.floor() as usize;
+        let upper = rank.ceil() as usize;
+        if lower == upper || upper >= length {
+            Value::Float(window[lower.min(length - 1)])
+        } else {
+            let frac = rank - lower as f64;
+            Value::Float(window[lower] + frac * (window[upper] - window[lower]))
+        }
+    });
+
+    registry.register(meta, func);
+}
+
+fn register_percentile_nearest_rank(registry: &mut FunctionRegistry) {
+    let meta = FunctionMeta::new("percentile_nearest_rank")
+        .with_namespace("ta")
+        .with_required_args(3)
+        .with_series_return();
+
+    let func: crate::registry::BuiltinFn = Arc::new(|args| {
+        let series = match args.first().and_then(extract_array) {
+            Some(s) => s,
+            None => return Value::Na,
+        };
+        let length = match extract_length_required(args, 1) {
+            Some(len) => len,
+            None => return Value::Na,
+        };
+        let percentage = match args.get(2).and_then(|v| v.as_float()) {
+            Some(p) => p,
+            None => return Value::Na,
+        };
+        let values = value_slice_to_f64(series);
+        if values.len() < length {
+            return Value::Na;
+        }
+        let mut window: Vec<f64> = values[values.len() - length..].to_vec();
+        window.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+        let idx = ((percentage / 100.0 * length as f64).ceil() as usize).saturating_sub(1);
+        Value::Float(window[idx.min(length - 1)])
+    });
+
+    registry.register(meta, func);
+}
+
+fn register_dev(registry: &mut FunctionRegistry) {
+    let meta = FunctionMeta::new("dev")
+        .with_namespace("ta")
+        .with_required_args(2)
+        .with_series_return();
+
+    let func: crate::registry::BuiltinFn = Arc::new(|args| {
+        let series = match args.first().and_then(extract_array) {
+            Some(s) => s,
+            None => return Value::Na,
+        };
+        let length = match extract_length_required(args, 1) {
+            Some(len) => len,
+            None => return Value::Na,
+        };
+        let values = value_slice_to_f64(series);
+        if values.len() < length {
+            return Value::Na;
+        }
+        let window = &values[values.len() - length..];
+        let mean = window.iter().sum::<f64>() / length as f64;
+        let mad = window.iter().map(|x| (x - mean).abs()).sum::<f64>() / length as f64;
+        Value::Float(mad)
+    });
+
+    registry.register(meta, func);
+}
+
+fn register_range(registry: &mut FunctionRegistry) {
+    let meta = FunctionMeta::new("range")
+        .with_namespace("ta")
+        .with_required_args(2)
+        .with_series_return();
+
+    let func: crate::registry::BuiltinFn = Arc::new(|args| {
+        let series = match args.first().and_then(extract_array) {
+            Some(s) => s,
+            None => return Value::Na,
+        };
+        let length = match extract_length_required(args, 1) {
+            Some(len) => len,
+            None => return Value::Na,
+        };
+        let values = value_slice_to_f64(series);
+        let highest = match calculate_highest_f64(&values, length) {
+            Some(v) => v,
+            None => return Value::Na,
+        };
+        let lowest = match calculate_lowest_f64(&values, length) {
+            Some(v) => v,
+            None => return Value::Na,
+        };
+        Value::Float(highest - lowest)
+    });
+
+    registry.register(meta, func);
+}
+
+// ============================================================================
+// Additional cross/signal functions
+// ============================================================================
+
+fn register_rising(registry: &mut FunctionRegistry) {
+    let meta = FunctionMeta::new("rising")
+        .with_namespace("ta")
+        .with_required_args(2)
+        .with_series_return();
+
+    let func: crate::registry::BuiltinFn = Arc::new(|args| {
+        let series = match args.first().and_then(extract_array) {
+            Some(s) => s,
+            None => return Value::Bool(false),
+        };
+        let length = match extract_length_required(args, 1) {
+            Some(len) => len,
+            None => return Value::Bool(false),
+        };
+        let values = value_slice_to_f64(series);
+        if values.len() < length + 1 {
+            return Value::Bool(false);
+        }
+        let start = values.len() - length - 1;
+        for i in start + 1..=start + length {
+            if values[i] <= values[i - 1] {
+                return Value::Bool(false);
+            }
+        }
+        Value::Bool(true)
+    });
+
+    registry.register(meta, func);
+}
+
+fn register_falling(registry: &mut FunctionRegistry) {
+    let meta = FunctionMeta::new("falling")
+        .with_namespace("ta")
+        .with_required_args(2)
+        .with_series_return();
+
+    let func: crate::registry::BuiltinFn = Arc::new(|args| {
+        let series = match args.first().and_then(extract_array) {
+            Some(s) => s,
+            None => return Value::Bool(false),
+        };
+        let length = match extract_length_required(args, 1) {
+            Some(len) => len,
+            None => return Value::Bool(false),
+        };
+        let values = value_slice_to_f64(series);
+        if values.len() < length + 1 {
+            return Value::Bool(false);
+        }
+        let start = values.len() - length - 1;
+        for i in start + 1..=start + length {
+            if values[i] >= values[i - 1] {
+                return Value::Bool(false);
+            }
+        }
+        Value::Bool(true)
+    });
+
+    registry.register(meta, func);
+}
+
+fn register_cross(registry: &mut FunctionRegistry) {
+    let meta = FunctionMeta::new("cross")
+        .with_namespace("ta")
+        .with_required_args(2)
+        .with_series_return();
+
+    let func: crate::registry::BuiltinFn = Arc::new(|args| {
+        let series1 = match args.first().and_then(extract_array) {
+            Some(s) => s,
+            None => return Value::Bool(false),
+        };
+        let series2 = match args.get(1).and_then(extract_array) {
+            Some(s) => s,
+            None => return Value::Bool(false),
+        };
+        let v1 = value_slice_to_f64(series1);
+        let v2 = value_slice_to_f64(series2);
+        if v1.len() < 2 || v2.len() < 2 {
+            return Value::Bool(false);
+        }
+        let prev1 = v1[v1.len() - 2];
+        let curr1 = v1[v1.len() - 1];
+        let prev2 = v2[v2.len() - 2];
+        let curr2 = v2[v2.len() - 1];
+        let crossover = prev1 <= prev2 && curr1 > curr2;
+        let crossunder = prev1 >= prev2 && curr1 < curr2;
+        Value::Bool(crossover || crossunder)
+    });
+
+    registry.register(meta, func);
+}
+
+fn register_valuewhen(registry: &mut FunctionRegistry) {
+    let meta = FunctionMeta::new("valuewhen")
+        .with_namespace("ta")
+        .with_required_args(3)
+        .with_series_return();
+
+    let func: crate::registry::BuiltinFn = Arc::new(|args| {
+        let condition = match args.first().and_then(extract_array) {
+            Some(s) => s,
+            None => return Value::Na,
+        };
+        let source = match args.get(1).and_then(extract_array) {
+            Some(s) => s,
+            None => return Value::Na,
+        };
+        let occurrence = match args.get(2).and_then(|v| v.as_int()) {
+            Some(n) => n as usize,
+            None => return Value::Na,
+        };
+        let min_len = condition.len().min(source.len());
+        let mut count = 0usize;
+        for i in (0..min_len).rev() {
+            if matches!(condition[i], Value::Bool(true)) {
+                if count == occurrence {
+                    return match get_float(&source[i]) {
+                        Some(v) => Value::Float(v),
+                        None => Value::Na,
+                    };
+                }
+                count += 1;
+            }
+        }
+        Value::Na
+    });
+
+    registry.register(meta, func);
+}
+
+// ============================================================================
+// Additional indicators
+// ============================================================================
+
+fn register_bbw(registry: &mut FunctionRegistry) {
+    let meta = FunctionMeta::new("bbw")
+        .with_namespace("ta")
+        .with_required_args(3)
+        .with_series_return();
+
+    let func: crate::registry::BuiltinFn = Arc::new(|args| {
+        let series = match args.first().and_then(extract_array) {
+            Some(s) => s,
+            None => return Value::Na,
+        };
+        let length = match extract_length_required(args, 1) {
+            Some(len) => len,
+            None => return Value::Na,
+        };
+        let mult = args.get(2).and_then(|v| v.as_float()).unwrap_or(2.0);
+        let values = value_slice_to_f64(series);
+        if values.len() < length {
+            return Value::Na;
+        }
+        let basis = match calculate_sma_f64(&values, length) {
+            Some(v) => v,
+            None => return Value::Na,
+        };
+        if basis == 0.0 {
+            return Value::Na;
+        }
+        let window = &values[values.len() - length..];
+        let variance = window.iter().map(|x| (x - basis).powi(2)).sum::<f64>() / length as f64;
+        let stdev = variance.sqrt();
+        let upper = basis + mult * stdev;
+        let lower = basis - mult * stdev;
+        Value::Float((upper - lower) / basis)
+    });
+
+    registry.register(meta, func);
+}
+
+fn register_swma(registry: &mut FunctionRegistry) {
+    let meta = FunctionMeta::new("swma")
+        .with_namespace("ta")
+        .with_required_args(1)
+        .with_series_return();
+
+    let func: crate::registry::BuiltinFn = Arc::new(|args| {
+        let series = match args.first().and_then(extract_array) {
+            Some(s) => s,
+            None => return Value::Na,
+        };
+        let values = value_slice_to_f64(series);
+        if values.len() < 4 {
+            return Value::Na;
+        }
+        let n = values.len();
+        let current = values[n - 1];
+        let one_ago = values[n - 2];
+        let two_ago = values[n - 3];
+        let three_ago = values[n - 4];
+        Value::Float((1.0 * three_ago + 2.0 * two_ago + 2.0 * one_ago + 1.0 * current) / 6.0)
+    });
+
+    registry.register(meta, func);
+}
+
+fn register_wpr(registry: &mut FunctionRegistry) {
+    let meta = FunctionMeta::new("wpr")
+        .with_namespace("ta")
+        .with_required_args(4)
+        .with_series_return();
+
+    let func: crate::registry::BuiltinFn = Arc::new(|args| {
+        let high_series = match args.first().and_then(extract_array) {
+            Some(s) => s,
+            None => return Value::Na,
+        };
+        let low_series = match args.get(1).and_then(extract_array) {
+            Some(s) => s,
+            None => return Value::Na,
+        };
+        let close_series = match args.get(2).and_then(extract_array) {
+            Some(s) => s,
+            None => return Value::Na,
+        };
+        let length = match extract_length_required(args, 3) {
+            Some(len) => len,
+            None => return Value::Na,
+        };
+        let highs = value_slice_to_f64(high_series);
+        let lows = value_slice_to_f64(low_series);
+        let closes = value_slice_to_f64(close_series);
+        let highest = match calculate_highest_f64(&highs, length) {
+            Some(v) => v,
+            None => return Value::Na,
+        };
+        let lowest = match calculate_lowest_f64(&lows, length) {
+            Some(v) => v,
+            None => return Value::Na,
+        };
+        let current_close = match closes.last() {
+            Some(&v) => v,
+            None => return Value::Na,
+        };
+        let range = highest - lowest;
+        if range == 0.0 {
+            return Value::Na;
+        }
+        Value::Float((highest - current_close) / range * -100.0)
+    });
+
+    registry.register(meta, func);
+}
+
+fn register_tsi(registry: &mut FunctionRegistry) {
+    let meta = FunctionMeta::new("tsi")
+        .with_namespace("ta")
+        .with_required_args(1)
+        .with_optional_args(2)
+        .with_series_return();
+
+    let func: crate::registry::BuiltinFn = Arc::new(|args| {
+        let series = match args.first().and_then(extract_array) {
+            Some(s) => s,
+            None => return Value::Na,
+        };
+        let short_length = extract_length(args, 1, 13); // TSI default short length
+        let long_length = extract_length(args, 2, 25); // TSI default long length
+        let values = value_slice_to_f64(series);
+        if values.len() < 2 {
+            return Value::Na;
+        }
+        // Build price change series and absolute price change series
+        let mut pc = Vec::with_capacity(values.len() - 1);
+        let mut apc = Vec::with_capacity(values.len() - 1);
+        for i in 1..values.len() {
+            let change = values[i] - values[i - 1];
+            pc.push(change);
+            apc.push(change.abs());
+        }
+        // Double smoothed pc: ema(ema(pc, long), short)
+        // First, build the full first EMA series for pc
+        let mut ema_pc_series = Vec::with_capacity(pc.len());
+        if pc.len() >= long_length {
+            let mut ema = pc.iter().take(long_length).sum::<f64>() / long_length as f64;
+            ema_pc_series.push(ema);
+            let alpha = 2.0 / (long_length as f64 + 1.0);
+            for val in pc.iter().skip(long_length) {
+                ema = alpha * val + (1.0 - alpha) * ema;
+                ema_pc_series.push(ema);
+            }
+        }
+        let double_smoothed_pc = match calculate_ema_from_f64(&ema_pc_series, short_length, false) {
+            Some(v) => v,
+            None => return Value::Na,
+        };
+        // Double smoothed apc: ema(ema(|pc|, long), short)
+        let mut ema_apc_series = Vec::with_capacity(apc.len());
+        if apc.len() >= long_length {
+            let mut ema = apc.iter().take(long_length).sum::<f64>() / long_length as f64;
+            ema_apc_series.push(ema);
+            let alpha = 2.0 / (long_length as f64 + 1.0);
+            for val in apc.iter().skip(long_length) {
+                ema = alpha * val + (1.0 - alpha) * ema;
+                ema_apc_series.push(ema);
+            }
+        }
+        let double_smoothed_apc = match calculate_ema_from_f64(&ema_apc_series, short_length, false)
+        {
+            Some(v) => v,
+            None => return Value::Na,
+        };
+        if double_smoothed_apc == 0.0 {
+            return Value::Na;
+        }
+        Value::Float(100.0 * double_smoothed_pc / double_smoothed_apc)
+    });
+
+    registry.register(meta, func);
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -2220,5 +2906,276 @@ mod tests {
             rma_val,
             ema_val
         );
+    }
+
+    #[test]
+    fn test_stdev() {
+        let registry = test_registry();
+        let data = series(vec![2.0, 4.0, 4.0, 4.0, 5.0, 5.0, 7.0, 9.0]);
+        let result = registry.dispatch("ta.stdev", &[data, Value::Int(8)]);
+        // stdev of [2,4,4,4,5,5,7,9] = sqrt(variance)
+        // mean = 5.0, variance = sum of squared diffs / 8 = 32/8 = 4.0, stdev = 2.0
+        assert!(matches!(result, Some(Value::Float(v)) if (v - 2.0).abs() < 1e-10));
+    }
+
+    #[test]
+    fn test_variance() {
+        let registry = test_registry();
+        let data = series(vec![2.0, 4.0, 4.0, 4.0, 5.0, 5.0, 7.0, 9.0]);
+        let result = registry.dispatch("ta.variance", &[data, Value::Int(8)]);
+        assert!(matches!(result, Some(Value::Float(v)) if (v - 4.0).abs() < 1e-10));
+    }
+
+    #[test]
+    fn test_correlation() {
+        let registry = test_registry();
+        // Perfect positive correlation
+        let s1 = series(vec![1.0, 2.0, 3.0, 4.0, 5.0]);
+        let s2 = series(vec![2.0, 4.0, 6.0, 8.0, 10.0]);
+        let result = registry.dispatch("ta.correlation", &[s1, s2, Value::Int(5)]);
+        assert!(matches!(result, Some(Value::Float(v)) if (v - 1.0).abs() < 1e-10));
+    }
+
+    #[test]
+    fn test_correlation_negative() {
+        let registry = test_registry();
+        let s1 = series(vec![1.0, 2.0, 3.0, 4.0, 5.0]);
+        let s2 = series(vec![10.0, 8.0, 6.0, 4.0, 2.0]);
+        let result = registry.dispatch("ta.correlation", &[s1, s2, Value::Int(5)]);
+        assert!(matches!(result, Some(Value::Float(v)) if (v - (-1.0)).abs() < 1e-10));
+    }
+
+    #[test]
+    fn test_linreg() {
+        let registry = test_registry();
+        // Perfect linear: y = 2x + 1 at x=0..4 -> [1,3,5,7,9]
+        let data = series(vec![1.0, 3.0, 5.0, 7.0, 9.0]);
+        let result = registry.dispatch("ta.linreg", &[data, Value::Int(5), Value::Int(0)]);
+        // At x=4 (last point), value = 9.0
+        assert!(matches!(result, Some(Value::Float(v)) if (v - 9.0).abs() < 1e-10));
+    }
+
+    #[test]
+    fn test_median_odd() {
+        let registry = test_registry();
+        let data = series(vec![5.0, 1.0, 3.0, 2.0, 4.0]);
+        let result = registry.dispatch("ta.median", &[data, Value::Int(5)]);
+        // sorted: [1,2,3,4,5], median = 3.0
+        assert_eq!(result, Some(Value::Float(3.0)));
+    }
+
+    #[test]
+    fn test_median_even() {
+        let registry = test_registry();
+        let data = series(vec![1.0, 3.0, 2.0, 4.0]);
+        let result = registry.dispatch("ta.median", &[data, Value::Int(4)]);
+        // sorted: [1,2,3,4], median = (2+3)/2 = 2.5
+        assert_eq!(result, Some(Value::Float(2.5)));
+    }
+
+    #[test]
+    fn test_percentrank() {
+        let registry = test_registry();
+        let data = series(vec![10.0, 20.0, 30.0, 40.0, 50.0]);
+        let result = registry.dispatch("ta.percentrank", &[data, Value::Int(5)]);
+        // Current value = 50, all 5 values <= 50, so 100%
+        assert!(matches!(result, Some(Value::Float(v)) if (v - 100.0).abs() < 1e-10));
+
+        // Mid-range: current value = 30, values <= 30 are [10,20,30] = 3 out of 5 = 60%
+        let data = series(vec![10.0, 50.0, 40.0, 20.0, 30.0]);
+        let result = registry.dispatch("ta.percentrank", &[data, Value::Int(5)]);
+        assert!(matches!(result, Some(Value::Float(v)) if (v - 60.0).abs() < 1e-10));
+    }
+
+    #[test]
+    fn test_percentile_linear_interpolation() {
+        let registry = test_registry();
+        let data = series(vec![10.0, 20.0, 30.0, 40.0, 50.0]);
+        let result = registry.dispatch(
+            "ta.percentile_linear_interpolation",
+            &[data, Value::Int(5), Value::Float(50.0)],
+        );
+        assert!(matches!(result, Some(Value::Float(_))));
+    }
+
+    #[test]
+    fn test_percentile_nearest_rank() {
+        let registry = test_registry();
+        let data = series(vec![10.0, 20.0, 30.0, 40.0, 50.0]);
+        let result = registry.dispatch(
+            "ta.percentile_nearest_rank",
+            &[data, Value::Int(5), Value::Float(50.0)],
+        );
+        assert!(matches!(result, Some(Value::Float(_))));
+    }
+
+    #[test]
+    fn test_rising() {
+        let registry = test_registry();
+        let data = series(vec![1.0, 2.0, 3.0, 4.0, 5.0]);
+        let result = registry.dispatch("ta.rising", &[data, Value::Int(3)]);
+        assert_eq!(result, Some(Value::Bool(true)));
+    }
+
+    #[test]
+    fn test_rising_false() {
+        let registry = test_registry();
+        let data = series(vec![1.0, 2.0, 3.0, 2.0, 5.0]);
+        let result = registry.dispatch("ta.rising", &[data, Value::Int(3)]);
+        assert_eq!(result, Some(Value::Bool(false)));
+    }
+
+    #[test]
+    fn test_falling() {
+        let registry = test_registry();
+        let data = series(vec![5.0, 4.0, 3.0, 2.0, 1.0]);
+        let result = registry.dispatch("ta.falling", &[data, Value::Int(3)]);
+        assert_eq!(result, Some(Value::Bool(true)));
+    }
+
+    #[test]
+    fn test_falling_false() {
+        let registry = test_registry();
+        let data = series(vec![5.0, 4.0, 3.0, 4.0, 1.0]);
+        let result = registry.dispatch("ta.falling", &[data, Value::Int(3)]);
+        assert_eq!(result, Some(Value::Bool(false)));
+    }
+
+    #[test]
+    fn test_cross() {
+        let registry = test_registry();
+        // Crossover case
+        let s1 = series(vec![20.0, 30.0]);
+        let s2 = series(vec![25.0, 25.0]);
+        let result = registry.dispatch("ta.cross", &[s1, s2]);
+        assert_eq!(result, Some(Value::Bool(true)));
+
+        // Crossunder case
+        let s1 = series(vec![30.0, 20.0]);
+        let s2 = series(vec![25.0, 25.0]);
+        let result = registry.dispatch("ta.cross", &[s1, s2]);
+        assert_eq!(result, Some(Value::Bool(true)));
+    }
+
+    #[test]
+    fn test_cross_no_cross() {
+        let registry = test_registry();
+        let s1 = series(vec![30.0, 35.0]);
+        let s2 = series(vec![25.0, 25.0]);
+        let result = registry.dispatch("ta.cross", &[s1, s2]);
+        assert_eq!(result, Some(Value::Bool(false)));
+    }
+
+    #[test]
+    fn test_valuewhen() {
+        let registry = test_registry();
+        let cond = Value::Array(vec![
+            Value::Bool(true),
+            Value::Bool(false),
+            Value::Bool(true),
+            Value::Bool(false),
+        ]);
+        let source = series(vec![100.0, 200.0, 300.0, 400.0]);
+        // occurrence=0 -> most recent true (index 2) -> source value 300.0
+        let result = registry.dispatch("ta.valuewhen", &[cond, source, Value::Int(0)]);
+        assert_eq!(result, Some(Value::Float(300.0)));
+    }
+
+    #[test]
+    fn test_valuewhen_second_occurrence() {
+        let registry = test_registry();
+        let cond = Value::Array(vec![
+            Value::Bool(true),
+            Value::Bool(false),
+            Value::Bool(true),
+            Value::Bool(false),
+        ]);
+        let source = series(vec![100.0, 200.0, 300.0, 400.0]);
+        // occurrence=1 -> second most recent true (index 0) -> source value 100.0
+        let result = registry.dispatch("ta.valuewhen", &[cond, source, Value::Int(1)]);
+        assert_eq!(result, Some(Value::Float(100.0)));
+    }
+
+    #[test]
+    fn test_bbw() {
+        let registry = test_registry();
+        let data = series(vec![10.0, 20.0, 30.0, 40.0, 50.0]);
+        let result = registry.dispatch("ta.bbw", &[data, Value::Int(5), Value::Float(2.0)]);
+        // basis = sma = 30.0
+        // stdev = sqrt(200/5) = sqrt(40) = 6.3246...
+        // upper = 30 + 2*6.3246 = 42.649
+        // lower = 30 - 2*6.3246 = 17.351
+        // bbw = (42.649 - 17.351) / 30 = 25.298 / 30 = 0.8433
+        assert!(matches!(result, Some(Value::Float(v)) if v > 0.0));
+    }
+
+    #[test]
+    fn test_dev() {
+        let registry = test_registry();
+        let data = series(vec![10.0, 20.0, 30.0]);
+        let result = registry.dispatch("ta.dev", &[data, Value::Int(3)]);
+        // mean = 20, dev = (|10-20| + |20-20| + |30-20|) / 3 = 20/3 = 6.666...
+        assert!(matches!(result, Some(Value::Float(v)) if (v - 20.0/3.0).abs() < 1e-10));
+    }
+
+    #[test]
+    fn test_range() {
+        let registry = test_registry();
+        let data = series(vec![10.0, 50.0, 30.0, 40.0, 20.0]);
+        let result = registry.dispatch("ta.range", &[data, Value::Int(5)]);
+        // highest=50, lowest=10, range=40
+        assert_eq!(result, Some(Value::Float(40.0)));
+    }
+
+    #[test]
+    fn test_swma() {
+        let registry = test_registry();
+        let data = series(vec![10.0, 20.0, 30.0, 40.0]);
+        let result = registry.dispatch("ta.swma", &[data]);
+        // swma = (1*10 + 2*20 + 2*30 + 1*40) / 6 = (10+40+60+40)/6 = 150/6 = 25.0
+        assert_eq!(result, Some(Value::Float(25.0)));
+    }
+
+    #[test]
+    fn test_wpr() {
+        let registry = test_registry();
+        let high = series(vec![10.0, 11.0, 12.0, 13.0, 14.0]);
+        let low = series(vec![8.0, 9.0, 10.0, 11.0, 12.0]);
+        let close = series(vec![9.0, 10.0, 11.0, 12.0, 13.0]);
+        let result = registry.dispatch("ta.wpr", &[high, low, close, Value::Int(5)]);
+        // highest high = 14, lowest low = 8, close = 13
+        // wpr = (14 - 13) / (14 - 8) * -100 = -16.666...
+        assert!(matches!(result, Some(Value::Float(v)) if (v - (-100.0/6.0)).abs() < 1e-10));
+    }
+
+    #[test]
+    fn test_tsi() {
+        let registry = test_registry();
+        // Need enough data for EMA calculations
+        let data = series(vec![
+            100.0, 101.0, 102.0, 103.0, 104.0, 105.0, 106.0, 107.0, 108.0, 109.0, 110.0, 111.0,
+            112.0, 113.0, 114.0, 115.0, 116.0, 117.0, 118.0, 119.0, 120.0, 121.0, 122.0, 123.0,
+            124.0, 125.0, 126.0, 127.0, 128.0, 129.0, 130.0, 131.0, 132.0, 133.0, 134.0, 135.0,
+            136.0, 137.0, 138.0, 139.0,
+        ]);
+        let result = registry.dispatch("ta.tsi", &[data]);
+        // With steadily increasing data, TSI should be 100 (all changes positive)
+        assert!(matches!(result, Some(Value::Float(v)) if (v - 100.0).abs() < 1e-6));
+    }
+
+    #[test]
+    fn test_stdev_insufficient_data() {
+        let registry = test_registry();
+        let data = series(vec![1.0, 2.0]);
+        let result = registry.dispatch("ta.stdev", &[data, Value::Int(5)]);
+        assert_eq!(result, Some(Value::Na));
+    }
+
+    #[test]
+    fn test_rising_insufficient_data() {
+        let registry = test_registry();
+        let data = series(vec![1.0]);
+        let result = registry.dispatch("ta.rising", &[data, Value::Int(3)]);
+        assert_eq!(result, Some(Value::Bool(false)));
     }
 }

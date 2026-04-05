@@ -163,6 +163,15 @@ impl Scope {
     }
 }
 
+/// Tracks a loop's compilation context for break/continue support.
+#[derive(Debug, Clone)]
+pub struct LoopContext {
+    /// Instruction address of the loop start (for continue)
+    pub loop_start: usize,
+    /// Positions of Jump instructions emitted for `break` that need patching
+    pub break_patches: Vec<usize>,
+}
+
 /// Simple expression compiler
 ///
 /// This is a basic compiler that handles arithmetic expressions.
@@ -178,6 +187,8 @@ pub struct Compiler {
     series_vars: HashSet<String>,
     /// Counter for synthetic series names used by compound series expressions
     synthetic_series_counter: usize,
+    /// Stack of active loop contexts for break/continue
+    loop_stack: Vec<LoopContext>,
 }
 
 impl Default for Compiler {
@@ -195,6 +206,7 @@ impl Compiler {
             scopes: vec![Scope::new()],
             series_vars: HashSet::new(),
             synthetic_series_counter: 0,
+            loop_stack: Vec::new(),
         }
     }
 
@@ -478,6 +490,7 @@ impl Compiler {
     ) {
         // Start of loop
         let start_pos = self.chunk.current_pos();
+        self.push_loop(start_pos);
 
         // Compile condition
         compile_condition(self);
@@ -494,6 +507,8 @@ impl Compiler {
 
         // Patch end jump
         self.patch_jump(end_jump);
+
+        self.pop_loop();
     }
 
     /// Compile a for loop (inclusive range: for i = start to end [by step])
@@ -526,6 +541,7 @@ impl Compiler {
 
         // Loop start position
         let start_pos = self.chunk.current_pos();
+        self.push_loop(start_pos);
 
         // Condition: loop_var <= end
         self.compile_load_slot(loop_var_slot);
@@ -555,6 +571,43 @@ impl Compiler {
 
         // Patch end jump
         self.patch_jump(end_jump);
+
+        self.pop_loop();
+    }
+
+    /// Push a new loop context onto the stack. Call at the start of every loop.
+    pub fn push_loop(&mut self, loop_start: usize) {
+        self.loop_stack.push(LoopContext {
+            loop_start,
+            break_patches: Vec::new(),
+        });
+    }
+
+    /// Pop the current loop context and patch all break jumps to `end_pos`.
+    pub fn pop_loop(&mut self) {
+        if let Some(ctx) = self.loop_stack.pop() {
+            let end = self.chunk.current_pos();
+            for pos in ctx.break_patches {
+                self.chunk.patch_jump(pos, end);
+            }
+        }
+    }
+
+    /// Emit a break: unconditional jump whose target will be patched later.
+    pub fn compile_break(&mut self) {
+        let pos = self.compile_jump(JumpOp::Unconditional);
+        if let Some(ctx) = self.loop_stack.last_mut() {
+            ctx.break_patches.push(pos);
+        }
+    }
+
+    /// Emit a continue: jump back to the current loop's start address.
+    pub fn compile_continue(&mut self) {
+        if let Some(ctx) = self.loop_stack.last() {
+            let start = ctx.loop_start;
+            let pos = self.compile_jump(JumpOp::Unconditional);
+            self.patch_jump_to(pos, start);
+        }
     }
 
     /// Compile a pop operation
