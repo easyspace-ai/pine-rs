@@ -1,0 +1,10 @@
+// Golden test: ta.rising(close, 3) and ta.falling(close, 3)
+// Detect consistently rising or falling values
+
+indicator("Rising Falling Golden Test")
+
+r = ta.rising(close, 3)
+f = ta.falling(close, 3)
+
+plot(r ? 1 : 0, title="Rising 3", color=color.green)
+plot(f ? 1 : 0, title="Falling 3", color=color.red)

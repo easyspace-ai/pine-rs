@@ -1,0 +1,8 @@
+// Golden test: ta.range(close, 10)
+// Range (highest - lowest) of close price over 10 bars
+
+indicator("Range Golden Test")
+
+rng = ta.range(close, 10)
+
+plot(rng, title="Range 10", color=color.blue)

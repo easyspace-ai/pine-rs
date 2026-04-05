@@ -1,0 +1,8 @@
+// Golden test: ta.dev(close, 10)
+// Mean deviation of close price over 10 bars
+
+indicator("Dev Golden Test")
+
+d = ta.dev(close, 10)
+
+plot(d, title="Dev 10", color=color.blue)
