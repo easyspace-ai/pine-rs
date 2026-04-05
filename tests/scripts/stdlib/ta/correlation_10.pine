@@ -1,0 +1,8 @@
+// Golden test: ta.correlation(close, volume, 10)
+// Pearson correlation between close and volume over 10 bars
+
+indicator("Correlation Golden Test")
+
+c = ta.correlation(close, volume, 10)
+
+plot(c, title="Corr 10", color=color.blue)
