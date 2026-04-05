@@ -698,7 +698,7 @@ if close > open
     fn test_execute_script_vm_matches_eval_for_regression_scripts() {
         let root = workspace_root();
         let cases = load_vm_parity_cases();
-        assert_eq!(cases.len(), 44, "unexpected VM parity manifest size");
+        assert_eq!(cases.len(), 59, "unexpected VM parity manifest size");
 
         for case in cases {
             let script = fs::read_to_string(root.join(&case.script_path)).expect("read script");

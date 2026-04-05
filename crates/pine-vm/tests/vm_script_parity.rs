@@ -218,7 +218,7 @@ fn assert_script_parity(case: &ScriptParityCase) -> Result<(), Box<dyn std::erro
 #[test]
 fn test_script_parity_manifest_cases() {
     let cases = load_manifest().expect("load VM parity manifest");
-    assert_eq!(cases.len(), 44, "unexpected VM parity manifest size");
+    assert_eq!(cases.len(), 59, "unexpected VM parity manifest size");
 
     for case in &cases {
         assert_script_parity(case)

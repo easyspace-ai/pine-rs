@@ -1,0 +1,19 @@
+//@version=6
+indicator("NA Handling Test")
+
+// na literal
+x = na
+
+// nz function - replace na with zero
+nz_val = nz(x)
+
+// na comparison
+is_na_val = na(close[100]) ? 1.0 : 0.0
+
+// Series with na at start
+sma_val = ta.sma(close, 14)
+sma_or_zero = nz(sma_val)
+
+plot(nz_val, title="NZ Value")
+plot(is_na_val, title="Is NA")
+plot(sma_or_zero, title="SMA or Zero")

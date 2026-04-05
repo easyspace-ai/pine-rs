@@ -1,0 +1,15 @@
+//@version=6
+indicator("TA Combo RSI+MACD")
+
+// RSI
+rsi_val = ta.rsi(close, 14)
+
+// MACD
+[macdLine, signalLine, hist] = ta.macd(close, 12, 26, 9)
+
+// Combine: scale RSI to same range as MACD
+rsi_scaled = rsi_val / 100.0 * macdLine
+
+plot(rsi_scaled, title="RSI Scaled")
+plot(macdLine, title="MACD Line")
+plot(hist, title="Histogram")

@@ -414,7 +414,7 @@ async fn test_api_run_switch_basic_eval() {
 #[tokio::test]
 async fn test_api_vm_matches_eval_for_regression_scripts() {
     let cases = load_vm_parity_cases();
-    assert_eq!(cases.len(), 44, "unexpected VM parity manifest size");
+    assert_eq!(cases.len(), 59, "unexpected VM parity manifest size");
     let root = workspace_root();
 
     for case in cases {

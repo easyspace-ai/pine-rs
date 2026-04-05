@@ -1,0 +1,16 @@
+//@version=6
+indicator("TA Combo BB+ATR")
+
+// Bollinger Bands
+[basis, upper, lower] = ta.bb(close, 20, 2.0)
+
+// ATR
+atr_val = ta.atr(14)
+
+// BB width as multiple of ATR
+bb_width = upper - lower
+bb_atr_ratio = atr_val > 0 ? bb_width / atr_val : na
+
+plot(bb_width, title="BB Width")
+plot(atr_val, title="ATR")
+plot(bb_atr_ratio, title="BB ATR Ratio")

@@ -1,0 +1,11 @@
+//@version=6
+indicator("TA Stoch RSI Combo")
+
+// Stochastic RSI: RSI → Stoch
+rsi_val = ta.rsi(close, 14)
+stoch_rsi = ta.stoch(rsi_val, rsi_val, rsi_val, 14)
+stoch_rsi_k = ta.sma(stoch_rsi, 3)
+stoch_rsi_d = ta.sma(stoch_rsi_k, 3)
+
+plot(stoch_rsi_k, title="Stoch RSI K")
+plot(stoch_rsi_d, title="Stoch RSI D")

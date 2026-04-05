@@ -1,0 +1,18 @@
+//@version=6
+indicator("Series Access Test")
+
+// Basic series access
+prev1 = close[1]
+prev2 = close[2]
+prev5 = close[5]
+
+// Derived series access
+diff = close - close[1]
+
+// Multi-level access
+sma_val = ta.sma(close, 5)
+sma_prev = sma_val[1]
+sma_change = sma_val - sma_val[1]
+
+plot(diff, title="Close Diff")
+plot(sma_change, title="SMA Change")
