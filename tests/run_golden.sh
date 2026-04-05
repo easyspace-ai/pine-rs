@@ -29,7 +29,7 @@ for csv in $pattern; do
     continue
   fi
 
-  if cargo run -p pine-cli -- run "$script" --data "$csv" 2>/dev/null | \
+  if cargo run -p pine-cli -- run "$script" --data "$csv" --engine eval 2>/dev/null | \
      python3 tests/compare_golden.py "$csv"; then
     echo "✓ $csv"
     PASS=$((PASS+1))
