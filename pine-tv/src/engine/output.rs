@@ -170,6 +170,30 @@ pub struct StrategyOutput {
     pub position_direction: String,
 }
 
+/// Equity curve sample captured after a trade closes.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct StrategyEquityPoint {
+    /// Trade close time in unix seconds
+    pub time: i64,
+    /// Equity after applying the trade PnL
+    pub equity: f64,
+    /// Drawdown from previous closed-equity peak
+    pub drawdown: f64,
+}
+
+/// Report slice for one side of the strategy.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct StrategySideReport {
+    /// Number of closed trades for this side
+    pub closed_trades: usize,
+    /// Number of winning trades
+    pub winning_trades: usize,
+    /// Net profit for this side
+    pub net_profit: f64,
+    /// Win rate percentage
+    pub win_rate: f64,
+}
+
 /// Closed trade detail
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct StrategyTrade {
@@ -193,6 +217,12 @@ pub struct StrategyTrade {
     pub exit_price: f64,
     /// Filled quantity
     pub qty: f64,
+    /// Profit before trading costs
+    pub gross_pnl: f64,
+    /// Commission charged to this trade
+    pub commission: f64,
+    /// Slippage cost charged to this trade
+    pub slippage_cost: f64,
     /// Profit or loss in quote currency
     pub pnl: f64,
     /// Profit or loss in percent
@@ -222,6 +252,10 @@ pub struct StrategyReport {
     pub gross_profit: f64,
     /// Sum of losing trades (negative)
     pub gross_loss: f64,
+    /// Total commissions charged to closed trades
+    pub total_commission: f64,
+    /// Total slippage cost charged to closed trades
+    pub total_slippage_cost: f64,
     /// Number of closed trades
     pub total_closed_trades: usize,
     /// Number of winning trades
@@ -245,8 +279,16 @@ pub struct StrategyReport {
     pub max_drawdown: f64,
     /// Maximum closed-equity drawdown percent
     pub max_drawdown_percent: f64,
+    /// Average bars held across closed trades
+    pub avg_bars_held: f64,
     /// Number of still-open trade lots
     pub open_trades: usize,
+    /// Long-only report slice
+    pub long: StrategySideReport,
+    /// Short-only report slice
+    pub short: StrategySideReport,
+    /// Closed-equity curve
+    pub equity_curve: Vec<StrategyEquityPoint>,
 }
 
 /// Individual trade signal

@@ -1,81 +1,45 @@
-Phase 4 当前任务（2026-04-04）
+Phase 4 当前任务（2026-04-05）
 
 主任务
-- 先守住内核验证基线，再按批次补齐高频指标与官方语法闭环
+- 保持内核与验证门禁稳定，同时把 strategy 回测结果补成 playground 可直接验收的完整能力
 
 当前口径
 - `pine-tv` 仍是验证壳，不作为阶段完成标准
-- 语法主线以官方 Pine v6 为准，兼容写法不能反向成为主路径
-- 实时链路已形成基础能力，但当前优先级回到内核稳定性与指标矩阵
-- 前端 JS 指标保留现状，后续以统一 Pine/WASM 执行为方向
+- 当前对 strategy 的投入以“验证内核结果是否可消费、可核对”为边界
+- 指标矩阵继续保留已完成批次，不暂停门禁，但短期主焦点切到 strategy 回测展示与结果正确性
 
-已完成本轮批次
-- playground Pine 实时会话、图表多 pane、重复时间点清理与回归测试已补齐
-- 后端实时脚本会话、增量消息 schema、strategy 触发规则基础已补齐
-- `ta.dmi()` 已实现，并补齐：
-  - `pine-stdlib` 单测
-  - `pine-eval` 隐式内建 OHLC 注入
-  - 黄金脚本 `tests/scripts/stdlib/ta/dmi_5_5.pine`
-  - 黄金数据 `tests/golden/dmi_5_5.csv`
-  - coverage 文档同步
-- `import/export` 执行闭环已补齐：
-  - `import "lib" as m` 可调用 `m.fn()`、读取 `m.CONST`
-  - 无别名导入可直接绑定导出函数与常量
-  - 相对路径模块会真实读取、解析、执行并缓存
-  - `pine-eval` 已补对应单测
-- `ta.supertrend()` 已实现，并补齐：
-  - `pine-stdlib` 单测覆盖方向翻转
-  - `pine-eval` 隐式内建 OHLC 注入
-  - 黄金脚本 `tests/scripts/stdlib/ta/supertrend_3_5.pine`
-  - 黄金数据 `tests/golden/supertrend_3_5.csv`
-  - coverage 文档同步
-- `ta.vwma()` 已实现，并补齐：
-  - `pine-stdlib` 单测覆盖成交量加权
-  - `pine-eval` 隐式内建 volume 注入
-  - 黄金脚本 `tests/scripts/stdlib/ta/vwma_10.pine`
-  - 黄金数据 `tests/golden/vwma_10.csv`
-  - coverage 文档同步
-- `ta.roc()` 已实现，并补齐：
-  - `pine-stdlib` 单测覆盖百分比变动
-  - 黄金脚本 `tests/scripts/stdlib/ta/roc_10.pine`
-  - 黄金数据 `tests/golden/roc_10.csv`
-  - coverage 文档同步
-- `ta.mfi()` 已实现，并补齐：
-  - `pine-stdlib` 单测覆盖资金流震荡区间
-  - `pine-eval` 隐式内建 volume 注入与 `hlc3` 历史序列支持
-  - 黄金脚本 `tests/scripts/stdlib/ta/mfi_14.pine`
-  - 黄金数据 `tests/golden/mfi_14.csv`
-  - coverage 文档同步
-- `ta.obv` 已实现，并补齐：
-  - `pine-stdlib` 单测覆盖涨跌平三种累计路径
-  - `pine-eval` 已支持 `ta.obv` 变量形态读取
-  - 黄金脚本 `tests/scripts/stdlib/ta/obv_basic.pine`
-  - 黄金数据 `tests/golden/obv_basic.csv`
-  - coverage 文档同步
-- `ta.change()` 已实现，并补齐：
-  - `pine-stdlib` 单测覆盖数值序列与布尔序列
-  - 黄金脚本 `tests/scripts/stdlib/ta/change_2.pine`
-  - 黄金数据 `tests/golden/change_2.csv`
-  - coverage 文档同步
-- `ta.cum()` 已实现，并补齐：
-  - `pine-stdlib` 单测覆盖累计求和
-  - 黄金脚本 `tests/scripts/stdlib/ta/cum_volume.pine`
-  - 黄金数据 `tests/golden/cum_volume.csv`
-  - coverage 文档同步
-- `ta.pvt` 已实现，并补齐：
-  - `pine-stdlib` 单测覆盖价格变动与成交量累计
-  - `pine-eval` 已支持 `ta.pvt` 变量形态读取
-  - 黄金脚本 `tests/scripts/stdlib/ta/pvt_basic.pine`
-  - 黄金数据 `tests/golden/pvt_basic.csv`
-  - coverage 文档同步
+本轮已完成
+- playground 右侧 `PINE SCRIPT` 已支持实时脚本会话、会跟随当前 `symbol/timeframe`
+- strategy 结果已包含：
+  - 策略报告
+  - 已完成交易清单
+  - 主图入场/出场标记
+- WebSocket 与前端消费链路已支持 strategy 结果持续更新
+- strategy 回测结果已继续补齐：
+  - closed-equity 曲线
+  - Long / Short 分侧统计
+  - 平均持有 bars
+  - 手续费与滑点成本
+  - playground Performance 面板展示权益曲线与分侧表现
+  - playground Trades 面板展示毛收益、手续费、滑点与净收益
+- 新增 playground 可直接运行的策略例子：
+  - `pine-tv/static/examples/strategy/bollinger_reversion.pine`
+
+当前验收标准
+- 在 playground 运行 `strategy(...)` 脚本后，页面可直接看到：
+  - 回测报告
+  - 交易历史清单
+  - 主图入场/出场标记
+  - 权益曲线
+  - Long / Short 分侧统计
 
 下一批执行
-- Batch 1：补下一组高频指标，继续扩高频指标矩阵
-- Batch 2：补内核黄金缺口与官方样例脚本，减少“能跑但未锁住”的区域
-- Batch 3：在不降门禁前提下，继续收紧 realtime 语义和性能
+- Batch 1：补 strategy 成交规则细节，例如反手、部分平仓、pyramiding
+- Batch 2：补手续费、滑点与更真实的成交价模型
+- Batch 3：补更多策略样例与对应回归，确保 playground 验收可重复
 
 当前最高优先级
-- 高频指标矩阵继续补齐
+- strategy 回测结果可读性与正确性
 - 全量验证门禁持续稳定
 
 参考文档

@@ -6,8 +6,8 @@ use std::time::Instant;
 
 use crate::data::OhlcvBar;
 use crate::engine::output::{
-    ApiError, ApiResponse, Plot, PlotData, StrategyOutput, StrategyReport, StrategyTrade,
-    TradeSignal,
+    ApiError, ApiResponse, Plot, PlotData, StrategyEquityPoint, StrategyOutput, StrategyReport,
+    StrategySideReport, StrategyTrade, TradeSignal,
 };
 
 use pine_lexer::Lexer;
@@ -509,8 +509,14 @@ impl PineEngine {
             }
         }
 
-        let backtest =
-            build_strategy_backtest(&entries, &exits, bars, strategy_meta.initial_capital);
+        let backtest = build_strategy_backtest(
+            &entries,
+            &exits,
+            bars,
+            strategy_meta.initial_capital,
+            strategy_meta.commission_percent,
+            strategy_meta.slippage,
+        );
 
         Some(StrategyOutput {
             name: strategy_name,
@@ -528,6 +534,8 @@ impl PineEngine {
 struct StrategyMeta {
     name: String,
     initial_capital: f64,
+    commission_percent: f64,
+    slippage: f64,
 }
 
 #[derive(Debug)]
@@ -573,13 +581,23 @@ fn extract_strategy_meta(ast: &Script) -> StrategyMeta {
             .unwrap_or_else(|| "Strategy".to_string());
 
         let mut initial_capital = 100000.0;
+        let mut commission_percent = 0.0;
+        let mut slippage = 0.0;
         for arg in args {
-            if arg
-                .name
-                .as_ref()
-                .is_some_and(|name| name.name == "initial_capital")
-            {
-                initial_capital = literal_number(&arg.value).unwrap_or(initial_capital);
+            if let Some(name) = arg.name.as_ref().map(|name| name.name.as_str()) {
+                match name {
+                    "initial_capital" => {
+                        initial_capital = literal_number(&arg.value).unwrap_or(initial_capital);
+                    }
+                    "commission_value" => {
+                        commission_percent =
+                            literal_number(&arg.value).unwrap_or(commission_percent);
+                    }
+                    "slippage" => {
+                        slippage = literal_number(&arg.value).unwrap_or(slippage);
+                    }
+                    _ => {}
+                }
             }
         }
         if args.len() > 5 && args[5].name.is_none() {
@@ -589,12 +607,16 @@ fn extract_strategy_meta(ast: &Script) -> StrategyMeta {
         return StrategyMeta {
             name,
             initial_capital,
+            commission_percent,
+            slippage,
         };
     }
 
     StrategyMeta {
         name: "Strategy".to_string(),
         initial_capital: 100000.0,
+        commission_percent: 0.0,
+        slippage: 0.0,
     }
 }
 
@@ -606,6 +628,15 @@ fn literal_number(expr: &Expr) -> Option<f64> {
     }
 }
 
+fn normalize_direction(direction: &str) -> &'static str {
+    let trimmed = direction.trim();
+    if trimmed.eq_ignore_ascii_case("short") || trimmed.ends_with(".short") {
+        "short"
+    } else {
+        "long"
+    }
+}
+
 fn resolve_signal_price(signal: &TradeSignal, bars: &[OhlcvBar]) -> f64 {
     signal
         .price
@@ -613,11 +644,26 @@ fn resolve_signal_price(signal: &TradeSignal, bars: &[OhlcvBar]) -> f64 {
         .unwrap_or(0.0)
 }
 
+fn apply_slippage(price: f64, direction: &str, is_entry: bool, slippage: f64) -> f64 {
+    if slippage <= 0.0 {
+        return price;
+    }
+    match (normalize_direction(direction), is_entry) {
+        ("long", true) => price + slippage,
+        ("long", false) => price - slippage,
+        ("short", true) => price - slippage,
+        ("short", false) => price + slippage,
+        _ => price,
+    }
+}
+
 fn build_strategy_backtest(
     entries: &[TradeSignal],
     exits: &[TradeSignal],
     bars: &[OhlcvBar],
     initial_capital: f64,
+    commission_percent: f64,
+    slippage: f64,
 ) -> BacktestComputation {
     let mut ordered = Vec::with_capacity(entries.len() + exits.len());
     for entry in entries {
@@ -633,13 +679,20 @@ fn build_strategy_backtest(
 
     for (_, is_entry, signal) in ordered {
         if is_entry {
+            let direction = normalize_direction(&signal.direction).to_string();
+            let entry_price = apply_slippage(
+                resolve_signal_price(&signal, bars),
+                &direction,
+                true,
+                slippage,
+            );
             open_lots.push_back(OpenLot {
                 id: signal.id.clone(),
-                direction: signal.direction.clone(),
+                direction,
                 remaining_qty: signal.qty.abs(),
                 entry_bar_index: signal.bar_index,
                 entry_time: signal.time,
-                entry_price: resolve_signal_price(&signal, bars),
+                entry_price,
                 entry_comment: signal.comment.clone(),
             });
             continue;
@@ -663,7 +716,20 @@ fn build_strategy_backtest(
             continue;
         }
 
-        let exit_price = resolve_signal_price(&signal, bars);
+        let exit_direction = target_id
+            .and_then(|id| {
+                open_lots
+                    .iter()
+                    .find(|lot| lot.id == id)
+                    .map(|lot| lot.direction.as_str())
+            })
+            .unwrap_or("long");
+        let exit_price = apply_slippage(
+            resolve_signal_price(&signal, bars),
+            exit_direction,
+            false,
+            slippage,
+        );
         let mut next_open_lots = VecDeque::with_capacity(open_lots.len());
         while let Some(mut lot) = open_lots.pop_front() {
             if remaining_qty <= 0.0 {
@@ -676,14 +742,18 @@ fn build_strategy_backtest(
             }
 
             let closed_qty = lot.remaining_qty.min(remaining_qty);
-            let pnl = if lot.direction == "short" {
+            let gross_pnl = if normalize_direction(&lot.direction) == "short" {
                 (lot.entry_price - exit_price) * closed_qty
             } else {
                 (exit_price - lot.entry_price) * closed_qty
             };
+            let notional = (lot.entry_price.abs() + exit_price.abs()) * closed_qty;
+            let commission = notional * (commission_percent / 100.0);
+            let slippage_cost = slippage.abs() * closed_qty * 2.0;
+            let pnl = gross_pnl - commission - slippage_cost;
             let pnl_percent = if lot.entry_price == 0.0 {
                 0.0
-            } else if lot.direction == "short" {
+            } else if normalize_direction(&lot.direction) == "short" {
                 ((lot.entry_price - exit_price) / lot.entry_price) * 100.0
             } else {
                 ((exit_price - lot.entry_price) / lot.entry_price) * 100.0
@@ -699,6 +769,9 @@ fn build_strategy_backtest(
                 entry_price: lot.entry_price,
                 exit_price,
                 qty: closed_qty,
+                gross_pnl,
+                commission,
+                slippage_cost,
                 pnl,
                 pnl_percent,
                 bars_held: signal.bar_index.saturating_sub(lot.entry_bar_index),
@@ -726,6 +799,14 @@ fn build_strategy_backtest(
         .filter(|trade| trade.pnl < 0.0)
         .map(|trade| trade.pnl)
         .sum();
+    let total_commission = closed_trades
+        .iter()
+        .map(|trade| trade.commission)
+        .sum::<f64>();
+    let total_slippage_cost = closed_trades
+        .iter()
+        .map(|trade| trade.slippage_cost)
+        .sum::<f64>();
     let winning_trades = closed_trades.iter().filter(|trade| trade.pnl > 0.0).count();
     let losing_trades = closed_trades.iter().filter(|trade| trade.pnl < 0.0).count();
     let total_closed_trades = closed_trades.len();
@@ -753,11 +834,27 @@ fn build_strategy_backtest(
         .map(|trade| trade.pnl)
         .reduce(f64::min)
         .unwrap_or(0.0);
+    let avg_bars_held = if total_closed_trades == 0 {
+        0.0
+    } else {
+        closed_trades
+            .iter()
+            .map(|trade| trade.bars_held as f64)
+            .sum::<f64>()
+            / total_closed_trades as f64
+    };
 
     let mut equity = initial_capital;
     let mut peak = initial_capital;
     let mut max_drawdown = 0.0;
     let mut max_drawdown_percent = 0.0;
+    let mut equity_curve = Vec::with_capacity(closed_trades.len() + 1);
+    let initial_time = bars.first().map(|bar| bar.time).unwrap_or(0);
+    equity_curve.push(StrategyEquityPoint {
+        time: initial_time,
+        equity,
+        drawdown: 0.0,
+    });
     for trade in &closed_trades {
         equity += trade.pnl;
         if equity > peak {
@@ -772,12 +869,39 @@ fn build_strategy_backtest(
                 (drawdown / peak) * 100.0
             };
         }
+        equity_curve.push(StrategyEquityPoint {
+            time: trade.exit_time,
+            equity,
+            drawdown,
+        });
     }
+
+    let build_side_report = |direction: &str| {
+        let side_trades: Vec<&StrategyTrade> = closed_trades
+            .iter()
+            .filter(|trade| normalize_direction(&trade.direction) == direction)
+            .collect();
+        let closed_count = side_trades.len();
+        let winning_count = side_trades.iter().filter(|trade| trade.pnl > 0.0).count();
+        let side_net_profit = side_trades.iter().map(|trade| trade.pnl).sum::<f64>();
+        StrategySideReport {
+            closed_trades: closed_count,
+            winning_trades: winning_count,
+            net_profit: side_net_profit,
+            win_rate: if closed_count == 0 {
+                0.0
+            } else {
+                (winning_count as f64 / closed_count as f64) * 100.0
+            },
+        }
+    };
+    let long_report = build_side_report("long");
+    let short_report = build_side_report("short");
 
     let signed_position_size: f64 = open_lots
         .iter()
         .map(|lot| {
-            if lot.direction == "short" {
+            if normalize_direction(&lot.direction) == "short" {
                 -lot.remaining_qty
             } else {
                 lot.remaining_qty
@@ -806,6 +930,8 @@ fn build_strategy_backtest(
             },
             gross_profit,
             gross_loss,
+            total_commission,
+            total_slippage_cost,
             total_closed_trades,
             winning_trades,
             losing_trades,
@@ -825,7 +951,11 @@ fn build_strategy_backtest(
             largest_loss,
             max_drawdown,
             max_drawdown_percent,
+            avg_bars_held,
             open_trades: open_lots.len(),
+            long: long_report,
+            short: short_report,
+            equity_curve,
         },
         trades: closed_trades,
     }
@@ -1007,6 +1137,10 @@ plot(sma, title="SMA", color=color.blue)
             "Expected non-empty strategy report"
         );
         assert_eq!(strategy.report.initial_capital, 100000.0);
+        assert!(
+            !strategy.report.equity_curve.is_empty(),
+            "Expected equity curve points in strategy report"
+        );
     }
 
     #[test]
@@ -1038,6 +1172,43 @@ if bar_index == 3
         assert_eq!(strategy.trades[0].exit_price, 99.0);
         assert!((strategy.trades[0].pnl + 4.0).abs() < 1e-9);
         assert!((strategy.report.net_profit + 4.0).abs() < 1e-9);
+        assert_eq!(strategy.report.long.closed_trades, 1);
+        assert_eq!(strategy.report.short.closed_trades, 0);
+        assert_eq!(strategy.report.equity_curve.len(), 2);
+        assert!((strategy.report.avg_bars_held - 2.0).abs() < 1e-9);
+        assert_eq!(strategy.trades[0].gross_pnl, strategy.trades[0].pnl);
+        assert_eq!(strategy.report.total_commission, 0.0);
+        assert_eq!(strategy.report.total_slippage_cost, 0.0);
+    }
+
+    #[test]
+    fn test_strategy_costs_reduce_net_profit() {
+        let engine = PineEngine::with_mode(ExecutionMode::Eval);
+        let bars = vec![
+            OhlcvBar::new(1, 100.0, 101.0, 99.0, 100.0, 1000.0),
+            OhlcvBar::new(2, 100.0, 104.0, 99.0, 103.0, 1100.0),
+            OhlcvBar::new(3, 103.0, 105.0, 102.0, 104.0, 900.0),
+            OhlcvBar::new(4, 104.0, 106.0, 98.0, 99.0, 1200.0),
+        ];
+
+        let code = r#"//@version=6
+strategy("Cost Backtest", overlay=true, initial_capital=50000, commission_value=1, slippage=0.5)
+if bar_index == 1
+    strategy.entry("L", strategy.long, qty=2)
+if bar_index == 3
+    strategy.close("L")
+"#;
+
+        let res = engine.run(code, &bars).expect("run");
+        let strategy = res.strategy.expect("strategy output");
+        let trade = &strategy.trades[0];
+
+        assert!(trade.gross_pnl < 0.0);
+        assert!(trade.commission > 0.0);
+        assert!(trade.slippage_cost > 0.0);
+        assert!(trade.pnl < trade.gross_pnl);
+        assert!((strategy.report.total_commission - trade.commission).abs() < 1e-9);
+        assert!((strategy.report.total_slippage_cost - trade.slippage_cost).abs() < 1e-9);
     }
 
     #[test]

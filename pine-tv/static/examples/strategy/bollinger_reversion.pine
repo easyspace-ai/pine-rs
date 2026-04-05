@@ -1,0 +1,23 @@
+//@version=6
+strategy("Bollinger Reversion", overlay=true, initial_capital=10000)
+
+length = input.int(20, "Length")
+mult = input.float(2.0, "StdDev")
+
+basis = ta.sma(close, length)
+dev = ta.stdev(close, length) * mult
+upper = basis + dev
+lower = basis - dev
+
+longCondition = close < lower
+exitCondition = close > basis
+
+if longCondition
+    strategy.entry("BBandLE", strategy.long, qty=1)
+
+if exitCondition
+    strategy.close("BBandLE")
+
+plot(basis, title="Basis", color=#FF9800, linewidth=2)
+plot(upper, title="Upper", color=#3F51B5, linewidth=1)
+plot(lower, title="Lower", color=#00BCD4, linewidth=1)
