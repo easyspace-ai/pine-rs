@@ -1,0 +1,8 @@
+// Golden test: ta.wpr(high, low, close, 14)
+// Williams %R with length 14
+
+indicator("WPR Golden Test")
+
+wp = ta.wpr(high, low, close, 14)
+
+plot(wp, title="WPR 14", color=color.blue)

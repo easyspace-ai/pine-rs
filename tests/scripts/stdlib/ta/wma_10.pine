@@ -1,0 +1,8 @@
+// Golden test: ta.wma(close, 10)
+// Weighted moving average of close price over 10 bars
+
+indicator("WMA Golden Test")
+
+w = ta.wma(close, 10)
+
+plot(w, title="WMA 10", color=color.blue)

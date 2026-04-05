@@ -1,0 +1,8 @@
+// Golden test: ta.rma(close, 14)
+// Running (Wilder) moving average of close price over 14 bars
+
+indicator("RMA Golden Test")
+
+r = ta.rma(close, 14)
+
+plot(r, title="RMA 14", color=color.blue)

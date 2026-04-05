@@ -1,0 +1,8 @@
+// Golden test: ta.stdev(close, 10)
+// Standard deviation of close price over 10 bars
+
+indicator("StDev Golden Test")
+
+sd = ta.stdev(close, 10)
+
+plot(sd, title="StDev 10", color=color.blue)

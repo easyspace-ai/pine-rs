@@ -1,0 +1,8 @@
+// Golden test: ta.tsi(close, 13, 25)
+// True Strength Index with default parameters
+
+indicator("TSI Golden Test")
+
+t = ta.tsi(close, 13, 25)
+
+plot(t, title="TSI", color=color.blue)
